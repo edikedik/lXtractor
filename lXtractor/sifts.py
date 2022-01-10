@@ -32,7 +32,7 @@ DF_SIFTS = 'sifts.tsv.gz'
 
 
 def download_sifts(url: str, save_path: Path) -> Path:
-    return download_to_file(url, save_path.name, save_path.parent)
+    return download_to_file(url, save_path)
 
 
 try:

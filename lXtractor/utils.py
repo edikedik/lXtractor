@@ -8,7 +8,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from shutil import copyfileobj
 from tempfile import NamedTemporaryFile
-from warnings import warn
 
 import ray
 import requests
@@ -170,7 +169,7 @@ def cluster_cdhit(
     msa_handle.seek(0)
     out_handle = NamedTemporaryFile('w')
     cmd = f'{cdhit_exec} -i {msa_handle.name} -o {out_handle.name} ' \
-          f'-c {round(ts, 2)} -g 1 -T 0 -d 0 -n {get_word_length()}'
+          f'-c {round(ts, 2)} -g 1 -T 0 -M 0 -d 0 -n {get_word_length()}'
     run_sp(cmd)
     LOGGER.debug(f'successfully executed {cmd}')
     clusters = parse_cdhit(Path(f'{out_handle.name}.clstr'))

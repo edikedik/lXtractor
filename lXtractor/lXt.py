@@ -8,15 +8,14 @@ import ray
 from Bio import SeqIO
 from Bio.PDB import PDBParser
 from Bio.PDB.Structure import Structure
-from more_itertools import flatten, peekable, partition, ilen
+from more_itertools import flatten, peekable, ilen
 from toolz import groupby, curry
 from tqdm import tqdm
 
 from lXtractor.alignment import Alignment, mafft_align, map_pairs_numbering
 from lXtractor.base import (
     SeqRec, FormatError, MissingData, _DomSep, AbstractVariable,
-    FailedCalculation, Seq, AmbiguousMapping,
-    LengthMismatch, Domain, AminoAcidDict, OverlapError)
+    FailedCalculation, Seq, Domain, AminoAcidDict)
 from lXtractor.domains import extract_uniprot_domains, extract_pdb_domains
 from lXtractor.pdb import PDB, get_sequence, wrap_raw_pdb
 from lXtractor.protein import Protein
@@ -52,31 +51,6 @@ _JournalEntry = t.NamedTuple(
 T = t.TypeVar('T')
 
 
-def _create_entry(
-        objects: t.Iterable[T],
-        value_getter: t.Callable[[T], t.Any],
-        step: str, total: int,
-        empty: t.Any = None
-) -> _JournalEntry:
-    """
-    Create a journal entry (a summary describing calculation success)
-
-    :param objects: some objects (here, :class:`Protein` instances).
-    :param value_getter: callable getting a value from an object.
-    :param step: step name.
-    :param total: total expected inputs.
-    :param empty: empty value
-    :return: journal entry namedtuple
-    """
-    filled, unfilled = map(ilen, partition(
-        lambda p: (value_getter(p) is empty
-                   if isinstance(empty, bool) or empty is None else
-                   value_getter(p) == empty),
-        objects))
-
-    return _JournalEntry(step, total, filled, unfilled)
-
-
 class lXtractor:
     def __init__(
             self, inputs: t.Optional[t.Sequence[str]] = None,
@@ -97,7 +71,7 @@ class lXtractor:
         self.sifts = sifts or SIFTS()
         self.uniprot = uniprot or UniProt()
 
-        if self.sifts.df is None:
+        if self.sifts and self.sifts.df is None:
             self.sifts.parse()
 
         if proteins is None:
@@ -239,28 +213,12 @@ class lXtractor:
 
     def fetch_meta(self, fields=('entry_name', 'families')) -> None:
 
-        def meta_filled(protein: Protein) -> bool:
-            if protein.metadata is None:
-                return False
-            field_names = [x[0] for x in protein.metadata]
-            if not all(field in field_names for field in fields):
-                return False
-            return True
-
         proteins = [p for p in self.proteins if p.uniprot_id is not None]
         LOGGER.info(f'Fetching metadata for {len(proteins)} '
                     f'out of {len(self.proteins)} proteins')
         self.uniprot.fetch_meta(proteins, fields=fields)
 
     def extract_sequence_domains(self, keep_parent: bool = True) -> None:
-
-        def is_extracted(protein: Protein) -> bool:
-            if not protein.domains:
-                return False
-            for d in protein.domains.values():
-                if d.uniprot_seq is None:
-                    return False
-            return True
 
         proteins = [p for p in self.proteins if not any(
             [p.uniprot_seq is None, p.domains is None])]
@@ -278,14 +236,6 @@ class lXtractor:
                     f'Failed to extract UniProt domains due to error {e}')
 
     def extract_structure_domains(self, parallel: bool = False) -> None:
-
-        def is_extracted(protein: Protein) -> bool:
-            if not protein.domains:
-                return False
-            for d in protein.domains.values():
-                if d.pdb_sub_structure is None:
-                    return False
-            return True
 
         proteins = {
             p.id: p for p in self.proteins if
@@ -434,19 +384,6 @@ class lXtractor:
 
         def get_variables(obj: t.Union[Protein, Domain]):
             return [x[0] for x in obj.variables.values()]
-
-        def check_protein_variables(protein: Protein) -> bool:
-            # True if all variables are calculated else False
-            values = protein.variables.values()
-            return not values or any(v[1] is None for v in values)
-
-        def check_domain_variables(protein: Protein) -> bool:
-            # True if all variables for each domain are calculated else False
-            _domains = protein.domains.values()
-            return (not _domains or any(
-                d.variables.values() is None or any(
-                    v[1] is None for v in d.variables.values())
-                for d in _domains))
 
         proteins = [p for p in self.proteins if all(
             [p.variables, p.aln_mapping, p.structure])]
