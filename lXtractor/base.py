@@ -19,7 +19,7 @@ class AminoAcidDict:
     # TODO: consider morphing into a proper dict subclass
     """
     Complete and flexible amino acid dictionary, mapping between
-    3->1 and 1->3 letter codes.
+    3->1 and 1->3-letter codes.
     """
 
     def __init__(
@@ -151,7 +151,7 @@ class AbstractVariable(metaclass=ABCMeta):
             self, structure: Structure,
             mapping: t.Optional[t.Mapping[int, int]] = None):
         """
-        Calculate the variable. Each variables defines its own calculation
+        Calculate the variable. Each variable defines its own calculation
         strategy within this method.
 
         :param structure:
@@ -255,7 +255,7 @@ class Segment:
     def overlap(self, other: 'Segment') -> t.Optional['Segment']:
         """
         If segments overlap, create a "child" segment with
-        a overlapping boundaries, ``name`` and a ``parent_name``
+        overlapping boundaries, ``name`` and a ``parent_name``
         of a given ``other``.
 
         :param other: other :class:`Segment` instance.

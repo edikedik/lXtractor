@@ -208,9 +208,10 @@ class AllDist(AbstractVariable):
             self, structure: Structure,
             mapping: t.Optional[t.Mapping[int, int]] = None
     ) -> t.List[t.Tuple[int, int, float]]:
-        residues = filter(
-            lambda r: r.get_full_id()[-1][0] == ' ',
-            structure.get_residues())
+        # residues = filter(
+        #     lambda r: r.get_full_id()[-1][0] == ' ',
+        #     structure.get_residues())
+        residues = structure.get_residues()
         if mapping:
             residues = filter(
                 lambda r: r.get_id()[1] in mapping.values(),

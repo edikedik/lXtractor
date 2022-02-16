@@ -302,20 +302,20 @@ class Alignment(AbstractResource):
                  add_method: _Add_method = mafft_add,
                  align_method: _Align_method = mafft_align):
         """
-        :param seqs: a list of :class:`Bio.SeqRecord.SeqRecord` objects.
-        :param resource_path: a path to an alignment biopython-readable.
-        :param resource_name: a resource's name for readability.
-        :param fmt: alignment format.
-        :param gap: gap-character.
+        :param seqs: a list of :class:`Bio.SeqRecord.SeqRecord` objects
+        :param resource_path: a path to an alignment biopython-readable
+        :param resource_name: a resource's name for readability
+        :param fmt: alignment format
+        :param gap: gap-character
         :param add_method: a callable two arguments:
             (1) MSA (path or iterable with seqs) and (2) sequences to add.
             The method should return a tuple of
             (1) MSA after addition (sequence of sequence records), and
             (2) (a sequence of) added sequences, separately.
-            By default it is :func:`lXtractor.alignment.mafft_add`
+            By default, it is :func:`lXtractor.alignment.mafft_add`
         :param align_method: A callable accepting an arbitrary collection
             of sequences, and returning their MSA.
-            By default it is :func:`lXtractor.alignment.mafft_align`
+            By default, it is :func:`lXtractor.alignment.mafft_align`
         """
         super().__init__(resource_path, resource_name)
         self.fmt, self.gap = fmt, gap
@@ -431,7 +431,6 @@ class Alignment(AbstractResource):
         LOGGER.debug(f'Filtering out the seqs columns with > '
                      f'{max_fraction_of_gaps * 100}% gaps')
         seqs, _ = remove_gap_columns(self.seqs, max_fraction_of_gaps)
-        self._verify(seqs)
         if overwrite:
             self.seqs = seqs
         return seqs
@@ -439,7 +438,7 @@ class Alignment(AbstractResource):
     def remove_gap_sequences(
             self, max_fraction_of_gaps: float = 0.8,
             overwrite: bool = True
-    ) -> t.List[SeqRec]:
+    ) -> t.Tuple[t.List[SeqRec], t.List[SeqRec]]:
         """
         Removes sequences, such that their gap fraction exceeds
         a given threshold.
@@ -451,11 +450,10 @@ class Alignment(AbstractResource):
         """
         LOGGER.debug(f'Filtering out the seqs sequences with > '
                      f'{max_fraction_of_gaps * 100}% gaps')
-        seqs = remove_gap_sequences(self.seqs, max_fraction_of_gaps)
-        self._verify(seqs)
+        below_seq, above_seqs = remove_gap_sequences(self.seqs, max_fraction_of_gaps)
         if overwrite:
-            self.seqs = seqs
-        return seqs
+            self.seqs = below_seq
+        return below_seq, above_seqs
 
     def parse(self):
         """

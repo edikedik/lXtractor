@@ -42,6 +42,16 @@ class Protein:
     def id(self):
         return id(self) if self._id is None else self._id
 
+    def __getitem__(self, key):
+        if not self.domains:
+            raise ValueError('Empty domains')
+        if isinstance(key, str):
+            return self.domains[key]
+        if isinstance(key, int):
+            return list(self.domains.values())[key]
+        else:
+            raise ValueError('Wrong key type')
+
     def dump(self, base_dir: Path):
         if self.dir_name is None:
             path = base_dir / self._id
@@ -51,7 +61,7 @@ class Protein:
             path.mkdir(parents=True, exist_ok=True)
         except PermissionError:
             raise ValueError(f'Cannot write to {base_dir}')
-        dump(path, self.id, uniprot_seq=self.uniprot_seq, structure=self.structure, pdb_seq=self.pdb_seq,
+        dump(path, self.id, uniprot_seq=self.uniprot_seq,    structure=self.structure, pdb_seq=self.pdb_seq,
              pdb_seq_raw=self.pdb_seq_raw, metadata=self.metadata, variables=self.variables,
              aln_mapping=self.aln_mapping, uni_pdb_map=self.uni_pdb_map, uni_pdb_aln=self.uni_pdb_aln)
 
