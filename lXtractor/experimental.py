@@ -5,7 +5,7 @@ from random import sample, shuffle
 import pandas as pd
 import ray
 from Bio.Seq import Seq
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from toolz import groupby, curry
 
 from lXtractor import Protein, UniProt

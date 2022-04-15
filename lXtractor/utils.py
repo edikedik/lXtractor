@@ -15,7 +15,7 @@ from Bio import SeqIO
 from Bio.PDB import PDBIO
 from Bio.PDB.Structure import Structure
 from more_itertools import divide, take, unique_everseen, split_at
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from .base import _Fetcher, _Getter, FormatError, SeqRec, Variables
 

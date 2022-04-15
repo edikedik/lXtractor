@@ -10,7 +10,7 @@ from Bio.PDB import PDBParser
 from Bio.PDB.Structure import Structure
 from more_itertools import flatten, peekable, ilen
 from toolz import groupby, curry
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from lXtractor.alignment import Alignment, mafft_align, map_pairs_numbering
 from lXtractor.base import (

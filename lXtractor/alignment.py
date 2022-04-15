@@ -21,6 +21,7 @@ _Add_method = t.Callable[
 _Align_method = t.Callable[
     [t.Iterable[SeqRec]], t.Sequence[SeqRec]
 ]
+_Idx = t.Union[int, t.Tuple[int, ...]]
 LOGGER = logging.getLogger(__name__)
 
 
@@ -329,6 +330,9 @@ class Alignment(AbstractResource):
                 self.parse()
             except NotImplementedError:
                 pass
+        self._matrix = (
+            None if self.seqs is None else
+            np.array([list(str(s.seq)) for s in self.seqs]))
         self._handle: t.Optional[NamedTemporaryFile] = None
         self._verify(self.seqs)
 
@@ -366,6 +370,25 @@ class Alignment(AbstractResource):
         if len(targets) == 1:
             return targets.pop()
         return targets
+
+    def index(
+            self, i: t.Optional[_Idx], j: t.Optional[_Idx], return_type: str = 'array'
+    ) -> t.Union[np.ndarray, t.List[SeqRec], t.List[str]]:
+        if i is None:
+            i = tuple(range(self.shape[0]))
+        if j is None:
+            j = tuple(range(self.shape[1]))
+        sub = self._matrix[np.array(i)][:, np.array(j)]
+        if return_type == 'seq_rec':
+            idx = i if isinstance(i, t.Sequence) else [i]
+            seqs = ["".join(x) for x in sub]
+            recs = [rec for rec_i, rec in enumerate(self.seqs) if rec_i in idx]
+            return [
+                SeqRec(Seq(seq), id=rec.id, description=rec.description, name=rec.name)
+                for seq, rec in zip(seqs, recs)]
+        elif return_type == 'str':
+            return ["".join(x) for x in sub]
+        return sub
 
     def _verify(self, seqs: t.Iterable[SeqRec]):
         lengths = set(len(s) for s in seqs)
