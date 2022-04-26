@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from shutil import copyfileobj
 from tempfile import NamedTemporaryFile
+from time import sleep
 
 import ray
 import requests
@@ -65,7 +66,8 @@ def fetch_iterable(
         fetcher: t.Callable[[t.Iterable[str]], T],
         chunk_size: int = 100,
         num_threads: t.Optional[int] = None,
-        verbose: bool = False
+        verbose: bool = False,
+        sleep_seq: int = 5,
 ) -> t.List[T]:
     unpacked = list(it)
     num_chunks = max(1, len(unpacked) // chunk_size)
@@ -87,6 +89,9 @@ def fetch_iterable(
                 results.append(future.result())
             except Exception as e:
                 LOGGER.warning(f'Failed to fetch chunk {i} due to error {e}')
+                if 'closed' in str(e):
+                    LOGGER.warning(f'Closed connection: sleep for {sleep_seq} seconds')
+                    sleep(sleep_seq)
     return results
 
 
