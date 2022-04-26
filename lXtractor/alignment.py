@@ -187,9 +187,11 @@ def remove_gap_sequences(
         list, partition(
             lambda s: fraction_of_gaps(s) < max_fraction_of_gaps,
             seqs))
+    above_ids = [s.id for s in above_threshold]
+    above_ids = '' if len(above_ids) > 100 else above_ids
     LOGGER.debug(
         f'Detected {len(above_threshold)} sequences with the number of gaps '
-        f'>= {max_fraction_of_gaps}: {[s.id for s in above_threshold]}')
+        f'>= {max_fraction_of_gaps}: {above_ids}')
 
     # Return sequences passing the threshold
     return below_threshold, above_threshold

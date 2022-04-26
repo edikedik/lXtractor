@@ -38,10 +38,8 @@ ProteinAttributes = t.NamedTuple(
     ])
 LOGGER = logging.getLogger(__name__)
 
-# TODO: consider custom domain definitions in "::domain", e.g. "name_start-end"
 # TODO: extend docs
 # TODO: optimize memory consumption for large datasets
-# TODO: either fix or remove journal entries
 
 
 _JournalEntry = t.NamedTuple(
@@ -119,19 +117,20 @@ class lXtractor:
     def __iter__(self):
         return iter(self.proteins)
 
-    def fetch_missing(self) -> None:
+    def fetch_missing(self, uniprot: bool = True, pdb: bool = True) -> None:
 
-        missing_uniprot = [p for p in self.proteins if p.uniprot_seq is None]
-        if missing_uniprot:
-            LOGGER.info(
-                f'Found {len(missing_uniprot)} proteins with no UniProt sequence')
-            self.uniprot.fetch_fasta(missing_uniprot)
-
-        missing_pdb = [p for p in self.proteins if p.structure is None]
-        if missing_pdb:
-            LOGGER.info(
-                f'Found {len(missing_pdb)} proteins with no PDB structure')
-            self.pdb.fetch(missing_pdb)
+        if uniprot:
+            missing_uniprot = [p for p in self.proteins if p.uniprot_seq is None and p.uniprot_id is not None]
+            if missing_uniprot:
+                LOGGER.info(
+                    f'Found {len(missing_uniprot)} proteins with no UniProt sequence')
+                self.uniprot.fetch_fasta(missing_uniprot)
+        if pdb:
+            missing_pdb = [p for p in self.proteins if p.structure is None and p.pdb is not None]
+            if missing_pdb:
+                LOGGER.info(
+                    f'Found {len(missing_pdb)} proteins with no PDB structure')
+                self.pdb.fetch(missing_pdb)
 
     def map_uni_pdb(
             self, ignore_existing: bool = False,
