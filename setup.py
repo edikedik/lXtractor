@@ -31,7 +31,6 @@ setup(
     #     'joblib~=1.0.1'
     # ],
     install_requires=[
-        'click',
         'biopython',
         'ray',
         'numpy',
@@ -40,7 +39,7 @@ setup(
         'toolz',
         'requests',
         'tqdm',
-        'joblib'
+        'joblib',
     ],
     include_package_data=True,
     package_data={

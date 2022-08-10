@@ -137,7 +137,7 @@ class UniProt:
         """
 
         def fetcher(acc: t.Iterable[str]) -> str:
-            res = fetch_uniprot(acc, fmt='gff')
+            res = fetch_uniprot(acc, num_threads=self.num_threads, fmt='gff')
             LOGGER.debug(f'GFF fetcher fetched {len(res)} lines')
             return res
 
@@ -238,7 +238,8 @@ class UniProt:
         column_names = list(fields) + ['UniProt_ID']
 
         def fetcher(acc: t.Iterable[str]) -> pd.DataFrame:
-            results = fetch_uniprot(acc, fmt='tab', columns=columns)
+            results = fetch_uniprot(
+                acc, num_threads=self.num_threads, fmt='tab', columns=columns)
             res = pd.read_csv(
                 StringIO(results), sep='\t', skiprows=1, names=column_names)
             LOGGER.debug(f'Metadata fetcher obtained metadata for {len(res)} IDs')
@@ -309,7 +310,7 @@ class UniProt:
                 from_db='ACC+ID', id_col='UniProt_ID'
         ) -> pd.DataFrame:
             results = fetch_uniprot(
-                acc, from_db=from_db, fmt='tab',
+                acc, from_db=from_db, fmt='tab', num_threads=self.num_threads,
                 columns=','.join(column_names))
             res = pd.read_csv(
                 StringIO(results), sep='\t', skiprows=1,
