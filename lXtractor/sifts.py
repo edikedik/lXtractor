@@ -21,23 +21,22 @@ import pandas as pd
 from more_itertools import unzip
 
 from lXtractor import resources as local
-from lXtractor.utils import download_to_file
+from .utils import download_to_file
 from .base import AbstractResource, Segment, OverlapError, LengthMismatch
 
 LOGGER = logging.getLogger(__name__)
 SIFTS_FTP = 'ftp://ftp.ebi.ac.uk/pub/databases/msd/sifts/flatfiles/csv/uniprot_segments_observed.csv.gz'
 RAW_SEGMENTS = 'uniprot_segments_observed.csv.gz'
-ID_MAPPING = 'id_mapping.joblib.gz'
-DF_SIFTS = 'sifts.tsv.gz'
-
-
-def download_sifts(url: str, save_path: Path) -> Path:
-    return download_to_file(url, save_path)
+ID_MAPPING = 'id_mapping.joblib'
+DF_SIFTS = 'sifts.tsv'
 
 
 try:
     with resources.path(local, RAW_SEGMENTS) as __path:
-        SIFTS_PATH = Path(str(__path))
+        if not __path.exists():
+            raise FileNotFoundError
+        SIFTS_PATH = __path
+
 except FileNotFoundError:
 
     with resources.path(local, '') as __path:
@@ -47,7 +46,7 @@ except FileNotFoundError:
         LOGGER.info(
             f'Found no SIFTS in resources. '
             f'Starting to download SIFTS from {SIFTS_FTP}')
-        SIFTS_PATH = download_sifts(SIFTS_FTP, SIFTS_PATH)
+        SIFTS_PATH = download_to_file(SIFTS_FTP, SIFTS_PATH)
         LOGGER.info(f'Downloaded sifts to {SIFTS_PATH}')
 
 SIFTS_RENAMES = (
@@ -61,25 +60,17 @@ SIFTS_RENAMES = (
 )
 
 
-def _load_id_mapping():
-    try:
-        with resources.path(local, ID_MAPPING) as _path:
-            path = str(_path)
-            LOGGER.debug(f'Found existing id mapping at {_path}')
-            return joblib.load(str(path))
-    except FileNotFoundError:
-        LOGGER.debug(f'No existing id mapping in resources')
-        return None
-
-
-def _load_sifts_df():
-    try:
-        with resources.path(local, DF_SIFTS) as _path:
-            path = str(_path)
-            LOGGER.debug(f'Found existing SIFTS table at {_path}')
+def _soft_load_resource(name: str):
+    with resources.path(local, name) as path:
+        if not path.exists():
+            LOGGER.debug(f'{path} does not exist')
+            return None
+        suffix = path.suffix
+        if suffix in ['.tsv', '.gz']:
             return pd.read_csv(path, sep='\t')
-    except FileNotFoundError:
-        LOGGER.debug(f'No existing SIFTS table in resources')
+        if suffix in ['.joblib']:
+            return joblib.load(path)
+        LOGGER.warning(f'Failed to load {path}')
         return None
 
 
@@ -111,7 +102,8 @@ class SIFTS(AbstractResource):
     def __init__(
             self, resource_path: t.Optional[Path] = None,
             resource_name: str = 'SIFTS',
-            check_parsed_in_resources: bool = True,
+            load_segments: bool = False,
+            load_id_mapping: bool = True,
             df: t.Optional[pd.DataFrame] = None):
         """
         :param resource_path: a path to a file "uniprot_segments_observed".
@@ -119,17 +111,19 @@ class SIFTS(AbstractResource):
             If the latter fails will attempt fetching the mapping from the FTP server
             and storing it in the ``resources`` for later use.
         :param resource_name: the name of the resource.
-        :param check_parsed_in_resources: check for existing parsed sifts in the resources.
+        :param load_segments: load pre-parsed segment-level mapping
+        :param load_id_mapping: load pre-parsed id mapping
         :param df: in case some specific parsing is needed, one can provide
             a ``DataFrame`` containing columns specified in the ``SIFTS_RENAMES`` constant.
         """
-        if check_parsed_in_resources:
-            self.df = _load_sifts_df()
-            self.id_mapping = _load_id_mapping()
+        if load_segments and df is None:
+            self.df = _soft_load_resource(DF_SIFTS)
         else:
             self.df = df
-            self.id_mapping = None
-        if self.id_mapping is None:
+
+        if load_id_mapping:
+            self.id_mapping = _soft_load_resource(ID_MAPPING)
+        else:
             self.id_mapping = (None if self.df is None else self._map_ids(df))
 
         resource_path = resource_path or SIFTS_PATH
@@ -189,7 +183,7 @@ class SIFTS(AbstractResource):
         :return: prepared `DataFrame`.
         """
         df = self.read(False)
-        LOGGER.debug(f'Recieved {len(df)} records')
+        LOGGER.debug(f'Received {len(df)} records')
 
         df = df[
             list(self.renames)
@@ -250,7 +244,7 @@ class SIFTS(AbstractResource):
             sel_column = 'UniProt_ID'
         return sel_column
 
-    def map(self, obj_id: str) -> t.Iterator[Mapping]:
+    def map_numbering(self, obj_id: str) -> t.Iterator[Mapping]:
         """
         Retrieve mappings associated with the ``obj_id``. Mapping example::
 
