@@ -46,9 +46,4 @@ setup(
         '': ['*.gz']
     },
     packages=find_packages(exclude=['test']),
-    entry_points={
-        'console_scripts': [
-            'lXtractor = cli:cli',
-        ],
-    }
 )

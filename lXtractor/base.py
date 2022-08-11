@@ -302,28 +302,6 @@ class Domain(Segment):
 Domains = t.Dict[str, Domain]
 
 
-# DunbrackSegments: t.Tuple[Segment, ...] = (
-#     Segment(1, 4),  # B1N
-#     Segment(17, 23),  # B1C
-#     Segment(37, 45),  # B2
-#     Segment(82, 92),  # B3
-#     Segment(125, 138),  # HC
-#     Segment(161, 176),  # B4
-#     Segment(398, 407),  # B5
-#     Segment(419, 427),  # HD
-#     Segment(909, 932),  # HE
-#     Segment(974, 980),  # CL1
-#     Segment(986, 994),  # CL2
-#     Segment(1293, 1313),  # ALN
-#     Segment(1862, 1878),  # ALC
-#     Segment(1907, 1929),  # HF
-#     Segment(1944, 1949),  # FL
-#     Segment(1996, 2008),  # HG
-#     Segment(2118, 2137),  # HH
-#     Segment(2148, 2157)  # HI
-# )
-
-
 class InitError(ValueError):
     """
     A broad category exception for problems with
@@ -369,89 +347,153 @@ class ParsingError(ValueError):
 
 
 MetaColumns = (
-    # Taken from https://bioservices.readthedocs.io/en/master/_modules/bioservices/uniprot.html
+    # Taken from https://bioservices.readthedocs.io/en/main/_modules/bioservices/uniprot.html#UniProt
 
-    # Names & Taxonomy
-    'id', 'entry name', 'genes', 'genes(PREFERRED)', 'genes(ALTERNATIVE)',
-    'genes(OLN)', 'genes(ORF)', 'organism', 'organism-id', 'protein names',
-    'proteome', 'lineage(ALL)', 'lineage-id', 'virus hosts',
-    # Sequences
-    'fragment', 'sequence', 'length', 'mass', 'encodedon',
-    'comment(ALTERNATIVE PRODUCTS)', 'comment(ERRONEOUS GENE MODEL PREDICTION)',
-    'comment(ERRONEOUS INITIATION)', 'comment(ERRONEOUS TERMINATION)',
-    'comment(ERRONEOUS TRANSLATION)', 'comment(FRAMESHIFT)',
-    'comment(MASS SPECTROMETRY)', 'comment(POLYMORPHISM)',
-    'comment(RNA EDITING)', 'comment(SEQUENCE CAUTION)',
-    'feature(ALTERNATIVE SEQUENCE)', 'feature(NATURAL VARIANT)',
-    'feature(NON ADJACENT RESIDUES)',
-    'feature(NON STANDARD RESIDUE)', 'feature(NON TERMINAL RESIDUE)',
-    'feature(SEQUENCE CONFLICT)', 'feature(SEQUENCE UNCERTAINTY)',
-    'version(sequence)',
-    # Family and Domains
-    'domains', 'domain', 'comment(DOMAIN)', 'comment(SIMILARITY)',
-    'feature(COILED COIL)', 'feature(COMPOSITIONAL BIAS)',
-    'feature(DOMAIN EXTENT)', 'feature(MOTIF)', 'feature(REGION)',
-    'feature(REPEAT)', 'feature(ZINC FINGER)',
-    # Function
-    'ec', 'comment(ABSORPTION)', 'comment(CATALYTIC ACTIVITY)',
-    'comment(COFACTOR)', 'comment(ENZYME REGULATION)', 'comment(FUNCTION)',
-    'comment(KINETICS)', 'comment(PATHWAY)', 'comment(REDOX POTENTIAL)',
-    'comment(TEMPERATURE DEPENDENCE)', 'comment(PH DEPENDENCE)',
-    'feature(ACTIVE SITE)', 'feature(BINDING SITE)', 'feature(DNA BINDING)',
-    'feature(METAL BINDING)', 'feature(NP BIND)', 'feature(SITE)',
-    # Gene Ontologys
-    'go', 'go(biological process)', 'go(molecular function)',
-    'go(cellular component)', 'go-id',
-    # InterPro
-    'interpro',
-    # Interaction
-    'interactor', 'comment(SUBUNIT)',
+    # Names & Taxonomy ================================================
+    "accession",
+    "id",
+    "gene_names",
+    "gene_primary",
+    "gene_synonym",
+    "gene_oln",
+    "gene_orf",
+    "organism_name",
+    "organism_id",
+    "protein_name",
+    "xref_proteomes",
+    "lineage",
+    "virus_hosts",
+
+    # Sequences ========================================================
+    "fragment",
+    "sequence",
+    "length",
+    "mass",
+    "organelle",
+    "cc_alternative_products",
+    "error_gmodel_pred",
+    "cc_mass_spectrometry",
+    "cc_polymorphism",
+    "cc_rna_editing",
+    "cc_sequence_caution",
+    "ft_var_seq",
+    "ft_variant",
+    "ft_non_cons",
+    "ft_non_std",
+    "ft_non_ter",
+    "ft_conflict",
+    "ft_unsure",
+    "sequence_version",
+
+    # Family and Domains ========================================
+    'ft_coiled',
+    'ft_compbias',
+    'cc_domain',
+    'ft_domain',
+    'ft_motif',
+    'protein_families',
+    'ft_region',
+    'ft_repeat',
+    'ft_zn_fing',
+
+    # Function ===================================================
+    'absorption',
+    'ft_act_site',
+    'cc_activity_regulation',
+    'ft_binding',
+    'ft_ca_bind',
+    'cc_catalytic_activity',
+    'cc_cofactor',
+    'ft_dna_bind',
+    'ec',
+    'cc_function',
+    'kinetics',
+    'ft_metal',
+    'ft_np_bind',
+    'cc_pathway',
+    'ph_dependence',
+    'redox_potential',
+    # 'rhea_id',
+    'ft_site',
+    'temp_dependence',
+
+    # Gene Ontology ==================================
+    "go",
+    "go_p",
+    "go_f",
+    "go_c",
+    "go_id",
+
+    # Interaction ======================================
+    "cc_interaction",
+    "cc_subunit",
+
+    # EXPRESSION =======================================
+    "cc_developmental_stage",
+    "cc_induction",
+    "cc_tissue_specificity",
+
     # Publications
-    'citation', 'citationmapping',
+    "lit_pubmed_id",
+
     # Date of
-    'created', 'last-modified', 'sequence-modified', 'version(entry)',
+    "date_created",
+    "date_modified",
+    "date_sequence_modified",
+    "version",
+
     # Structure
-    '3d', 'feature(BETA STRAND)', 'feature(HELIX)', 'feature(TURN)',
+    "structure_3d",
+    "ft_strand",
+    "ft_helix",
+    "ft_turn",
+
     # Subcellular location
-    'comment(SUBCELLULAR LOCATION)',
-    'feature(INTRAMEMBRANE)',
-    'feature(TOPOLOGICAL DOMAIN)',
-    'feature(TRANSMEMBRANE)',
-    # Miscellaneous
-    'annotation score', 'score', 'features', 'comment(CAUTION)',
-    'comment(TISSUE SPECIFICITY)',
-    'comment(GENERAL)', 'keywords', 'context', 'existence', 'tools',
-    'reviewed', 'feature', 'families', 'subcellular locations', 'taxonomy',
-    'version', 'clusters', 'comments', 'database', 'keyword-id', 'pathway',
-    'score',
-    # Pathology & Biotech
-    'comment(ALLERGEN)', 'comment(BIOTECHNOLOGY)', 'comment(DISRUPTION PHENOTYPE)',
-    'comment(DISEASE)', 'comment(PHARMACEUTICAL)', 'comment(TOXIC DOSE)',
+    "cc_subcellular_location",
+    "ft_intramem",
+    "ft_topo_dom",
+    "ft_transmem",
+
+    # Miscellaneous ==========================
+    "annotation_score",
+    "cc_caution",
+    "comment_count",
+    # "feature",
+    "feature_count",
+    "keyword",
+    "keywordid",
+    "cc_miscellaneous",
+    "protein_existence",
+    "tools",
+    "reviewed",
+    "uniparc_id",
+
+    # Pathology
+    'cc_allergen',
+    'cc_biotechnology',
+    'cc_disruption_phenotype',
+    'cc_disease',
+    'ft_mutagen',
+    'cc_pharmaceutical',
+    'cc_toxic_dose',
+
     # PTM / Processsing
-    'comment(PTM)', 'feature(CHAIN)', 'feature(CROSS LINK)', 'feature(DISULFIDE BOND)',
-    'feature(GLYCOSYLATION)', 'feature(INITIATOR METHIONINE)', 'feature(LIPIDATION)',
-    'feature(MODIFIED RESIDUE)', 'feature(PEPTIDE)', 'feature(PROPEPTIDE)',
-    'feature(SIGNAL)', 'feature(TRANSIT)',
-    # Taxonomic lineage
-    'lineage(all)', 'lineage(SUPERKINGDOM)', 'lineage(KINGDOM)', 'lineage(SUBKINGDOM)',
-    'lineage(SUPERPHYLUM)', 'lineage(PHYLUM)', 'lineage(SUBPHYLUM)', 'lineage(SUPERCLASS)',
-    'lineage(CLASS)', 'lineage(SUBCLASS)', 'lineage(INFRACLASS)', 'lineage(SUPERORDER)',
-    'lineage(ORDER)', 'lineage(SUBORDER)', 'lineage(INFRAORDER)', 'lineage(PARVORDER)',
-    'lineage(SUPERFAMILY)', 'lineage(FAMILY)', 'lineage(SUBFAMILY)', 'lineage(TRIBE)',
-    'lineage(SUBTRIBE)', 'lineage(GENUS)', 'lineage(SUBGENUS)', 'lineage(SPECIES GROUP)',
-    'lineage(SPECIES SUBGROUP)', 'lineage(SPECIES)', 'lineage(SUBSPECIES)', 'lineage(VARIETAS)',
-    'lineage(FORMA)',
-    # Taxonomic identifier
-    'lineage-id(all)', 'lineage-id(SUPERKINGDOM)', 'lineage-id(KINGDOM)', 'lineage-id(SUBKINGDOM)',
-    'lineage-id(SUPERPHYLUM)', 'lineage-id(PHYLUM)', 'lineage-id(SUBPHYLUM)', 'lineage-id(SUPERCLASS)',
-    'lineage-id(CLASS)', 'lineage-id(SUBCLASS)', 'lineage-id(INFRACLASS)', 'lineage-id(SUPERORDER)',
-    'lineage-id(ORDER)', 'lineage-id(SUBORDER)', 'lineage-id(INFRAORDER)', 'lineage-id(PARVORDER)',
-    'lineage-id(SUPERFAMILY)', 'lineage-id(FAMILY)', 'lineage-id(SUBFAMILY)', 'lineage-id(TRIBE)',
-    'lineage-id(SUBTRIBE)', 'lineage-id(GENUS)', 'lineage-id(SUBGENUS)', 'lineage-id(SPECIES GROUP)',
-    'lineage-id(SPECIES SUBGROUP)', 'lineage-id(SPECIES)', 'lineage-id(SUBSPECIES)', 'lineage-id(VARIETAS)',
-    'lineage-id(FORMA)',
-    # Cross-references
-    'database(db_abbrev)', 'database(EMBL)')
+    'ft_chain',
+    'ft_crosslnk',
+    'ft_disulfid',
+    'ft_carbohyd',
+    'ft_init_met',
+    'ft_lipid',
+    'ft_mod_res',
+    'ft_peptide',
+    'cc_ptm',
+    'ft_propep',
+    'ft_signal',
+    'ft_transit',
+
+    # not documented
+    'xref_pdb'
+)
 
 if __name__ == '__main__':
     raise RuntimeError

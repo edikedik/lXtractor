@@ -15,6 +15,7 @@ import requests
 from Bio import SeqIO
 from Bio.PDB import PDBIO
 from Bio.PDB.Structure import Structure
+from Bio.Seq import Seq
 from more_itertools import divide, take, unique_everseen, split_at
 from tqdm.auto import tqdm
 
@@ -67,7 +68,7 @@ def fetch_iterable(
         chunk_size: int = 100,
         num_threads: t.Optional[int] = None,
         verbose: bool = False,
-        sleep_seq: int = 5,
+        sleep_sec: int = 5,
 ) -> t.List[T]:
     unpacked = list(it)
     num_chunks = max(1, len(unpacked) // chunk_size)
@@ -90,8 +91,8 @@ def fetch_iterable(
             except Exception as e:
                 LOGGER.warning(f'Failed to fetch chunk {i} due to error {e}')
                 if 'closed' in str(e):
-                    LOGGER.warning(f'Closed connection: sleep for {sleep_seq} seconds')
-                    sleep(sleep_seq)
+                    LOGGER.warning(f'Closed connection: sleep for {sleep_sec} seconds')
+                    sleep(sleep_sec)
     return results
 
 
@@ -282,33 +283,37 @@ class Dumper:
 
 
 def setup_logger(
-        log_path,
-        file_level: int,
-        stdout_level: int,
-        stderr_level: int
+        log_path: t.Optional[t.Union[str, Path]] = None, file_level: t.Optional[int] = None,
+        stdout_level: t.Optional[int] = None, stderr_level: t.Optional[int] = None,
+        logger: t.Optional[logging.Logger] = None
 ) -> logging.Logger:
+
     logging.getLogger("requests").setLevel(logging.ERROR)
     logging.getLogger("urllib3").setLevel(logging.ERROR)
     logging.getLogger('parso.python.diff').disabled = True
 
     formatter = logging.Formatter(
         '%(asctime)s %(levelname)s [%(module)s--%(funcName)s]: %(message)s')
-    logger = logging.getLogger()
-    if log_path:
-        logging_file = logging.FileHandler(log_path, 'w')
-        logging_file.setFormatter(formatter)
-        logging_file.setLevel(file_level)
-        logger.addHandler(logging_file)
+    if logger is None:
+        logger = logging.getLogger(__name__)
 
-    logging_out = logging.StreamHandler(sys.stdout)
-    logging_err = logging.StreamHandler(sys.stderr)
-    logging_out.setFormatter(formatter)
-    logging_err.setFormatter(formatter)
-    logging_out.setLevel(stdout_level)
-    logging_err.setLevel(stderr_level)
-    logger.addHandler(logging_out)
-    logger.addHandler(logging_err)
-    logger.setLevel(logging.DEBUG)
+    if log_path is not None:
+        level = file_level or logging.DEBUG
+        handler = logging.FileHandler(log_path, 'w')
+        handler.setFormatter(formatter)
+        handler.setLevel(level)
+        logger.addHandler(handler)
+    if stderr_level is not None:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(formatter)
+        handler.setLevel(stderr_level)
+        logger.addHandler(handler)
+    if stdout_level is not None:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(formatter)
+        handler.setLevel(stdout_level)
+        logger.addHandler(handler)
+
     return logger
 
 
@@ -324,6 +329,13 @@ def run_handles(handles, bar=None):
     if bar is not None:
         bar.close()
     return results
+
+
+def subset_by_idx(seq: SeqRec, idx: t.Sequence[int], start=1):
+    sub = ''.join(c for i, c in enumerate(seq, start=start) if i in idx)
+    start, end = idx[0], idx[-1]
+    new_id = f'{seq.id}/{start}-{end}'
+    return SeqRec(Seq(sub), new_id, new_id, new_id)
 
 
 if __name__ == '__main__':

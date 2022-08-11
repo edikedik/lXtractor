@@ -294,9 +294,7 @@ def fetch_pdb(
             raise ValueError(f'Chunk {chunk} contains more than 1 element')
         return download_text(f'{url}{chunk.pop()}.pdb')
 
-    results = fetch_iterable(
-        ids, fetch_chunk, chunk_size=1,
-        num_threads=num_threads, verbose=verbose)
+    results = fetch_iterable(ids, fetch_chunk, chunk_size=1, num_threads=num_threads, verbose=verbose)
 
     return list(map(
         wrap_raw_pdb(meta_fields=meta_fields), results))

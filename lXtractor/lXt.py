@@ -40,12 +40,9 @@ LOGGER = logging.getLogger(__name__)
 
 # TODO: extend docs
 # TODO: optimize memory consumption for large datasets
+# TODO: -> use common (sequence/UniProt), including sequences
+# TODO: simplify init
 
-
-_JournalEntry = t.NamedTuple(
-    'JournalEntry', [
-        ('Step', str), ('Inputs', int),
-        ('ProteinsFilled', int), ('ProteinsEmpty', int)])
 T = t.TypeVar('T')
 
 
@@ -54,7 +51,8 @@ class lXtractor:
             self, inputs: t.Optional[t.Sequence[str]] = None,
             proteins: t.Optional[t.List[Protein]] = None,
             uniprot: t.Optional[UniProt] = None,
-            pdb: t.Optional[PDB] = None, sifts: t.Optional[SIFTS] = None,
+            pdb: t.Optional[PDB] = None,
+            sifts: t.Optional[SIFTS] = None,
             alignment: t.Optional[Alignment] = None,
             pdb_dir: t.Optional[Path] = None):
 
@@ -218,6 +216,7 @@ class lXtractor:
         self.uniprot.fetch_meta(proteins, fields=fields)
 
     def extract_sequence_domains(self, keep_parent: bool = True) -> None:
+        # TODO: rm
 
         proteins = [p for p in self.proteins if not any(
             [p.uniprot_seq is None, p.domains is None])]
@@ -570,7 +569,7 @@ def map_whole_structure_numbering(
         protein: Protein, sifts: SIFTS
 ) -> t.Dict[int, t.Optional[int]]:
     obj_id = f'{protein.pdb}:{protein.chain}'
-    mappings = sifts.map(obj_id)
+    mappings = sifts.map_numbering(obj_id)
 
     def _raise():
         raise MissingData(
