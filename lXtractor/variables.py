@@ -6,7 +6,7 @@ import numpy as np
 from Bio.PDB.Atom import Atom
 from Bio.PDB.Residue import Residue
 from Bio.PDB.Structure import Structure
-from lXtractor.base import FailedCalculation, AminoAcidDict, _StrSep, _DomSep, FormatError, AbstractVariable
+from lXtractor.base import FailedCalculation, AminoAcidDict, _StrSep, FormatError, AbstractVariable, InputSeparators
 from lXtractor.utils import split_validate
 from more_itertools import unique_justseen
 
@@ -19,8 +19,8 @@ _FlattenedVariable = t.Tuple[
     t.Optional[str],
     t.Optional[str]
 ]
-_Aggregators = {
-    'min': np.min, 'max': np.max, 'mean': np.mean, 'median': np.median}
+_Aggregators = {'min': np.min, 'max': np.max, 'mean': np.mean, 'median': np.median}
+Sep = InputSeparators(',', ':', '::', '_')
 LOGGER = logging.getLogger(__name__)
 
 
@@ -447,14 +447,14 @@ def parse_variables(inp: str) -> _ParsedVariables:
     :return: a namedtuple with (1) variables, (2) list of proteins (or ``[None]``),
         and (3) a list of domains (or ``[None]``).
     """
-    if _StrSep in inp and _DomSep in inp:
+    if _StrSep in inp and Sep.dom in inp:
         variables, tmp = split_validate(inp, _StrSep, 2)
-        proteins, domains = split_validate(tmp, _DomSep, 2)
+        proteins, domains = split_validate(tmp, Sep.dom, 2)
     elif _StrSep in inp:
         variables, proteins = split_validate(inp, _StrSep, 2)
         domains = None
-    elif _DomSep in inp:
-        variables, domains = split_validate(inp, _DomSep, 2)
+    elif Sep.dom in inp:
+        variables, domains = split_validate(inp, Sep.dom, 2)
         proteins = None
     else:
         variables = inp

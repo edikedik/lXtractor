@@ -1,12 +1,9 @@
 import logging
 import typing as t
-from copy import deepcopy
 from itertools import starmap, product, chain, tee, filterfalse
 from pathlib import Path
 
 import ray
-from Bio import SeqIO
-from Bio.PDB import PDBParser
 from Bio.PDB.Structure import Structure
 from more_itertools import flatten, peekable, ilen
 from toolz import groupby, curry
@@ -14,9 +11,10 @@ from tqdm.auto import tqdm
 
 from lXtractor.alignment import Alignment, mafft_align, map_pairs_numbering
 from lXtractor.base import (
-    SeqRec, FormatError, MissingData, _DomSep, AbstractVariable,
+    SeqRec, FormatError, MissingData, AbstractVariable,
     FailedCalculation, Seq, Domain, AminoAcidDict)
 from lXtractor.domains import extract_uniprot_domains, extract_pdb_domains
+from lXtractor.input_parser import init
 from lXtractor.pdb import PDB, get_sequence, wrap_raw_pdb
 from lXtractor.protein import Protein
 from lXtractor.sifts import SIFTS
@@ -27,15 +25,6 @@ from lXtractor.variables import _ParsedVariables, parse_variables
 _DomainList = t.Sequence[t.Tuple[str, t.Union[str, t.Sequence[str]]]]
 _VariableSetup = t.Tuple[AbstractVariable, t.Optional[str], t.Optional[str]]
 _ChainLevel = 'Chain'
-ProteinAttributes = t.NamedTuple(
-    'ProteinAttributes', [
-        ('pdb_id', t.Optional[str]),
-        ('chain_id', t.Optional[str]),
-        ('structure', t.Optional[Structure]),
-        ('uniprot_id', t.Optional[str]),
-        ('uniprot_seq', t.Optional[SeqRec]),
-        ('domains', t.Optional[t.Sequence[str]])
-    ])
 LOGGER = logging.getLogger(__name__)
 
 # TODO: extend docs
@@ -50,11 +39,15 @@ class lXtractor:
     def __init__(
             self, inputs: t.Optional[t.Sequence[str]] = None,
             proteins: t.Optional[t.List[Protein]] = None,
+            domains: t.Optional[t.Sequence[str]] = None,
             uniprot: t.Optional[UniProt] = None,
             pdb: t.Optional[PDB] = None,
             sifts: t.Optional[SIFTS] = None,
+            sifts_id_mapping: bool = True,
+            sifts_segment_mapping: bool = False,
             alignment: t.Optional[Alignment] = None,
-            pdb_dir: t.Optional[Path] = None):
+            pdb_dir: t.Optional[Path] = None,
+    ):
 
         if inputs is None and proteins is None:
             raise ValueError('Must provide either ``inputs`` or ``proteins``')
@@ -64,19 +57,29 @@ class lXtractor:
             pdb_dir.mkdir(parents=True)
         self.pdb_dir = pdb_dir
         self.pdb = pdb or PDB(pdb_dir=pdb_dir)
-        self.sifts = sifts or SIFTS()
         self.uniprot = uniprot or UniProt()
+        self.domains = domains
 
-        if self.sifts and self.sifts.df is None:
-            self.sifts.parse()
+        self.sifts = sifts
+        self.sifts_id_mapping = sifts_id_mapping
+        if sifts_id_mapping and self.sifts is None:
+            self.sifts = SIFTS()
+            if sifts_segment_mapping and sifts.df is None:
+                self.sifts.parse()
 
         if proteins is None:
+
+            if domains:
+                domains = ','.join(domains)
+                inputs = [f'{x}::{domains}' for x in inputs]
+
             processed_inputs = []
             for inp in tqdm(inputs, desc='Processing inputs'):
                 try:
                     processed_inputs.append(list(init(inp, self.sifts)))
                 except Exception as e:
-                    LOGGER.error(f'Failed to init input {inp} due to {e}')
+                    LOGGER.exception(f'Failed to init input {inp} due to {e}')
+
             self.proteins = list(flatten(processed_inputs))
         else:
             self.proteins = proteins
@@ -118,7 +121,8 @@ class lXtractor:
     def fetch_missing(self, uniprot: bool = True, pdb: bool = True) -> None:
 
         if uniprot:
-            missing_uniprot = [p for p in self.proteins if p.uniprot_seq is None and p.uniprot_id is not None]
+            missing_uniprot = [p for p in self.proteins
+                               if p.uniprot_seq is None and p.uniprot_id is not None]
             if missing_uniprot:
                 LOGGER.info(
                     f'Found {len(missing_uniprot)} proteins with no UniProt sequence')
@@ -670,210 +674,6 @@ def assign_variables(
         LOGGER.debug(
             f'Assigning {var} to protein {_id} domain {_domain}')
         assign(var, _id, _domain)
-
-
-def process_pdb_input(inp: str) -> t.Tuple[str, str, Structure]:
-    def parse_name(name: str) -> t.Tuple[str, str]:
-        if ':' in name:
-            name_split = name.split(':')
-            if len(name_split) != 2:
-                raise FormatError(
-                    f'Expected format PDB:Chain in the name of the file. '
-                    f'Got {name_split}')
-            _pdb_code, _chain_id = name_split
-        else:
-            _pdb_code, _chain_id = name, None
-        if len(_pdb_code) != 4:
-            raise FormatError(
-                f'Expected 4-letter PDB code in the name of the file. '
-                f'Got {_pdb_code}')
-        LOGGER.debug(f'Parsed {name} into {_pdb_code} and {_chain_id}')
-        return _pdb_code, _chain_id
-
-    if inp.endswith('.pdb'):
-        LOGGER.debug(f'Path to a PDB file expected in {inp}')
-        path = Path(inp)
-        if not (path.exists() or path.is_file()):
-            raise FormatError(f'Invalid path {inp}')
-        pdb_code, chain_id = parse_name(path.stem)
-        structure = PDBParser(QUIET=True).get_structure(
-            pdb_code.upper(), path)
-    else:
-        pdb_code, chain_id = parse_name(inp)
-        structure = None
-
-    if chain_id is not None:
-        chain_id = chain_id.upper()
-
-    pdb_code = pdb_code.upper()
-    LOGGER.debug(f'Parsed {inp} into PDB:{pdb_code},Chain:{chain_id},'
-                 f'Structure:{structure}')
-    return pdb_code.upper(), chain_id, structure
-
-
-def process_uniprot_input(inp: str) -> t.Tuple[str, SeqRec]:
-    # No special name parsing. We instead assume the provided ID
-    # to be a valid UniProt accession
-
-    if inp.endswith('.fasta'):
-        LOGGER.debug(f'Expecting a path to a fasta file in {inp}')
-        path = Path(inp)
-        if not (path.exists() or path.is_file()):
-            raise FormatError(f'Invalid path {inp}')
-        seqs = list(SeqIO.parse(path, 'fasta'))
-        if len(seqs) > 1:
-            LOGGER.warning(
-                f'Found {len(seqs)} sequences in {inp}. '
-                f'Assuming the first one to be a target seq.')
-        uniprot_id, seq = path.stem, seqs[0]
-    else:
-        uniprot_id, seq = inp, None
-    LOGGER.debug(f'Parsed {inp} into UniProt_ID:{uniprot_id},'
-                 f'Sequence={seq.id if seq is not None else None}')
-    return uniprot_id, seq
-
-
-def convert_to_attributes(inp: str) -> ProteinAttributes:
-    # First we separate domains from protein specs.
-    if _DomSep in inp:
-        LOGGER.debug(f'Found domain delimiter {_DomSep} in {inp}')
-        inp_split = inp.split('::')
-        if len(inp_split) > 2:
-            raise FormatError(
-                f'>1 {_DomSep} in {inp} is not allowed')
-        prot, domains = inp_split
-        domains = domains.split(',')
-    else:
-        prot, domains = inp, None
-
-    if ',' in prot:
-        prot_split = prot.split(',')
-        if len(prot_split) > 2:
-            raise FormatError(
-                f'Expected input {prot} to have two '
-                f'","-separated elements. '
-                f'Got {prot_split}')
-        uniprot_id, pdb = prot_split
-    elif '.pdb' in prot or ':' in prot or len(prot) == 4:
-        uniprot_id, pdb = None, prot
-    else:
-        uniprot_id, pdb = prot, None
-
-    if uniprot_id is None:
-        uniprot_id, sequence = None, None
-    else:
-        uniprot_id, sequence = process_uniprot_input(uniprot_id)
-
-    if pdb is None:
-        pdb_id, chain_id, structure = None, None, None
-    else:
-        pdb_id, chain_id, structure = process_pdb_input(pdb)
-
-    res = ProteinAttributes(
-        pdb_id, chain_id, structure, uniprot_id, sequence, domains)
-
-    LOGGER.debug(f'Parsed {inp} into attribute collection {res}')
-    return res
-
-
-def decompose_attributes(
-        var: ProteinAttributes, sifts: SIFTS
-) -> t.Iterator[ProteinAttributes]:
-    """
-    Helper function for initialization process, where each protein attains
-    a complete set of attributes.
-
-    :param var: a (possibly incomplete) set of attributes.
-    :param sifts: initialized :class:`lXtractor.sifts.SIFTS` mapping.
-    :return: iterator over variable sets
-        (sets of :class:`lXtractor.protein.Protein` attributes),
-        uniquely specifying a protein.
-    """
-
-    def infer_chains(pdb_id: str) -> t.List[str]:
-        assert len(pdb_id) == 4
-        _chains = list(
-            sifts.df.loc[sifts.df['PDB'] == pdb_id, 'Chain'].unique())
-        LOGGER.debug(f'Found {len(_chains)} for {pdb_id}: {_chains}')
-        if not _chains:
-            raise MissingData(
-                f'Failed to extract chain IDs from SIFTS '
-                f'for variable set {var}')
-        return _chains
-
-    if var.uniprot_id is None:
-        if var.pdb_id is None:
-            raise MissingData(
-                f'Expected to have PDB ID to infer UniProt ID '
-                f'for variable set: {var}')
-        chains = infer_chains(var.pdb_id) if var.chain_id is None else [var.chain_id]
-        pdb_chains = [f'{var.pdb_id}:{c}' for c in chains]
-        uniprot_ids = set(flatten(sifts.map_id(x) for x in pdb_chains))
-        LOGGER.debug(f'Found {len(uniprot_ids)} for PDB chains {pdb_chains}')
-        if not uniprot_ids:
-            raise MissingData(
-                f'Failed to extract UniProt IDs from SIFTS '
-                f'for variable set {var}')
-    elif var.pdb_id is None:
-        # if `True`, we expect no chains specified either
-        if var.uniprot_id is None:
-            raise MissingData(
-                f'Expected to have UniProt ID to infer PDB ID '
-                f'for variable set {var}'
-            )
-        pdb_chains = sifts.map_id(var.uniprot_id)
-        if pdb_chains is None:
-            raise MissingData(
-                f"Couldn't infer PDB IDs via UniProt ID {var.uniprot_id} using SIFTS")
-        LOGGER.debug(f'Found {len(pdb_chains)} for {var.uniprot_id}: {pdb_chains}')
-        uniprot_ids = [var.uniprot_id]
-    elif var.pdb_id is None and var.uniprot_id is None:
-        raise MissingData(
-            f'Expected to have either UniProt ID or PDB ID, but got neither '
-            f'for variable set {var}'
-        )
-    else:
-        chains = infer_chains(var.pdb_id) if var.chain_id is None else [var.chain_id]
-        pdb_chains = [f'{var.pdb_id}:{c}' for c in chains]
-        uniprot_ids = [var.uniprot_id]
-
-    # At this point we have:
-    # (1) A list of PDB:Chains (or a single one)
-    # (2) A list of UnIProt IDs (or a single one)
-    # Each combination is guaranteed to uniquely specify a `Protein` instance
-    for uni_id in uniprot_ids:
-        for pdb_chain in pdb_chains:
-            _pdb_id, _chain_id = pdb_chain.split(':')
-            # We deepcopy these objects so that manipulations within `Protein`
-            # do not change other `Protein` objects due to mutability or the
-            # `Protein`'s attributes.
-            structure = deepcopy(var.structure)
-            uniprot_seq = deepcopy(var.uniprot_seq)
-            yield ProteinAttributes(
-                _pdb_id, _chain_id, structure, uni_id,
-                uniprot_seq, var.domains)
-
-
-def init(inp: str, sifts: SIFTS) -> t.Iterator[Protein]:
-    # Parse initial input into a (merged) attributes
-    var = convert_to_attributes(inp)
-    LOGGER.debug(f'Parsed {inp} into attributes {var}')
-
-    # Decompose "merged" attributes into sets that uniquely identify
-    # `Protein` object: (pdb_id, chain_id, uniprot_id) at the minimum
-    decomposed = list(decompose_attributes(var, sifts))
-    LOGGER.debug(
-        f'Decomposed attributes into {len(decomposed)} sets')
-
-    # for each variable set -- initialize `Protein` object
-    for var in decomposed:
-        _id = f'{var.uniprot_id}_{var.pdb_id}:{var.chain_id}'
-        LOGGER.debug(f'Initializing protein {_id} by attributes {var}')
-        yield Protein(
-            _id=_id, dir_name=_id, pdb=var.pdb_id, chain=var.chain_id,
-            uniprot_id=var.uniprot_id, uniprot_seq=var.uniprot_seq,
-            expected_domains=var.domains, structure=var.structure,
-            variables={})
 
 
 if __name__ == '__main__':

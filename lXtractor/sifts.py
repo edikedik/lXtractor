@@ -21,8 +21,8 @@ import pandas as pd
 from more_itertools import unzip
 
 from lXtractor import resources as local
-from .utils import download_to_file
-from .base import AbstractResource, Segment, OverlapError, LengthMismatch
+from .utils import download_to_file, col2col
+from .base import AbstractResource, Segment, OverlapError, LengthMismatch, MissingData
 
 LOGGER = logging.getLogger(__name__)
 SIFTS_FTP = 'ftp://ftp.ebi.ac.uk/pub/databases/msd/sifts/flatfiles/csv/uniprot_segments_observed.csv.gz'
@@ -124,19 +124,18 @@ class SIFTS(AbstractResource):
         if load_id_mapping:
             self.id_mapping = _soft_load_resource(ID_MAPPING)
         else:
-            self.id_mapping = (None if self.df is None else self._map_ids(df))
+            self.id_mapping = (None if self.df is None else self._prepare_id_map(df))
 
         resource_path = resource_path or SIFTS_PATH
         self.renames = dict(SIFTS_RENAMES)
         super().__init__(resource_path, resource_name)
 
-    def _map_ids(self, df: pd.DataFrame):
-        sub = df[['UniProt_ID', 'PDB_Chain']]
+    def _prepare_id_map(self, df: pd.DataFrame):
         self.id_mapping = {
-            **sub.groupby('UniProt_ID').agg(
-                lambda x: list(x.unique())).to_dict()['PDB_Chain'],
-            **sub.groupby('PDB_Chain').agg(
-                lambda x: list(x.unique())).to_dict()['UniProt_ID']}
+            **col2col(df, 'UniProt_ID', 'PDB_Chain'),
+            **col2col(df, 'PDB_Chain', 'UniProt_ID'),
+            **col2col(df, 'PDB', 'Chain'),
+        }
         LOGGER.debug('Created mapping UniProt ID <-> PDB ID')
 
     def _store(self):
@@ -167,7 +166,7 @@ class SIFTS(AbstractResource):
         return df
 
     def parse(
-            self, overwrite: bool = True,
+            self, overwrite: bool = False,
             store_to_resources: bool = True) -> pd.DataFrame:
         """
         Prepare the resource to be used for mapping:
@@ -214,7 +213,7 @@ class SIFTS(AbstractResource):
         if overwrite:
             self.df = df
 
-        self._map_ids(df)
+        self._prepare_id_map(df)
 
         if store_to_resources:
             self._store()
@@ -271,7 +270,7 @@ class SIFTS(AbstractResource):
         sel_column = self._parse_obj_id(obj_id)
 
         if self.df is None:
-            self.parse()
+            raise MissingData('No SIFTS df found; try calling .parse() first')
 
         sub = self.df[self.df[sel_column] == obj_id]
         LOGGER.debug(
@@ -291,11 +290,13 @@ class SIFTS(AbstractResource):
 
     def map_id(self, _id: str) -> t.Optional[t.List[str]]:
         if self.id_mapping is None:
-            self._map_ids(self.df)
+            self._prepare_id_map(self.df)
         if _id not in self.id_mapping:
             LOGGER.warning(f"Couldn't find {_id} in SIFTS")
             return None
         return self.id_mapping[_id]
+
+
 
 
 def wrap_into_segments(df: pd.DataFrame) -> t.Tuple[t.List[Segment], t.List[Segment]]:

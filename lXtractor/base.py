@@ -1,5 +1,6 @@
 import typing as t
 from abc import ABCMeta, abstractmethod
+from collections import namedtuple
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -12,7 +13,7 @@ T = t.TypeVar('T')
 _Fetcher = t.Callable[[t.Iterable[str]], T]
 _Getter = t.Callable[[T, t.Sequence[str]], t.Sequence[str]]
 _StrSep = '--'
-_DomSep = '::'
+InputSeparators = namedtuple('InputSeparators', ['list', 'chain', 'dom', 'uni_pdb'])
 
 
 class AminoAcidDict:

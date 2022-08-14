@@ -5,11 +5,13 @@ import typing as t
 import urllib
 from collections import UserDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from itertools import groupby
 from pathlib import Path
 from shutil import copyfileobj
 from tempfile import NamedTemporaryFile
 from time import sleep
 
+import pandas as pd
 import ray
 import requests
 from Bio import SeqIO
@@ -337,6 +339,11 @@ def subset_by_idx(seq: SeqRec, idx: t.Sequence[int], start=1):
     new_id = f'{seq.id}/{start}-{end}'
     return SeqRec(Seq(sub), new_id, new_id, new_id)
 
+
+def col2col(df: pd.DataFrame, col_fr: str, col_to: str):
+    sub = df[[col_fr, col_to]].drop_duplicates().sort_values([col_fr, col_to])
+    groups = groupby(zip(sub[col_fr], sub[col_to]), key=lambda x: x[0])
+    return {k: [x[1] for x in group] for k, group in groups}
 
 if __name__ == '__main__':
     raise RuntimeError
