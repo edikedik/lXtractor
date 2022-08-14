@@ -41,7 +41,9 @@ class PDB:
             meta_fields: t.Optional[t.Tuple[str, ...]] = META_FIELDS,
             expected_method: t.Optional[str] = 'x-ray diffraction',
             min_resolution: t.Optional[int] = None,
-            pdb_dir: t.Optional[Path] = None, verbose: bool = False):
+            pdb_dir: t.Optional[Path] = None,
+            verbose: bool = False,
+    ):
         """
         :param max_retries: a maximum number of fetching attempts.
         :param num_threads: a number of threads for the ``ThreadPoolExecutor``.
@@ -58,7 +60,7 @@ class PDB:
         self.num_threads = num_threads
         self.meta_fields = tuple(meta_fields)
         self.expected_method = expected_method
-        self.min_resoultion = min_resolution
+        self.min_resolution = min_resolution
         if pdb_dir is not None:
             pdb_dir.mkdir(parents=True, exist_ok=True)
         self.pdb_dir = pdb_dir
@@ -73,8 +75,7 @@ class PDB:
             if p is None:
                 raise MissingData(f'Missing PDB ID for {p}')
             if len(p.pdb) != 4:
-                raise AmbiguousData(
-                    f'Not a valid PDB ID {p.pdb} for {p}')
+                raise AmbiguousData(f'Not a valid PDB ID {p.pdb} for {p}')
 
     def fetch(
             self, proteins: t.Collection[Protein],
@@ -135,14 +136,14 @@ class PDB:
                     f'Meta fields: {_meta}')
                 return False
             if _meta is None or (
-                    self.min_resoultion is None and
+                    self.min_resolution is None and
                     self.expected_method is None):
                 LOGGER.debug(
                     f'No metadata or filtering criteria -> '
                     f'accepting result {result}')
                 return True
             _meta = dict(_meta)
-            if self.min_resoultion is not None:
+            if self.min_resolution is not None:
                 resolution = _meta.get(resolution_field)
                 if resolution is None:
                     LOGGER.warning(
@@ -157,7 +158,7 @@ class PDB:
                             f'{resolution_field} of {result}')
                         accept_resolution = False
                     else:
-                        accept_resolution = resolution <= self.min_resoultion
+                        accept_resolution = resolution <= self.min_resolution
             else:
                 accept_resolution = True
             if self.expected_method is not None:
@@ -187,8 +188,8 @@ class PDB:
 
         # Download unique IDs
         _ids = set(p.pdb for p in proteins)
-        LOGGER.debug(
-            f'Found {len(_ids)} unique PDB IDs to fetch: {_ids}')
+        LOGGER.debug(f'Found {len(_ids)} unique PDB IDs to fetch: {_ids}')
+
         results, remaining = try_fetching_until(
             _ids,
             fetcher=fetcher,
@@ -296,8 +297,7 @@ def fetch_pdb(
 
     results = fetch_iterable(ids, fetch_chunk, chunk_size=1, num_threads=num_threads, verbose=verbose)
 
-    return list(map(
-        wrap_raw_pdb(meta_fields=meta_fields), results))
+    return list(map(wrap_raw_pdb(meta_fields=meta_fields), results))
 
 
 def read_pdb(

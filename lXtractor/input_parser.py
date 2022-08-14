@@ -23,7 +23,6 @@ ProteinAttributes = t.NamedTuple(
         ('domains', t.Optional[t.Sequence[str]])
     ])
 Sep = InputSeparators(',', ':', '::', '_')
-EmptyVal = '?'
 
 
 def parse_pdb_input(inp: str) -> t.Tuple[str, t.Optional[Structure]]:

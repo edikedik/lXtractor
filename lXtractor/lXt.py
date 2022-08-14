@@ -3,6 +3,7 @@ import typing as t
 from itertools import starmap, product, chain, tee, filterfalse
 from pathlib import Path
 
+import pandas as pd
 import ray
 from Bio.PDB.Structure import Structure
 from more_itertools import flatten, peekable, ilen
@@ -12,8 +13,8 @@ from tqdm.auto import tqdm
 from lXtractor.alignment import Alignment, mafft_align, map_pairs_numbering
 from lXtractor.base import (
     SeqRec, FormatError, MissingData, AbstractVariable,
-    FailedCalculation, Seq, Domain, AminoAcidDict)
-from lXtractor.domains import extract_uniprot_domains, extract_pdb_domains
+    FailedCalculation, Seq, Domain, AminoAcidDict, InputSeparators)
+from lXtractor.domains import extract_pdb_domains
 from lXtractor.input_parser import init
 from lXtractor.pdb import PDB, get_sequence, wrap_raw_pdb
 from lXtractor.protein import Protein
@@ -25,6 +26,7 @@ from lXtractor.variables import _ParsedVariables, parse_variables
 _DomainList = t.Sequence[t.Tuple[str, t.Union[str, t.Sequence[str]]]]
 _VariableSetup = t.Tuple[AbstractVariable, t.Optional[str], t.Optional[str]]
 _ChainLevel = 'Chain'
+Sep = InputSeparators(',', ':', '::', '_')
 LOGGER = logging.getLogger(__name__)
 
 # TODO: extend docs
@@ -39,25 +41,24 @@ class lXtractor:
     def __init__(
             self, inputs: t.Optional[t.Sequence[str]] = None,
             proteins: t.Optional[t.List[Protein]] = None,
-            domains: t.Optional[t.Sequence[str]] = None,
+            domains: t.Optional[t.Union[t.Sequence[str]]] = None,
             uniprot: t.Optional[UniProt] = None,
             pdb: t.Optional[PDB] = None,
             sifts: t.Optional[SIFTS] = None,
             sifts_id_mapping: bool = True,
             sifts_segment_mapping: bool = False,
             alignment: t.Optional[Alignment] = None,
-            pdb_dir: t.Optional[Path] = None,
     ):
 
         if inputs is None and proteins is None:
             raise ValueError('Must provide either ``inputs`` or ``proteins``')
 
         self.alignment = alignment
-        if pdb_dir is not None and not pdb_dir.exists():
-            pdb_dir.mkdir(parents=True)
-        self.pdb_dir = pdb_dir
-        self.pdb = pdb or PDB(pdb_dir=pdb_dir)
+        self.pdb = pdb or PDB()
         self.uniprot = uniprot or UniProt()
+
+        if isinstance(domains, str):
+            domains = [domains]
         self.domains = domains
 
         self.sifts = sifts
@@ -71,7 +72,9 @@ class lXtractor:
 
             if domains:
                 domains = ','.join(domains)
-                inputs = [f'{x}::{domains}' for x in inputs]
+                inputs = [
+                    f'{x}{Sep.dom}{domains}' if Sep.dom not in x else x
+                    for x in inputs]
 
             processed_inputs = []
             for inp in tqdm(inputs, desc='Processing inputs'):
@@ -118,31 +121,48 @@ class lXtractor:
     def __iter__(self):
         return iter(self.proteins)
 
-    def fetch_missing(self, uniprot: bool = True, pdb: bool = True) -> None:
+    def fetch_uniprot(
+            self, missing: bool = True, keep_expected: bool = True,
+            uniprot: t.Optional[UniProt] = None, **kwargs
+    ) -> t.Optional[pd.DataFrame]:
+        expected_domains = self.domains
+        if keep_expected and not expected_domains:
+            LOGGER.warning('`keep_expected` is true but `domains` attribute is empty')
+        if uniprot is None:
+            if self.uniprot is None:
+                raise ValueError('No UniProt instance initialized')
+            uniprot = self.uniprot
+        proteins = list(filter(
+            lambda p: p.uniprot_id is not None and (
+                    not missing or p.uniprot_seq is None or not p.domains),
+            self.proteins))
 
-        if uniprot:
-            missing_uniprot = [p for p in self.proteins
-                               if p.uniprot_seq is None and p.uniprot_id is not None]
-            if missing_uniprot:
-                LOGGER.info(
-                    f'Found {len(missing_uniprot)} proteins with no UniProt sequence')
-                self.uniprot.fetch_fasta(missing_uniprot)
-        if pdb:
-            missing_pdb = [p for p in self.proteins if p.structure is None and p.pdb is not None]
-            if missing_pdb:
-                LOGGER.info(
-                    f'Found {len(missing_pdb)} proteins with no PDB structure')
-                self.pdb.fetch(missing_pdb)
+        LOGGER.info(f'Found {len(proteins)} to fetch UniProt data')
+        df = None
+        if proteins:
+            _, df = uniprot.fetch_proteins_data(
+                proteins, keep_expected_if_any=keep_expected, **kwargs)
+        return df
+
+    def fetch_pdb(self, missing: bool = True) -> None:
+        if self.pdb is None:
+            raise ValueError('No PDB instance initialized')
+        proteins = list(filter(
+            lambda p: p.pdb is not None and (not missing or p.structure is None),
+            self.proteins))
+        LOGGER.info(f'Found {len(proteins)} to fetch PDB data')
+        if proteins:
+            self.pdb.fetch(proteins)
 
     def map_uni_pdb(
-            self, ignore_existing: bool = False,
+            self, missing: bool = True,
             alignment_based: bool = False,
             length_cap: t.Optional[int] = None):
 
         if alignment_based:
             proteins = [
                 p for p in self.proteins if
-                (not p.uni_pdb_map or ignore_existing) and
+                (not p.uni_pdb_map or missing) and
                 p.structure and
                 (p.uniprot_seq or p.uni_pdb_aln) and
                 (length_cap is None or len(p.uniprot_seq) < length_cap)
@@ -150,16 +170,22 @@ class lXtractor:
         else:
             proteins = [
                 p for p in self.proteins if
-                (not p.uni_pdb_map or ignore_existing) and
+                (not p.uni_pdb_map or missing) and
                 p.pdb and p.chain and p.uniprot_id
             ]
-        LOGGER.info(
-            f'Found {len(proteins)} proteins to map numbering')
+
+        LOGGER.info(f'Found {len(proteins)} proteins to map numbering')
+
         if proteins:
+
             if alignment_based:
+                method = 'MSA'
                 self.map_with_alignment(proteins)
             else:
+                method = 'SIFTS'
                 self.map_with_sifts(proteins)
+
+            LOGGER.info(f'Used {method}-based mapping on {len(proteins)} proteins')
 
     def map_with_sifts(self, proteins: t.Optional[t.Sequence[Protein]] = None):
         proteins = proteins or self.proteins
@@ -189,53 +215,6 @@ class lXtractor:
                              f'due to error {mapping}')
                 continue
             proteins[p_id].uni_pdb_map = mapping
-
-    def fetch_domain_boundaries(self) -> None:
-        def partial_match(s1: str, s2: str) -> bool:
-            return s1 in s2 or s2 in s1
-
-        proteins = self.uniprot.fetch_domains(self.proteins)
-        for p in proteins:
-            if not p.domains:
-                LOGGER.warning(f'No domains extracted for proteins {p.id}')
-                continue
-            if p.expected_domains is not None:
-                missing = set()
-                for exp in p.expected_domains:
-                    if not any(partial_match(exp, d) for d in p.domains):
-                        missing.add(exp)
-                if missing:
-                    LOGGER.warning(
-                        f"Among the expected domains {p.expected_domains} "
-                        f"for protein {p.id} "
-                        f"failed to extract the following: {missing}")
-            LOGGER.debug(
-                f'Assigned sequence domains {list(p.domains)} to protein {p.id}')
-
-    def fetch_meta(self, fields=('entry_name', 'families')) -> None:
-
-        proteins = [p for p in self.proteins if p.uniprot_id is not None]
-        LOGGER.info(f'Fetching metadata for {len(proteins)} '
-                    f'out of {len(self.proteins)} proteins')
-        self.uniprot.fetch_meta(proteins, fields=fields)
-
-    def extract_sequence_domains(self, keep_parent: bool = True) -> None:
-        # TODO: rm
-
-        proteins = [p for p in self.proteins if not any(
-            [p.uniprot_seq is None, p.domains is None])]
-
-        LOGGER.info(f'Found {len(proteins)} proteins for '
-                    f'sequence domains extraction.')
-
-        for p in tqdm(
-                proteins, desc='Extracting sequence domains',
-                position=0, leave=True):
-            try:
-                extract_uniprot_domains(p, keep_parent)
-            except MissingData as e:
-                LOGGER.warning(
-                    f'Failed to extract UniProt domains due to error {e}')
 
     def extract_structure_domains(self, parallel: bool = False) -> None:
 

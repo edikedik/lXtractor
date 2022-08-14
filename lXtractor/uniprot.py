@@ -79,8 +79,10 @@ class UniProt:
             self, proteins: t.Sequence[Protein],
             overwrite: bool = False,
             complement: bool = True,
+            keep_expected_if_any: bool = True,
             base_fields: str = 'accession,id,sequence,ft_domain',
             meta_fields: t.Optional[str] = None,
+            **kwargs
     ) -> t.Tuple[t.List[Protein], pd.DataFrame]:
         """
         Fetches data from UniProt and populates ``protein.Protein`` instances.
@@ -94,11 +96,13 @@ class UniProt:
         :param base_fields: Do not change this value.
         :param meta_fields: Additional ","-separated field names
             (see ``base.MetaColumns`` for available column names).
+        :param expected_domains: Expected domain names.
+            If provided, initialize only these ``Domain`` instances.
         :return: (a list of populated proteins, a DataFrame as fetched from UniProt)
         """
 
         def fetcher(acc: t.Iterable[str]) -> pd.DataFrame:
-            df = self.fetch_tsv(acc, fields=fields)
+            df = self.fetch_tsv(acc, fields=fields, **kwargs)
             num_ids = len(df['accession'].unique())
             LOGGER.debug(f'Obtained {len(df)} rows for {num_ids} IDs')
             return df
@@ -160,7 +164,7 @@ class UniProt:
         if meta_fields:
             fields = f'{base_fields},{meta_fields}'
 
-        LOGGER.info(f'Will try fetching {len(fields)} metadata fields '
+        LOGGER.info(f'Attempting {len(fields.split(","))} metadata fields '
                     f'for {len(proteins)} proteins')
 
         # Fetch and join `DataFrame`s
@@ -186,7 +190,15 @@ class UniProt:
                 if meta_fields:
                     populate_meta(prot, row)
                 for d in domains:
-                    populate_dom(prot, d)
+                    if keep_expected_if_any:
+                        if prot.expected_domains:
+                            if d[-1] in prot.expected_domains:
+                                LOGGER.debug(f'{prot.id}: Keeping expected domain {d[-1]}')
+                                populate_dom(prot, d)
+                            else:
+                                LOGGER.debug(f'{prot.id}: Omitting unexpected domain {d[-1]}')
+                    else:
+                        populate_dom(prot, d)
 
         return list(flatten(groups.values())), df
 
