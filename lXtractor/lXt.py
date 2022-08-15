@@ -1,8 +1,10 @@
 import logging
 import typing as t
+from copy import deepcopy, copy
 from itertools import starmap, product, chain, tee, filterfalse
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import ray
 from Bio.PDB.Structure import Structure
@@ -26,6 +28,7 @@ from lXtractor.variables import _ParsedVariables, parse_variables
 _DomainList = t.Sequence[t.Tuple[str, t.Union[str, t.Sequence[str]]]]
 _VariableSetup = t.Tuple[AbstractVariable, t.Optional[str], t.Optional[str]]
 _ChainLevel = 'Chain'
+_KeyT = t.Union[int, str, slice, t.Sequence[bool], np.ndarray]
 Sep = InputSeparators(',', ':', '::', '_')
 LOGGER = logging.getLogger(__name__)
 
@@ -62,7 +65,6 @@ class lXtractor:
         self.domains = domains
 
         self.sifts = sifts
-        self.sifts_id_mapping = sifts_id_mapping
         if sifts_id_mapping and self.sifts is None:
             self.sifts = SIFTS()
             if sifts_segment_mapping and sifts.df is None:
@@ -95,31 +97,74 @@ class lXtractor:
     def __repr__(self) -> str:
         return f'lXtractor(id={id(self)},proteins={len(self)})'
 
-    def __getitem__(
-            self, id_: t.Union[int, str]
-    ) -> t.Optional[t.Union[Protein, t.List[Protein]]]:
-        if isinstance(id_, int):
-            return self.proteins[id_]
+    def __getitem__(self, key: _KeyT) -> t.Optional[t.Union[Protein, t.List[Protein]]]:
+        def get_one_or_more(xs):
+            if len(xs) > 1:
+                return xs
+            if  len(xs) == 1:
+                return xs.pop()
+            return None
 
-        prots = list(filter(lambda p: p.id == id_, self.proteins))
-        if len(prots) == 1:
-            return prots.pop()
-        if len(prots) > 1:
-            return prots
-        if ':' in id_:
-            return list(filter(
-                lambda p: f'{p.pdb}:{p.chain}' == id_,
+        # INT or SLICE
+        if isinstance(key, int) or isinstance(key, slice):
+            return self.proteins[key]
+
+        # Sequence or boolean
+        if not isinstance(key, str) and (isinstance(key, t.Sequence) or isinstance(key, np.ndarray)):
+            if len(key) != len(self.proteins):
+                raise IndexError(
+                    f'For boolean indexing, length of the idx ({len(key)}) '
+                    f'must match the number of proteins ({len(self.proteins)}')
+            return [x for x, b in zip(self.proteins, key) if b]
+
+        # Full ID
+        if '_' in key:
+            ps = list(filter(lambda p: p.id == key, self.proteins))
+
+        # PDB_ID:CHAIN
+        elif ':' in key:
+            ps = list(filter(
+                lambda p: f'{p.pdb}:{p.chain}' == key,
                 self.proteins))
-        prots = list(filter(lambda p: p.uniprot_id == id_, self.proteins))
-        if prots:
-            return prots
-        prots = list(filter(lambda p: p.pdb == id_, self.proteins))
-        if prots:
-            return prots
-        return None
+
+        # PDB_ID
+        elif len(key) == 4:
+            ps = list(
+                filter(lambda p: p.pdb == key, self.proteins))
+
+        # UniProt ID
+        else:
+            ps = list(
+                filter(lambda p: p.uniprot_id == key, self.proteins))
+
+        return get_one_or_more(ps)
+
+    def __copy__(self, **kwargs) -> "lXtractor":
+        """
+        """
+        ps = [copy(p) for p in self.proteins]
+        return self.__class__(
+            proteins=ps, domains=self.domains, uniprot=self.uniprot, pdb=self.pdb,
+            sifts=self.sifts, alignment=self.alignment)
+
+    def __deepcopy__(self, *args, **kwargs) -> "lXtractor":
+        ps = [deepcopy(p, *args, **kwargs) for p in self.proteins]
+        return self.__class__(
+            proteins=ps, domains=self.domains, uniprot=self.uniprot, pdb=self.pdb,
+            sifts=self.sifts, alignment=self.alignment)
 
     def __iter__(self):
         return iter(self.proteins)
+
+    def subset(self, key: _KeyT, deep: bool = False) -> "lXtractor":
+        ps = self.__getitem__(key)
+        if isinstance(ps, Protein):
+            ps = [ps]
+        tmp = self.proteins
+        self.proteins = ps
+        new_lxt = deepcopy(self) if deep else copy(self)
+        self.proteins = tmp
+        return new_lxt
 
     def fetch_uniprot(
             self, missing: bool = True, keep_expected: bool = True,
@@ -300,10 +345,7 @@ class lXtractor:
         assign_variables(variables, self.proteins)
         LOGGER.debug(f'Successfully assigned variables')
 
-    def map_to_alignment(
-            self, alignment: Alignment,
-            skip_mapped: bool = True
-    ) -> None:
+    def map_to_alignment(self, alignment: Alignment, missing: bool = True) -> None:
         def get_structure(
                 obj: t.Union[Domain, Protein]
         ) -> Structure:
@@ -327,14 +369,14 @@ class lXtractor:
 
         proteins = [
             p for p in self.proteins if (p.variables and p.structure and (
-                    not skip_mapped or not p.aln_mapping))]
+                    not missing or not p.aln_mapping))]
         LOGGER.info(f'Found {len(proteins)} full protein chains '
                     f'for mapping to the alignment')
 
         domains = [
             d for d in flatten(p.domains.values() for p in self.proteins)
             if d.variables and d.pdb_sub_structure and (
-                    not skip_mapped or not d.aln_mapping)]
+                    not missing or not d.aln_mapping)]
         LOGGER.info(f'Found {len(domains)} domains for mapping to the alignment')
 
         groups = group_unique_seqs(chain(proteins, domains))
