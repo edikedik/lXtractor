@@ -127,7 +127,7 @@ def infer_and_explode_attributes(
             f'Expected to have either UniProt ID or PDB ID, but got neither '
             f'for variable set {var}')
 
-    if var.uniprot_id is None:
+    elif var.uniprot_id is None:
 
         chains = [var.chain_id]
 
@@ -138,7 +138,7 @@ def infer_and_explode_attributes(
         uniprot_ids = set(flatten(sifts.map_id(x) for x in pdb_chains))
         LOGGER.debug(f'Found {len(uniprot_ids)} UniProt IDs for PDB chains {pdb_chains}')
 
-    else:
+    elif var.pdb_id is None:
         uniprot_ids = [var.uniprot_id]
         pdb_chains = sifts.id_mapping[var.uniprot_id]
 
@@ -146,6 +146,11 @@ def infer_and_explode_attributes(
             pdb_chains = sorted({f"{x.split(':')[0]}:{var.chain_id}" for x in pdb_chains})
 
         LOGGER.debug(f'Found {len(pdb_chains)} chains for {var.uniprot_id}: {pdb_chains}')
+
+    else:
+        uniprot_ids = [var.uniprot_id]
+        chains = get_chains(var.pdb_id) if var.chain_id is None else [var.chain_id]
+        pdb_chains = sorted({f"{var.pdb_id}:{с}" for с in chains})
 
     # else:
     #     chains = get_chains(var.pdb_id) if var.chain_id is None else [var.chain_id]
