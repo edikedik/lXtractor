@@ -9,14 +9,15 @@ import pandas as pd
 import ray
 from Bio.PDB.Structure import Structure
 from more_itertools import flatten, peekable, ilen
-from toolz import groupby, curry
+from toolz import groupby, curry, pipe
+from toolz.curried import filter, map
 from tqdm.auto import tqdm
 
-from lXtractor.alignment import Alignment, mafft_align, map_pairs_numbering
+from lXtractor.alignment import Alignment, mafft_align, map_pairs_numbering, _Align_method
 from lXtractor.base import (
     SeqRec, FormatError, MissingData, AbstractVariable,
     FailedCalculation, Seq, Domain, AminoAcidDict, InputSeparators)
-from lXtractor.domains import extract_pdb_domains
+from lXtractor.cutters import extract_pdb_domains
 from lXtractor.input_parser import init
 from lXtractor.pdb import PDB, get_sequence, wrap_raw_pdb
 from lXtractor.protein import Protein
@@ -44,7 +45,7 @@ class lXtractor:
     def __init__(
             self, inputs: t.Optional[t.Sequence[str]] = None,
             proteins: t.Optional[t.List[Protein]] = None,
-            domains: t.Optional[t.Union[t.Sequence[str]]] = None,
+            expected_domains: t.Optional[t.Union[t.Sequence[str]]] = None,
             uniprot: t.Optional[UniProt] = None,
             pdb: t.Optional[PDB] = None,
             sifts: t.Optional[SIFTS] = None,
@@ -60,22 +61,23 @@ class lXtractor:
         self.pdb = pdb or PDB()
         self.uniprot = uniprot or UniProt()
 
-        if isinstance(domains, str):
-            domains = [domains]
-        self.domains = domains
+        if isinstance(expected_domains, str):
+            expected_domains = [expected_domains]
+        self.expected_domains = expected_domains
 
         self.sifts = sifts
         if sifts_id_mapping and self.sifts is None:
-            self.sifts = SIFTS()
-            if sifts_segment_mapping and sifts.df is None:
+            self.sifts = SIFTS(load_segments=sifts_segment_mapping,
+                               load_id_mapping=sifts_id_mapping)
+            if sifts_segment_mapping and self.sifts.df is None:
                 self.sifts.parse()
 
         if proteins is None:
 
-            if domains:
-                domains = ','.join(domains)
+            if expected_domains:
+                expected_domains = ','.join(expected_domains)
                 inputs = [
-                    f'{x}{Sep.dom}{domains}' if Sep.dom not in x else x
+                    f'{x}{Sep.dom}{expected_domains}' if Sep.dom not in x else x
                     for x in inputs]
 
             processed_inputs = []
@@ -144,17 +146,21 @@ class lXtractor:
         """
         ps = [copy(p) for p in self.proteins]
         return self.__class__(
-            proteins=ps, domains=self.domains, uniprot=self.uniprot, pdb=self.pdb,
+            proteins=ps, expected_domains=self.expected_domains, uniprot=self.uniprot, pdb=self.pdb,
             sifts=self.sifts, alignment=self.alignment)
 
     def __deepcopy__(self, *args, **kwargs) -> "lXtractor":
         ps = [deepcopy(p, *args, **kwargs) for p in self.proteins]
         return self.__class__(
-            proteins=ps, domains=self.domains, uniprot=self.uniprot, pdb=self.pdb,
+            proteins=ps, expected_domains=self.expected_domains, uniprot=self.uniprot, pdb=self.pdb,
             sifts=self.sifts, alignment=self.alignment)
 
     def __iter__(self):
         return iter(self.proteins)
+
+    @property
+    def domains(self) -> t.List[Domain]:
+        return list(chain.from_iterable(p.domains.values() for p in self))
 
     def subset(self, key: _KeyT, deep: bool = False) -> "lXtractor":
         ps = self.__getitem__(key)
@@ -170,7 +176,7 @@ class lXtractor:
             self, missing: bool = True, keep_expected: bool = True,
             uniprot: t.Optional[UniProt] = None, **kwargs
     ) -> t.Optional[pd.DataFrame]:
-        expected_domains = self.domains
+        expected_domains = self.expected_domains
         if keep_expected and not expected_domains:
             LOGGER.warning('`keep_expected` is true but `domains` attribute is empty')
         if uniprot is None:
@@ -261,6 +267,99 @@ class lXtractor:
                 continue
             proteins[p_id].uni_pdb_map = mapping
 
+    def align(self, domain: t.Optional[t.Union[str, t.Container[str]]] = None,
+              pdb: bool = True, method: _Align_method = mafft_align) -> Alignment:
+
+        def accept(obj: t.Union[Protein, Domain]):
+            if domain:
+                if isinstance(obj, Domain) and obj.name in domain:
+                    return True
+                return False
+            else:
+                return True
+
+        if domain is not None:
+            if isinstance(domain, str):
+                domain = [domain]
+            obj_type = 'domain'
+            objs = self.domains
+        else:
+            obj_type = 'protein'
+            objs = self.proteins
+
+        seqs = pipe(
+            objs,
+            filter(accept),
+            map(lambda x: x.pdb_seq if pdb else x.uniprot_seq),
+            filter(lambda x: x is not None),
+            list)
+
+        LOGGER.debug(f'Found {len(seqs)} {obj_type} sequences to align')
+
+        seqs = method(seqs)
+
+        LOGGER.info(f'Aligned {len(seqs)} {obj_type} sequences')
+
+        return Alignment(seqs=seqs)
+
+    def map_to_alignment(self, alignment: Alignment, missing: bool = True) -> None:
+        def get_structure(
+                obj: t.Union[Domain, Protein]
+        ) -> Structure:
+            return (
+                obj.structure if isinstance(obj, Protein)
+                else obj.pdb_sub_structure)
+
+        def group_unique_seqs(
+                objs: t.Iterable[t.Union[Domain, Protein]],
+        ) -> t.Dict[t.Tuple[str, t.Tuple[int, ...]], t.Dict[int, int]]:
+            staged = (
+                (obj, get_structure(obj))
+                for obj in objs)
+            staged = (
+                (obj,
+                 get_sequence(structure),
+                 tuple(r.get_id()[1] for r in structure.get_residues())
+                 ) for obj, structure in staged
+            )
+            return groupby(lambda x: (x[1], x[2]), staged)
+
+        proteins = [
+            p for p in self.proteins if (p.variables and p.structure and (
+                    not missing or not p.aln_mapping))]
+        LOGGER.info(f'Found {len(proteins)} full protein chains '
+                    f'for mapping to the alignment')
+
+        domains = [
+            d for d in flatten(p.domains.values() for p in self.proteins)
+            if d.variables and d.pdb_sub_structure and (
+                    not missing or not d.aln_mapping)]
+        LOGGER.info(f'Found {len(domains)} domains for mapping to the alignment')
+
+        groups = group_unique_seqs(chain(proteins, domains))
+        LOGGER.info(f'Found {len(groups)} unique sequences to map')
+
+        aln_remote = ray.put(alignment)
+        bar = tqdm(
+            desc='Mapping to an MSA', total=len(groups), position=0, leave=True)
+        handles = [
+            map_to_alignment_remote.remote(seq, numbering, aln_remote)
+            for seq, numbering in groups]
+        results = run_handles(handles, bar)
+
+        for seq, numbering, mapping in results:
+            objects = [_obj for _obj, _, _ in groups[(seq, numbering)]]
+            if not isinstance(mapping, t.Dict):
+                ids = [_obj.id if isinstance(_obj, Protein) else f'{_obj.id}({_obj.parent_name})'
+                       for _obj in objects]
+                LOGGER.warning(
+                    f'Failed to map sequence of the group {ids} '
+                    f'due to error {mapping}')
+                continue
+            for _obj in objects:
+                _obj.aln_mapping = mapping
+                LOGGER.debug(f'Assigned new aln mapping to {_obj.id}')
+
     def extract_structure_domains(self, parallel: bool = False) -> None:
 
         proteins = {
@@ -344,64 +443,6 @@ class lXtractor:
 
         assign_variables(variables, self.proteins)
         LOGGER.debug(f'Successfully assigned variables')
-
-    def map_to_alignment(self, alignment: Alignment, missing: bool = True) -> None:
-        def get_structure(
-                obj: t.Union[Domain, Protein]
-        ) -> Structure:
-            return (
-                obj.structure if isinstance(obj, Protein)
-                else obj.pdb_sub_structure)
-
-        def group_unique_seqs(
-                objs: t.Iterable[t.Union[Domain, Protein]],
-        ) -> t.Dict[t.Tuple[str, t.Tuple[int, ...]], t.Dict[int, int]]:
-            staged = (
-                (obj, get_structure(obj))
-                for obj in objs)
-            staged = (
-                (obj,
-                 get_sequence(structure),
-                 tuple(r.get_id()[1] for r in structure.get_residues())
-                 ) for obj, structure in staged
-            )
-            return groupby(lambda x: (x[1], x[2]), staged)
-
-        proteins = [
-            p for p in self.proteins if (p.variables and p.structure and (
-                    not missing or not p.aln_mapping))]
-        LOGGER.info(f'Found {len(proteins)} full protein chains '
-                    f'for mapping to the alignment')
-
-        domains = [
-            d for d in flatten(p.domains.values() for p in self.proteins)
-            if d.variables and d.pdb_sub_structure and (
-                    not missing or not d.aln_mapping)]
-        LOGGER.info(f'Found {len(domains)} domains for mapping to the alignment')
-
-        groups = group_unique_seqs(chain(proteins, domains))
-        LOGGER.info(f'Found {len(groups)} unique sequences to map')
-
-        aln_remote = ray.put(alignment)
-        bar = tqdm(
-            desc='Mapping to an MSA', total=len(groups), position=0, leave=True)
-        handles = [
-            map_to_alignment_remote.remote(seq, numbering, aln_remote)
-            for seq, numbering in groups]
-        results = run_handles(handles, bar)
-
-        for seq, numbering, mapping in results:
-            objects = [_obj for _obj, _, _ in groups[(seq, numbering)]]
-            if not isinstance(mapping, t.Dict):
-                ids = [_obj.id if isinstance(_obj, Protein) else f'{_obj.id}({_obj.parent_name})'
-                       for _obj in objects]
-                LOGGER.warning(
-                    f'Failed to map sequence of the group {ids} '
-                    f'due to error {mapping}')
-                continue
-            for _obj in objects:
-                _obj.aln_mapping = mapping
-                LOGGER.debug(f'Assigned new aln mapping to {_obj.id}')
 
     def calculate_variables(self) -> None:
 

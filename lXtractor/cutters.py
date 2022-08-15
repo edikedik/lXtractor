@@ -76,7 +76,7 @@ def cut_structure(
             f'Will use the former instead of the latter.')
 
     # This prevents situations when the segment boundaries (UniProt sequence)
-    # do not correpsond to any PDB sequence elements (i.e., map to None)
+    # do not correspond to any PDB sequence elements (i.e., map to None)
     # Thus, we search for the closest mapped seq element from both ends
     try:
         start = next(
@@ -152,12 +152,10 @@ def extract_pdb_domains(
                 f'due to error {e}')
             continue
 
-        seq_header = f'{pdb_chain}/{cut_result.Start}-{cut_result.End}'
+        _id = f'{pdb_chain}/{cut_result.Start}-{cut_result.End}'
         domain.pdb_sub_structure = cut_result.Structure
         domain.pdb_segment_boundaries = cut_result.Start, cut_result.End
-        domain.pdb_seq = SeqRec(
-            Seq(cut_result.Seq), id=seq_header,
-            description=seq_header, name=seq_header)
+        domain.pdb_seq = SeqRec(Seq(cut_result.Seq), _id, _id, _id)
         domain.pdb_seq_raw = cut_result.SeqRaw
         domain.uni_pdb_map = cut_result.Mapping
 

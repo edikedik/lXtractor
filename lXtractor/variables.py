@@ -159,8 +159,7 @@ def agg_dist(
     cs1, cs2 = map(
         lambda r: np.vstack([a.coord for a in r.get_atoms()]),
         [r1, r2])
-    return agg_fn(
-        np.linalg.norm(cs1[:, np.newaxis] - cs2, axis=2))
+    return agg_fn(np.linalg.norm(cs1[:, np.newaxis] - cs2, axis=2))
 
 
 class AggDist(AbstractVariable):
@@ -550,7 +549,7 @@ def dispatch_var(var: str) -> AbstractVariable:
             variable = Dist(pos1, pos2, atom1, atom2, com=com)
 
     elif len(split) == 4:
-        LOGGER.debug(f'Recieved four positions {split} '
+        LOGGER.debug(f'Received four positions {split} '
                      f'to init "dihedral"-type variable')
         # Split each of the positions into position-atom pairs, where atom
         # may be `None`.

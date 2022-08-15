@@ -113,7 +113,7 @@ def mafft_align(
     handle = NamedTemporaryFile('w')
     num_seq = SeqIO.write(seqs, handle, 'fasta')
     handle.seek(0)
-    LOGGER.debug(f'Wrote {num_seq} into {handle.name}')
+    LOGGER.debug(f'Wrote {num_seq} seq records into {handle.name}')
 
     # Run the subprocess command
     cmd = f'{mafft} --anysymbol --thread {thread} --inputorder {handle.name}'
@@ -122,13 +122,29 @@ def mafft_align(
 
     # Wrap the results from stdout into a list of `SeqRec` objects
     alignment = list(SeqIO.parse(StringIO(res.stdout), 'fasta'))
-    LOGGER.debug(f'Obtained seqs with {len(alignment)} sequences')
+    LOGGER.debug(f'Obtained {len(alignment)} sequences')
 
     # Check and return the seqs
     if not alignment:
         raise ValueError('Resulted in empty seqs')
     handle.close()
     return alignment
+
+
+def hmmer_align(
+        seqs: t.Iterable[SeqRec],
+        profile_path: Path,
+        hmmalign_exe: str = 'hmmalign'
+) -> t.List[SeqRec]:
+    """
+    Align a collection of sequences to a profile using `hmmalign`
+    """
+    handle = NamedTemporaryFile('w')
+    SeqIO.write(seqs, handle, 'fasta')
+    handle.seek(0)
+
+    cmd = f'{hmmalign_exe} {profile_path} {handle.name}'
+    return list(SeqIO.parse(StringIO(run_sp(cmd).stdout), 'stockholm'))
 
 
 def remove_gap_columns(
@@ -297,7 +313,7 @@ class Alignment(AbstractResource):
     >>> assert 'AWWWA' in aln
     """
 
-    def __init__(self, seqs: t.Optional[t.List[SeqRec]] = None,
+    def __init__(self, seqs: t.Optional[t.Sequence[SeqRec]] = None,
                  resource_path: t.Optional[Path] = None,
                  resource_name: t.Optional[str] = None,
                  fmt: str = 'fasta',

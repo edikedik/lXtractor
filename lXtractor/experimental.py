@@ -12,7 +12,7 @@ from lXtractor import Protein, UniProt
 from lXtractor.base import SeqRec
 from lXtractor.protein import unduplicate
 from lXtractor.alignment import seq_identity, seq_coverage, mafft_align
-from lXtractor.domains import extract_uniprot_domains
+from lXtractor.cutters import extract_uniprot_domains
 from lXtractor.utils import run_handles, cluster_cdhit
 
 LOGGER = logging.getLogger(__name__)
