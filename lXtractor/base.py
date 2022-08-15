@@ -12,9 +12,9 @@ Seq = Seq.Seq
 T = t.TypeVar('T')
 _Fetcher = t.Callable[[t.Iterable[str]], T]
 _Getter = t.Callable[[T, t.Sequence[str]], t.Sequence[str]]
-_StrSep = '--'
-InputSeparators = namedtuple('InputSeparators', ['list', 'chain', 'dom', 'uni_pdb'])
-
+# _StrSep = '--'
+InputSeparators = namedtuple('InputSeparators', ['list', 'chain', 'dom', 'uni_pdb', 'str'])
+Sep = InputSeparators()
 
 class AminoAcidDict:
     # TODO: consider morphing into a proper dict subclass

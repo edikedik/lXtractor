@@ -16,7 +16,7 @@ from tqdm.auto import tqdm
 from lXtractor.alignment import Alignment, mafft_align, map_pairs_numbering, _Align_method
 from lXtractor.base import (
     SeqRec, FormatError, MissingData, AbstractVariable,
-    FailedCalculation, Seq, Domain, AminoAcidDict, InputSeparators)
+    FailedCalculation, Seq, Domain, AminoAcidDict, Sep)
 from lXtractor.cutters import extract_pdb_domains
 from lXtractor.input_parser import init
 from lXtractor.pdb import PDB, get_sequence, wrap_raw_pdb
@@ -30,13 +30,14 @@ _DomainList = t.Sequence[t.Tuple[str, t.Union[str, t.Sequence[str]]]]
 _VariableSetup = t.Tuple[AbstractVariable, t.Optional[str], t.Optional[str]]
 _ChainLevel = 'Chain'
 _KeyT = t.Union[int, str, slice, t.Sequence[bool], np.ndarray]
-Sep = InputSeparators(',', ':', '::', '_')
 LOGGER = logging.getLogger(__name__)
 
 # TODO: extend docs
 # TODO: optimize memory consumption for large datasets
 # TODO: -> use common (sequence/UniProt), including sequences
-# TODO: simplify init
+# TODO: range variable
+# TODO: test init with various possible input types
+
 
 T = t.TypeVar('T')
 
@@ -97,7 +98,7 @@ class lXtractor:
         return len(self.proteins)
 
     def __repr__(self) -> str:
-        return f'lXtractor(id={id(self)},proteins={len(self)})'
+        return f'lXtractor(proteins={len(self)})'
 
     def __getitem__(self, key: _KeyT) -> t.Optional[t.Union[Protein, t.List[Protein]]]:
         def get_one_or_more(xs):
@@ -303,6 +304,7 @@ class lXtractor:
         return Alignment(seqs=seqs)
 
     def map_to_alignment(self, alignment: Alignment, missing: bool = True) -> None:
+        # TODO: choose what to map -- proteins or domains
         def get_structure(
                 obj: t.Union[Domain, Protein]
         ) -> Structure:

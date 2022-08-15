@@ -150,7 +150,7 @@ class UniProt:
                 seq = subset_by_idx(p.uniprot_seq, list(range(start, end + 1)))
             else:
                 seq = None
-            dom = Domain(start=start, end=end, name=name, uniprot_seq=seq)
+            dom = Domain(start=start, end=end, name=name, uniprot_seq=seq, parent_name=p.id)
             if overwrite or name not in p.domains:
                 p.domains[name] = dom
             if not overwrite and complement and name in p.domains:

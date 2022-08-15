@@ -8,7 +8,7 @@ from Bio.PDB import PDBParser
 from Bio.PDB.Structure import Structure
 from more_itertools import flatten
 
-from lXtractor.base import SeqRec, FormatError, MissingData, InputSeparators
+from lXtractor.base import SeqRec, FormatError, MissingData, Sep
 from lXtractor.protein import Protein
 from lXtractor.sifts import SIFTS
 
@@ -22,7 +22,6 @@ ProteinAttributes = t.NamedTuple(
         ('uniprot_seq', t.Optional[SeqRec]),
         ('domains', t.Optional[t.Sequence[str]])
     ])
-Sep = InputSeparators(',', ':', '::', '_')
 
 
 def parse_pdb_input(inp: str) -> t.Tuple[str, t.Optional[Structure]]:

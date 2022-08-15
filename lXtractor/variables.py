@@ -6,7 +6,7 @@ import numpy as np
 from Bio.PDB.Atom import Atom
 from Bio.PDB.Residue import Residue
 from Bio.PDB.Structure import Structure
-from lXtractor.base import FailedCalculation, AminoAcidDict, _StrSep, FormatError, AbstractVariable, InputSeparators
+from lXtractor.base import FailedCalculation, AminoAcidDict, FormatError, AbstractVariable, InputSeparators
 from lXtractor.utils import split_validate
 from more_itertools import unique_justseen
 
@@ -20,7 +20,7 @@ _FlattenedVariable = t.Tuple[
     t.Optional[str]
 ]
 _Aggregators = {'min': np.min, 'max': np.max, 'mean': np.mean, 'median': np.median}
-Sep = InputSeparators(',', ':', '::', '_')
+Sep = InputSeparators(',', ':', '::', '_', '--')
 LOGGER = logging.getLogger(__name__)
 
 
@@ -309,8 +309,7 @@ class PseudoDihedral(Dihedral):
 
 
 class Phi(Dihedral):
-    def __init__(
-            self, pos: int):
+    def __init__(self, pos: int):
         super().__init__(
             pos - 1, pos, pos, pos,
             'C', 'N', 'CA', 'C',
@@ -318,8 +317,7 @@ class Phi(Dihedral):
 
 
 class Psi(Dihedral):
-    def __init__(
-            self, pos: int):
+    def __init__(self, pos: int):
         super().__init__(
             pos, pos, pos, pos + 1,
             'N', 'CA', 'C', 'N',
@@ -327,8 +325,7 @@ class Psi(Dihedral):
 
 
 class Omega(Dihedral):
-    def __init__(
-            self, pos: int):
+    def __init__(self, pos: int):
         super().__init__(
             pos, pos, pos + 1, pos + 1,
             'CA', 'C', 'N', 'CA',
@@ -439,18 +436,18 @@ def parse_variables(inp: str) -> _ParsedVariables:
     :param inp: ``"[variable_specs]--[protein_specs]::[domains]"`` format, where:
 
         #. `variable_specs` define the variable type
-        (e.g., `1:CA-2:CA` for CA-CA distance between positoins 1 and 2)
+        (e.g., `1:CA-2:CA` for CA-CA distance between positions 1 and 2)
         #. `protein_specs` define proteins for which to calculate variables
         #. `domains` list the domain names for the given protein collection
 
     :return: a namedtuple with (1) variables, (2) list of proteins (or ``[None]``),
         and (3) a list of domains (or ``[None]``).
     """
-    if _StrSep in inp and Sep.dom in inp:
-        variables, tmp = split_validate(inp, _StrSep, 2)
+    if Sep.str in inp and Sep.dom in inp:
+        variables, tmp = split_validate(inp, Sep.str, 2)
         proteins, domains = split_validate(tmp, Sep.dom, 2)
-    elif _StrSep in inp:
-        variables, proteins = split_validate(inp, _StrSep, 2)
+    elif Sep.str in inp:
+        variables, proteins = split_validate(inp, Sep.str, 2)
         domains = None
     elif Sep.dom in inp:
         variables, domains = split_validate(inp, Sep.dom, 2)
@@ -503,7 +500,7 @@ def dispatch_var(var: str) -> AbstractVariable:
     split = var.split('-')
 
     if len(split) == 1:
-        LOGGER.debug(f'Recieved one-position variable {split}')
+        LOGGER.debug(f'Received one-position variable {split}')
 
         # If the position is simply a digit, we expect
         # the variable to be a sequence element.
@@ -531,7 +528,7 @@ def dispatch_var(var: str) -> AbstractVariable:
                     f'Expected one of: Phi, Psi, Omega')
 
     elif len(split) == 2:
-        LOGGER.debug(f'Recieved two positions {split} '
+        LOGGER.debug(f'Received two positions {split} '
                      f'to init the "distance" variable')
 
         (pos1, atom1), (pos2, atom2) = map(split_pos, split)
