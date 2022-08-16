@@ -87,7 +87,7 @@ class Protein:
 
                 dom_path = path / f'{domain.name}'
                 dom_path.mkdir(exist_ok=True)
-                dump(dom_path, log_pref, uniprot_seq=domain.uniprot_seq, structure=domain.pdb_sub_structure,
+                dump(dom_path, log_pref, uniprot_seq=domain.uniprot_seq, structure=domain.structure,
                      pdb_seq=domain.pdb_seq, pdb_seq_raw=domain.pdb_seq_raw, metadata=domain.metadata + metadata,
                      variables=domain.variables, aln_mapping=domain.aln_mapping, uni_pdb_map=domain.uni_pdb_map,
                      uni_pdb_aln=domain.uni_pdb_aln)

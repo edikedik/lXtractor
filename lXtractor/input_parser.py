@@ -8,7 +8,7 @@ from Bio.PDB import PDBParser
 from Bio.PDB.Structure import Structure
 from more_itertools import flatten
 
-from lXtractor.base import SeqRec, FormatError, MissingData, Sep
+from lXtractor.base import SeqRec, FormatError, MissingData, Sep, InputSeparators
 from lXtractor.protein import Protein
 from lXtractor.sifts import SIFTS
 

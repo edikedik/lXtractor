@@ -12,9 +12,9 @@ Seq = Seq.Seq
 T = t.TypeVar('T')
 _Fetcher = t.Callable[[t.Iterable[str]], T]
 _Getter = t.Callable[[T, t.Sequence[str]], t.Sequence[str]]
-# _StrSep = '--'
+
 InputSeparators = namedtuple('InputSeparators', ['list', 'chain', 'dom', 'uni_pdb', 'str'])
-Sep = InputSeparators()
+Sep = InputSeparators(',', ':', '::', '_', '--')
 
 class AminoAcidDict:
     # TODO: consider morphing into a proper dict subclass
@@ -279,7 +279,7 @@ class Domain(Segment):
     uniprot_seq: t.Optional[SeqRec] = None
     pdb_seq: t.Optional[SeqRec] = None
     pdb_seq_raw: t.Optional[t.Tuple[str, ...]] = None
-    pdb_sub_structure: t.Optional[Structure] = None
+    structure: t.Optional[Structure] = None
     uni_pdb_map: t.Optional[t.Dict[int, t.Optional[int]]] = None
     uni_pdb_aln: t.Optional[t.Tuple[SeqRec, SeqRec]] = None
     aln_mapping: t.Optional[t.Dict[int, int]] = None

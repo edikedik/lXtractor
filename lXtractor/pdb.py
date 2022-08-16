@@ -377,7 +377,8 @@ def get_sequence(
         convert: bool = True,
         filter_out: t.Collection[str] = ('HOH',),
         trim_het_tail: bool = True,
-) -> t.Union[str, t.Tuple[str, ...]]:
+        numbering: bool = False,
+) -> t.Union[str, t.Tuple[str, ...], t.Tuple[int, ...]]:
     """
     Extract structure's residues.
 
@@ -389,6 +390,7 @@ def get_sequence(
     :param convert: convert 3-letter codes into 1-letter codes.
     :param filter_out: a collection of 3-letter codes to filter out.
     :param trim_het_tail: cut discontinuous hetatoms ending a chain.
+    :param get_numbering:
     :return: a one-letter code sequence as a string.
     """
     mapping = AminoAcidDict(any_unk='X')
@@ -414,9 +416,11 @@ def get_sequence(
         structure.get_residues(),
         filter(lambda r: r.get_resname() not in filter_out),
         trim_tail if trim_het_tail else identity,
-        lambda residues: tuple(r.get_resname() for r in residues),
+        lambda residues: tuple(
+            (r.get_id()[1] if numbering else r.get_resname())
+            for r in residues),
         (lambda resnames: "".join(mapping[name] for name in resnames))
-        if convert else identity
+        if convert and not numbering else identity
     )
 
 

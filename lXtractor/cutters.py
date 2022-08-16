@@ -153,7 +153,7 @@ def extract_pdb_domains(
             continue
 
         _id = f'{pdb_chain}/{cut_result.Start}-{cut_result.End}'
-        domain.pdb_sub_structure = cut_result.Structure
+        domain.structure = cut_result.Structure
         domain.pdb_segment_boundaries = cut_result.Start, cut_result.End
         domain.pdb_seq = SeqRec(Seq(cut_result.Seq), _id, _id, _id)
         domain.pdb_seq_raw = cut_result.SeqRaw
