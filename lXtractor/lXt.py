@@ -1,7 +1,7 @@
 import logging
 import typing as t
 from copy import deepcopy, copy
-from itertools import starmap, product, chain, tee, filterfalse
+from itertools import chain, tee, filterfalse, starmap
 from pathlib import Path
 
 import numpy as np
@@ -9,7 +9,7 @@ import pandas as pd
 import ray
 from Bio.PDB.Structure import Structure
 from more_itertools import flatten, peekable, ilen
-from toolz import curry, pipe
+from toolz import pipe, curry
 from toolz.curried import filter, map, groupby
 from tqdm.auto import tqdm
 
@@ -23,10 +23,9 @@ from lXtractor.pdb import PDB, get_sequence, wrap_raw_pdb
 from lXtractor.protein import Protein
 from lXtractor.sifts import SIFTS
 from lXtractor.uniprot import UniProt
-from lXtractor.utils import split_validate, run_handles
-from lXtractor.variables import _ParsedVariables, parse_variables
+from lXtractor.utils import run_handles
+from lXtractor.variables import _ParsedVariables, _V, parse_var
 
-_DomainList = t.Sequence[t.Tuple[str, t.Union[str, t.Sequence[str]]]]
 _VariableSetup = t.Tuple[AbstractVariable, t.Optional[str], t.Optional[str]]
 _ChainLevel = 'Chain'
 _KeyT = t.Union[int, str, slice, t.Sequence[bool], np.ndarray]
@@ -114,7 +113,7 @@ class lXtractor:
         def get_one_or_more(xs):
             if len(xs) > 1:
                 return xs
-            if  len(xs) == 1:
+            if len(xs) == 1:
                 return xs.pop()
             return None
 
@@ -182,6 +181,28 @@ class lXtractor:
         new_lxt = deepcopy(self) if deep else copy(self)
         self.proteins = tmp
         return new_lxt
+
+    def query(
+            self,
+            protein_specs: t.Optional[t.Sequence[str]],
+            domain_specs: t.Optional[t.Sequence[str]]
+    ) -> t.Union[t.List[Protein], t.List[Domain]]:
+        objs = self.proteins
+        if protein_specs:
+            objs = pipe(
+                (self[x] for x in protein_specs),
+                map(lambda x: [x] if isinstance(x, Protein) else x),
+                flatten,
+                list)
+        if domain_specs:
+            objs = pipe(
+                objs,
+                map(lambda p: (p.domains.get(x, None) for x in domain_specs)),
+                chain.from_iterable,
+                filter(bool),
+                list
+            )
+        return objs
 
     def fetch_uniprot(
             self, missing: bool = True, keep_expected: bool = True,
@@ -318,6 +339,14 @@ class lXtractor:
             self, alignment: _AlnT, domains: t.Optional[t.Union[t.Sequence[str], str]] = None,
             pdb_seq: bool = True, parallel: bool = True, missing: bool = True) -> None:
 
+        def map_to_alignment(
+                seq: str, num: t.Sequence[int], aln: Alignment
+        ) -> t.Tuple[str, t.Sequence[int], t.Union[t.Dict[int, int], Exception]]:
+            try:
+                return seq, num, aln.map_seq_numbering(SeqRec(Seq(seq)), num)
+            except Exception as e:
+                return seq, num, e
+
         def get_seq(obj: t.Union[Protein, Domain]) -> str:
             if pdb_seq:
                 if obj.pdb_seq is None:
@@ -392,6 +421,14 @@ class lXtractor:
 
     def extract_structure_domains(self, parallel: bool = False) -> None:
 
+        def extract_structure_domains(
+                protein: Protein
+        ) -> t.Union[Protein, t.Tuple[str, Exception]]:
+            try:
+                return extract_pdb_domains(protein)
+            except Exception as e:
+                return protein.id, e
+
         proteins = {
             p.id: p for p in self.proteins if
             (p.structure and p.domains and p.uni_pdb_map)}
@@ -399,12 +436,11 @@ class lXtractor:
         LOGGER.info(f'Found {len(proteins)} proteins for '
                     f'structure domains extraction.')
         if parallel:
-            extract_structure_domains_remote = ray.remote(extract_structure_domains)
+            fn = ray.remote(extract_structure_domains)
             bar = tqdm(
                 desc='Extracting structure domains',
                 total=len(proteins), position=0, leave=True)
-            handles = [extract_structure_domains_remote.remote(p)
-                       for p in proteins.values()]
+            handles = [fn.remote(p) for p in proteins.values()]
             results = run_handles(handles, bar)
         else:
             results = list(map(
@@ -414,12 +450,11 @@ class lXtractor:
         for r in results:
             if not isinstance(r, Protein):
                 p_id, exc = r
-                LOGGER.warning(f'Failed to extract domains from {p_id} '
-                               f'due to error {exc}')
+                LOGGER.exception(f'Failed to extract domains from {p_id} due to {exc}')
             else:
                 proteins[r.id].domains = r.domains
 
-    def compute_seq_meta(self, exclude_mod: t.Tuple[str, ...] = ('HOH', )):
+    def compute_seq_meta(self, exclude_mod: t.Tuple[str, ...] = ('HOH',)):
         proteins = [
             p for p in self.proteins if (p.structure and p.pdb_seq and p.uniprot_seq)]
         if proteins:
@@ -457,73 +492,128 @@ class lXtractor:
                 domains[obj_id].metadata += meta
                 domains[obj_id].uni_pdb_aln = aln
 
-    def assign_variables(self, variables: t.Iterable[str]):
+    def assign_variables(
+            self, variables: t.Union[str, t.Sequence[str]],
+            overwrite: bool = False
+    ) -> None:
         def try_parse(v: str) -> t.Optional[_ParsedVariables]:
             try:
-                parsed_var = parse_variables(v)
+                parsed_var = parse_var(v)
                 LOGGER.debug(f'Successfully parsed variable {v}')
                 return parsed_var
             except (ValueError, FormatError) as e:
-                LOGGER.error(
+                LOGGER.exception(
                     f'Failed to parse variable {v} due to error {e}')
                 return None
 
-        variables = list(filter(bool, map(
-            try_parse, tqdm(variables, 'Processing variables'))))
+        if isinstance(variables, str):
+            variables = [variables]
 
-        assign_variables(variables, self.proteins)
+        parsed_variables = list(filter(bool, map(try_parse, variables)))
+        LOGGER.info(f'Parsed {len(variables)} inputs into {len(parsed_variables)} variables')
+        if not parsed_variables:
+            LOGGER.warning('No variables to assign')
+            return None
+
+        for vs, p_specs, d_specs in parsed_variables:
+            _objs = self.query(p_specs, d_specs)
+            if not _objs:
+                LOGGER.warning(
+                    f'No objects falling under specifications '
+                    f'protein={p_specs} domain={d_specs} for variables {vs}')
+            for obj in _objs:
+                for v in vs:
+                    if v in obj.variables:
+                        if overwrite:
+                            obj.variables[v] = None
+                            LOGGER.debug(f'Overwritten existing {obj.id}-s variable {v}')
+                        else:
+                            LOGGER.debug(f'Skipping existing {obj.id}-s variable {v}')
+                    else:
+                        obj.variables[v] = None
+                        LOGGER.debug(f'Assigned new variable {v} to {obj.id}')
+
         LOGGER.debug(f'Successfully assigned variables')
 
-    def calculate_variables(self) -> None:
+    def calculate_variables(
+            self, parallel: bool = True, missing: bool = True
+    ) -> None:
 
-        def get_variables(obj: t.Union[Protein, Domain]):
-            return [x[0] for x in obj.variables.values()]
+        def calculate(
+                protein_id: str, domain_id: t.Optional[str],
+                target: t.Union[Structure, SeqRec],
+                variables: t.Iterable[_V],
+                mapping: t.Dict[int, int]
+        ) -> t.List[t.Tuple[str, str, _V, t.Union[str, float, Exception]]]:
+            rs = []
+            for v in variables:
+                try:
+                    rs.append((protein_id, domain_id, v, v.calculate(target, mapping)))
+                except (MissingData, FailedCalculation) as e:
+                    LOGGER.exception(
+                        f'Failed calculating {v} on {protein_id}::{domain_id} due to: {e}')
+                    rs.append((protein_id, domain_id, v, e))
+            return rs
 
-        proteins = [p for p in self.proteins if all(
-            [p.variables, p.aln_mapping, p.structure])]
+        def accept_obj(obj: t.Union[Protein, Domain]):
+            if obj.aln_mapping is None:
+                return False
+            if str:
+                return obj.structure is not None
+            return obj.uniprot_seq is not None
 
-        LOGGER.info(f'Found {len(proteins)} full protein chains with '
-                    f'variables staged for calculation')
-        if proteins:
-            inputs = [
-                (p.id, p.structure, get_variables(p), p.aln_mapping) for p in proteins]
-            bar = tqdm(
-                desc='Calculating variables on protein level',
-                total=len(inputs), position=0, leave=True)
-            handles = [calculate_variables_remote.remote(*inp) for inp in inputs]
+        def get_ids(obj: t.Union[Protein, Domain]):
+            if isinstance(obj, Domain):
+                return obj.parent_name, obj.name
+            else:
+                return obj.id, None
+
+        @curry
+        def get_vars(
+                obj: t.Union[Protein, Domain], str_var: bool = True
+        ) -> t.Optional[t.Tuple[str, t.Optional[str], Structure, t.List[_V], t.Dict[int, int]]]:
+            vs = list(filter(
+                lambda v: missing and obj.variables[v] is None or not missing,
+                obj.variables.structure if str_var else obj.variables.sequence
+            ))
+            if vs:
+                needed = 'Both structure and MSA mapping are' if str_var else 'UniProt sequence is'
+                if not accept_obj(obj):
+                    LOGGER.warning(f'{needed} needed to calculate variables {vs} for {obj}')
+                    return None
+            else:
+                LOGGER.debug(f'No variables for {obj} (structural={str_var})')
+                return None
+
+            target = obj.structure if str_var else obj.uniprot_seq
+            p_id, d_id = get_ids(obj)
+
+            return p_id, d_id, target, vs, obj.aln_mapping
+
+        staged = filter(bool, chain(
+            map(get_vars, self.proteins),  # Structural variables
+            map(get_vars, self.domains),
+            map(get_vars(str_var=False), self.proteins),  # Sequence variables
+            map(get_vars(str_var=False), self.domains)
+        ))
+
+        if parallel:
+            fn = ray.remote(calculate)
+            handles = [fn.remote(*inp) for inp in staged]
+            bar = tqdm(desc='Calculating variables', total=len(handles))
             results = run_handles(handles, bar)
-            for obj_id, success, var, value in flatten(results):
-                if success:
-                    self.__getitem__(obj_id).variables[var.id] = (var, value)
-                    LOGGER.debug(f'Calculated {var.id} for {obj_id}')
-                else:
-                    LOGGER.warning(
-                        f'Failed to calculate {var.id} for {obj_id} '
-                        f'due to error {value}')
+        else:
+            results = starmap(calculate, staged)
 
-        domains = flatten(
-            ((p.id, k, d) for k, d in p.domains.items()) for p in self.proteins)
-        domains = list(filter(
-            lambda x: all([x[-1].variables, x[-1].structure, x[-1].aln_mapping]),
-            domains))
-        LOGGER.info(f'Found {len(domains)} domains with variables staged for calculation')
-        if domains:
-            inputs = [(f'{p_id}---{k}', d.structure, get_variables(d), d.aln_mapping)
-                      for p_id, k, d in domains]
-            bar = tqdm(
-                desc='Calculating variables on a domain level',
-                total=len(inputs), position=0, leave=True)
-            handles = [calculate_variables_remote.remote(*inp) for inp in inputs]
-            results = run_handles(handles, bar)
-            for obj_id, success, var, value in flatten(results):
-                p_id, d_id = obj_id.split('---')
-                if success:
-                    self.__getitem__(p_id).domains[d_id].variables[var.id] = (var, value)
-                    LOGGER.debug(f'Calculated {var.id}={value} for domain {d_id} of {p_id}')
-                else:
-                    LOGGER.warning(
-                        f'Failed to calculate {var.id} for domain {d_id} of {obj_id} '
-                        f'due to error {value}')
+        for p_id, d_id, v, res in chain.from_iterable(results):
+            obj_id = p_id
+            if d_id:
+                obj_id += f'{Sep.dom}{d_id}'
+            if isinstance(res, Exception):
+                LOGGER.error(f'Failed on {obj_id} due to: {res}')
+            else:
+                LOGGER.debug(f'Calculated variable {v}={res} for {obj_id}')
+                self[p_id][d_id].variables[v] = res
 
     def dump(self):
         raise NotImplementedError
@@ -583,19 +673,6 @@ def seq_stats_remote(
     ]
 
 
-# @ray.remote
-def map_to_alignment(
-        seq: str,
-        numbering: t.Sequence[int],
-        alignment: Alignment
-) -> t.Tuple[str, t.Sequence[int], t.Union[t.Dict[int, int], Exception]]:
-    try:
-        return seq, numbering, alignment.map_seq_numbering(
-            SeqRec(Seq(seq)), numbering)
-    except Exception as e:
-        return seq, numbering, e
-
-
 @ray.remote
 def map_by_alignment_remote(
         obj_id: str,
@@ -635,34 +712,10 @@ def map_by_alignment_remote(
     return obj_id, uni_pdb_aln, mapping
 
 
-@ray.remote
-def calculate_variables_remote(
-        obj_id: str,
-        structure: Structure,
-        variables: t.Iterable[AbstractVariable],
-        aln_mapping: t.Dict[int, int]
-) -> t.List[t.Tuple[str, bool, AbstractVariable, t.Union[str, float]]]:
-    results = []
-    for v in variables:
-        try:
-            results.append((obj_id, True, v, v.calculate(structure, aln_mapping)))
-        except (MissingData, FailedCalculation) as e:
-            results.append((obj_id, False, v, str(e)))
-    return results
-
-
-def extract_structure_domains(
-        protein: Protein
-) -> t.Union[Protein, t.Tuple[str, Exception]]:
-    try:
-        return extract_pdb_domains(protein)
-    except Exception as e:
-        return protein.id, e
-
-
 def map_whole_structure_numbering(
         protein: Protein, sifts: SIFTS
 ) -> t.Dict[int, t.Optional[int]]:
+    # TODO - rm?
     obj_id = f'{protein.pdb}:{protein.chain}'
     mappings = sifts.map_numbering(obj_id)
 
@@ -683,88 +736,6 @@ def map_whole_structure_numbering(
             _raise()
         else:
             return mapping
-
-
-def assign_variables(
-        variables: t.Sequence[_ParsedVariables],
-        proteins: t.Sequence[Protein]
-) -> None:
-    def filter_objects(
-            _id: t.Optional[str], domain: t.Optional[str] = None
-    ) -> t.Union[t.List[Protein], t.List[Domain]]:
-
-        @curry
-        def get_matching_domains(protein: Protein, domain_name: str):
-            return (d for k, d in protein.domains.items() if domain_name in k)
-
-        def narrow_to_domain(
-                _proteins: t.List[Protein]
-        ) -> t.Union[t.List[Protein], t.List[Domain]]:
-            if domain is None:
-                LOGGER.debug(f'No domain to narrow down to for {_id}')
-                return _proteins
-
-            domains = list(chain.from_iterable(map(
-                get_matching_domains(domain_name=domain), _proteins)))
-            # domains = list(filter(
-            #     bool, (p.domains.get(domain) for p in _proteins)))
-            LOGGER.debug(f'Narrowed down to {len(domains)} {_id}::{domain}')
-            return domains
-
-        if _id is None:
-            return narrow_to_domain(list(proteins))
-
-        # First check whether _id matches UniProt ID of any protein
-        # UniProt IDs are the broadest category, so we start with them
-        match = [p for p in proteins if p.uniprot_id == _id]
-        LOGGER.debug(f'Got {len(match)} proteins with UniProt ID '
-                     f'matching {_id}')
-        if match:
-            return narrow_to_domain(match)
-
-        # Check whether `_id` contains `chain_id` separated by `:`
-        if ':' in _id:
-            pdb_id, chain_id = split_validate(_id, ':', 2)
-        else:
-            pdb_id, chain_id = _id, None
-
-        # Try matching by PDB ID
-        match = [p for p in proteins if p.pdb == pdb_id.upper()]
-        LOGGER.debug(f'Got {len(match)} proteins with PDB ID '
-                     f'matching {pdb_id}')
-
-        # If chain ID is present, filter by it
-        if match and chain_id:
-            match = [p for p in match if p.chain == chain_id]
-            LOGGER.debug(f'Got {len(match)} proteins with PDB ID '
-                         f'matching {pdb_id} and chain {chain_id}')
-        return narrow_to_domain(match)
-
-    def assign(
-            variable: AbstractVariable,
-            _id: t.Optional[str],
-            domain: t.Optional[str]
-    ) -> None:
-        objects = filter_objects(_id, domain)
-        if not objects:
-            LOGGER.warning(
-                f"No proteins with ID:domain {_id}:{domain} "
-                f"for variable {variable}")
-        for x in objects:
-            x.variables[variable.id] = (variable, None)
-            parent = f':{x.parent_name}' if isinstance(x, Domain) else ""
-            LOGGER.debug(f'Created a placeholder for {variable} '
-                         f'in object {x.id}{parent} ({type(x)})')
-
-    # Flatten variables into unique setups
-    # i.e., one variable - one protein ID - one domain
-    flat_variables = flatten(starmap(product, variables))
-
-    # Iterate over flattened variables and assign them to proteins
-    for var, _id, _domain in flat_variables:
-        LOGGER.debug(
-            f'Assigning {var} to protein {_id} domain {_domain}')
-        assign(var, _id, _domain)
 
 
 if __name__ == '__main__':

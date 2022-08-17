@@ -230,6 +230,10 @@ class SIFTS(AbstractResource):
             self.df.to_csv(path, **kwargs)
         raise RuntimeError('Nothing to dump')
 
+    def fetch(self, url: str):
+        # TODO: encapsulate downloading SIFTS in here
+        raise NotImplementedError
+
     @staticmethod
     def _parse_obj_id(obj_id: str) -> str:
         if len(obj_id) == 6 and ':' in obj_id:
@@ -295,8 +299,6 @@ class SIFTS(AbstractResource):
             LOGGER.warning(f"Couldn't find {_id} in SIFTS")
             return None
         return self.id_mapping[_id]
-
-
 
 
 def wrap_into_segments(df: pd.DataFrame) -> t.Tuple[t.List[Segment], t.List[Segment]]:

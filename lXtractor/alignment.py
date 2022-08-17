@@ -503,6 +503,9 @@ class Alignment(AbstractResource):
         """
         raise NotImplementedError
 
+    def fetch(self, url: str):
+        raise NotImplementedError
+
     def dump(self, path: str) -> None:
         num_dumped = SeqIO.write(self.seqs, path, self.fmt)
         LOGGER.debug(f'Wrote {num_dumped} sequences to {path}')
@@ -542,6 +545,7 @@ class Alignment(AbstractResource):
             self, seq: SeqRec,
             seq_numbering: t.Sequence[int]
     ) -> t.Dict[int, int]:
+        # TODO: support matching seq by ID and sequence to avoid unneeded alignments
         """
         Map between a sequence numbering and the alignment columns.
 

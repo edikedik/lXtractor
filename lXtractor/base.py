@@ -1,3 +1,4 @@
+import inspect
 import typing as t
 from abc import ABCMeta, abstractmethod
 from collections import namedtuple
@@ -15,6 +16,7 @@ _Getter = t.Callable[[T, t.Sequence[str]], t.Sequence[str]]
 
 InputSeparators = namedtuple('InputSeparators', ['list', 'chain', 'dom', 'uni_pdb', 'str'])
 Sep = InputSeparators(',', ':', '::', '_', '--')
+
 
 class AminoAcidDict:
     # TODO: consider morphing into a proper dict subclass
@@ -120,6 +122,10 @@ class AbstractResource(metaclass=ABCMeta):
     def dump(self, path: Path):
         raise NotImplementedError
 
+    @abstractmethod
+    def fetch(self, url: str):
+        raise NotImplementedError
+
 
 class AbstractVariable(metaclass=ABCMeta):
     """
@@ -133,23 +139,47 @@ class AbstractVariable(metaclass=ABCMeta):
     so the mapping is necessary for the calculation of any variable.
     """
 
+    __slots__ = ()
+
     def __str__(self):
         return self.id
 
     def __repr__(self):
         return self.__str__()
 
+    def __eq__(self, other):
+        return (not isinstance(other, type(self)) or
+                self.id == other.id)
+
+    def __hash__(self):
+        return hash(self.id)
+
     @property
-    @abstractmethod
     def id(self) -> str:
         """
-        Variable identifier. Must be a unique string value.
+        Variable identifier such that eval(x.id) produces another instance.
+        """
+        def parse_value(v):
+            if isinstance(v, str):
+                return f"\'{v}\'"
+            return v
+
+        init_params = inspect.signature(self.__init__).parameters
+        args = ','.join(f'{k}={parse_value(v)}' for k, v in vars(self).items() if k in init_params)
+        return f'{self.__class__.__name__}({args})'
+
+    @property
+    @abstractmethod
+    def rtype(self) -> str:
+        """
+        A string such that eval(result_type)(result) converts the result
+        into the correct type. For instance, "float".
         """
         raise NotImplementedError
 
     @abstractmethod
     def calculate(
-            self, structure: Structure,
+            self, structure: t.Union[Structure, SeqRec],
             mapping: t.Optional[t.Mapping[int, int]] = None):
         """
         Calculate the variable. Each variable defines its own calculation
@@ -162,29 +192,31 @@ class AbstractVariable(metaclass=ABCMeta):
         raise NotImplementedError
 
 
-# class Variables(UserDict):
-#     """
-#     A custom dictionary subclass to encapsulate variables.
-#     Redefines setting items based on a given :attr:`AbstractVariable.id`.
-#     """
-#
-#     def __setitem__(self, key: str, value: t):
-#         if key.id not in self.ids:
-#             self.ids[key.id] = value
-#             super().__setitem__(key, value)
-#         elif self.ids[key.id] is None:
-#             self.ids[key.id] = value
-#             super().__delitem__(key)
-#             super().__setitem__(key, value)
+class StructureVariable(AbstractVariable):
+    @abstractmethod
+    def calculate(
+            self, structure: Structure,
+            mapping: t.Optional[t.Mapping[int, int]] = None):
+        raise NotImplementedError
 
 
-Variables = t.Dict[str, t.Tuple[AbstractVariable, t.Union[str, float, None]]]
+class SequenceVariable(AbstractVariable):
+    @abstractmethod
+    def calculate(
+            self, structure: Structure,
+            mapping: t.Optional[t.Mapping[int, int]] = None):
+        raise NotImplementedError
 
 
-@dataclass
-class VariableResult:
-    Level: str
-    Result: t.Any
+class Variables(t.Dict):
+
+    @property
+    def structure(self) -> t.Iterator[StructureVariable]:
+        return filter(lambda v: isinstance(v, StructureVariable), self.keys())
+
+    @property
+    def sequence(self) -> t.Iterator[SequenceVariable]:
+        return filter(lambda v: isinstance(v, SequenceVariable), self.keys())
 
 
 @dataclass
@@ -286,7 +318,8 @@ class Domain(Segment):
     pdb_segment_boundaries: t.Optional[t.Tuple[int, int]] = None
     metadata: t.Optional[t.List[t.Tuple[str, t.Any]]] = field(default_factory=list)
     dir_name: t.Optional[Path] = None
-    variables: t.Optional[Variables] = field(default_factory=dict)
+    variables: t.Optional[Variables] = None
+    parent: t.Any = None
 
     @property
     def id(self):
@@ -299,8 +332,12 @@ class Domain(Segment):
         parent = f'(<-{self.parent_name})' if self.parent_name else ''
         return f'{self.name}{parent}:{self.start}-{self.end}'
 
+    def __post_init__(self):
+        if self.variables is None:
+            self.variables = Variables()
 
-Domains = t.Dict[str, Domain]
+
+# Domains = t.Dict[str, Domain]
 
 
 class InitError(ValueError):

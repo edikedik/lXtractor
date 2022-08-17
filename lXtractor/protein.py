@@ -9,7 +9,7 @@ from Bio.PDB.PDBParser import PDBParser
 from Bio.PDB.Structure import Structure
 from more_itertools import partition
 
-from .base import SeqRec, ProteinDumpNames, Domains, Variables, LengthMismatch, Domain
+from .base import SeqRec, ProteinDumpNames, LengthMismatch, Domain, Variables
 from .utils import Dumper
 
 LOGGER = logging.getLogger(__name__)
@@ -24,8 +24,8 @@ class Protein:
     pdb: t.Optional[str] = None
     chain: t.Optional[str] = None
     uniprot_id: t.Optional[str] = None
-    variables: Variables = field(default_factory=dict)
-    domains: Domains = field(default_factory=dict)
+    variables: t.Optional[Variables] = None
+    domains: t.Dict[str, Domain] = field(default_factory=dict)
     _id: t.Optional[t.Union[int, str]] = None
     dir_name: t.Optional[str] = None
     uniprot_seq: t.Optional[SeqRec] = None
@@ -39,8 +39,15 @@ class Protein:
     uni_pdb_aln: t.Optional[t.Tuple[SeqRec, SeqRec]] = None
 
     @property
-    def id(self):
-        return id(self) if self._id is None else self._id
+    def id(self) -> str:
+        return str(id(self)) if self._id is None else self._id
+
+    def __post_init__(self):
+        if self.variables is None or not isinstance(self.variables, Variables):
+            self.variables = Variables()
+
+    def __repr__(self) -> str:
+        return self.id
 
     def __getitem__(self, key):
         if not self.domains:
@@ -101,7 +108,7 @@ def dump(
         pdb_seq: t.Optional[SeqRec] = None,
         pdb_seq_raw: t.Optional[t.Tuple[str, ...]] = None,
         metadata: t.Optional[t.Iterable[t.Tuple[str, t.Any]]] = None,
-        variables: t.Optional[Variables] = None,
+        variables: t.Optional[t.Dict] = None,
         aln_mapping: t.Optional[t.Dict[int, int]] = None,
         uni_pdb_map: t.Optional[t.Dict[int, int]] = None,
         uni_pdb_aln: t.Optional[t.Tuple[SeqRec, SeqRec]] = None
@@ -254,7 +261,7 @@ def read_domain(base_dir: Path) -> Domain:
         uniprot_seq=uniprot_seq,
         pdb_seq=parsed_files[ProteinDumpNames.pdb_seq],
         pdb_seq_raw=parsed_files[ProteinDumpNames.pdb_seq_raw],
-        pdb_sub_structure=parsed_files[ProteinDumpNames.pdb_structure],
+        structure=parsed_files[ProteinDumpNames.pdb_structure],
         variables=parsed_files[ProteinDumpNames.variables],
         aln_mapping=parsed_files[ProteinDumpNames.aln_mapping],
         uni_pdb_map=parsed_files[ProteinDumpNames.uni_pdb_map],

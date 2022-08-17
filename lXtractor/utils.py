@@ -21,7 +21,7 @@ from Bio.Seq import Seq
 from more_itertools import divide, take, unique_everseen, split_at
 from tqdm.auto import tqdm
 
-from .base import _Fetcher, _Getter, FormatError, SeqRec, Variables
+from .base import _Fetcher, _Getter, FormatError, SeqRec
 
 T = t.TypeVar('T')
 LOGGER = logging.getLogger(__name__)
@@ -250,8 +250,9 @@ class Dumper:
         LOGGER.debug(f'Saved {len(records)} metadata records to {_path}')
 
     def dump_variables(
-            self, variables: Variables, name: str,
+            self, variables, name: str,
             skip_if_contains: t.Collection[str] = ('ALL',)) -> None:
+        # TODO: must be reimplemented
         _path = self.dump_dir / name
         with _path.open('w') as f:
             for name, (_, value) in variables.items():

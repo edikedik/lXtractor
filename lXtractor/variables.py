@@ -6,21 +6,19 @@ import numpy as np
 from Bio.PDB.Atom import Atom
 from Bio.PDB.Residue import Residue
 from Bio.PDB.Structure import Structure
-from lXtractor.base import FailedCalculation, AminoAcidDict, FormatError, AbstractVariable, InputSeparators
-from lXtractor.utils import split_validate
 from more_itertools import unique_justseen
 
+from .base import (
+    FailedCalculation, AminoAcidDict, FormatError, Sep,
+    SequenceVariable, StructureVariable)
+from .utils import split_validate
+
+_V = t.TypeVar('_V', StructureVariable, SequenceVariable)
 _ParsedVariables = t.Tuple[
-    t.List[AbstractVariable],
+    t.List[_V],
     t.List[t.Optional[str]],
     t.List[t.Optional[str]]]
-_FlattenedVariable = t.Tuple[
-    AbstractVariable,
-    t.Optional[str],
-    t.Optional[str]
-]
 _Aggregators = {'min': np.min, 'max': np.max, 'mean': np.mean, 'median': np.median}
-Sep = InputSeparators(',', ':', '::', '_', '--')
 LOGGER = logging.getLogger(__name__)
 
 
@@ -75,7 +73,7 @@ def _get_coord(
     return _try_find_atom(residue, atom).coord
 
 
-class SeqEl(AbstractVariable):
+class SeqEl(StructureVariable):
     """
     Sequence element. A residue at some alignment position.
     """
@@ -88,8 +86,8 @@ class SeqEl(AbstractVariable):
         self.amino_acid_dict = AminoAcidDict()
 
     @property
-    def id(self):
-        return f'Sequence Element ({self.aln_pos})'
+    def rtype(self) -> str:
+        return 'str'
 
     def calculate(
             self, structure: Structure,
@@ -101,7 +99,7 @@ class SeqEl(AbstractVariable):
         return f'{pos}_{resname}_{self.amino_acid_dict[resname]}'
 
 
-class Dist(AbstractVariable):
+class Dist(StructureVariable):
     def __init__(
             self, pos1: int, pos2: int,
             atom1: t.Optional[str] = None,
@@ -118,16 +116,23 @@ class Dist(AbstractVariable):
                 'No atom name specified and "center of mass" flag is down. '
                 'Therefore, not possible to calculate distance.')
 
+    # @property
+    # def id(self):
+    #     atom1 = self.atom1 or 'com'
+    #     atom2 = self.atom2 or 'com'
+    #     return f'Dist(pos1={self.pos1},pos2={self.pos2},' \
+    #            f'atom1={self.atom1},atom2={self.atom2},com={self.com})'
+    #     # return f'Distance {self.pos1}:{atom1}-{self.pos2}:{atom2}'
+
     @property
-    def id(self):
-        atom1 = self.atom1 or 'com'
-        atom2 = self.atom2 or 'com'
-        return f'Distance {self.pos1}:{atom1}-{self.pos2}:{atom2}'
+    def rtype(self) -> str:
+        return 'float'
 
     def calculate(
             self, structure: Structure,
             mapping: t.Optional[t.Mapping[int, int]] = None
     ) -> float:
+        # TODO: simplify via piping
         pos1, pos2 = map(
             lambda p: _try_map(p, mapping),
             [self.pos1, self.pos2])
@@ -162,20 +167,19 @@ def agg_dist(
     return agg_fn(np.linalg.norm(cs1[:, np.newaxis] - cs2, axis=2))
 
 
-class AggDist(AbstractVariable):
+class AggDist(StructureVariable):
     def __init__(self, pos1: int, pos2: int, key: str = 'min'):
         if key not in _Aggregators:
             raise ValueError(
                 f'Wrong key {key}. '
                 f'Available aggregators: {list(_Aggregators)}')
-        self._key_name = key
-        self.key = _Aggregators[key]
+        self.key = key
         self.pos1 = pos1
         self.pos2 = pos2
 
     @property
-    def id(self):
-        return f'{self._key_name.capitalize()} distance {self.pos1}-{self.pos2}'
+    def rtype(self) -> str:
+        return 'float'
 
     def calculate(
             self, structure: Structure,
@@ -187,21 +191,19 @@ class AggDist(AbstractVariable):
         res1, res2 = map(
             lambda p: _try_find_residue(p, structure),
             [pos1, pos2])
-        return agg_dist(res1, res2, self.key)
+        return agg_dist(res1, res2, _Aggregators[self.key])
 
 
-class AllDist(AbstractVariable):
+class AllDist(StructureVariable):
     def __init__(self, key: str = 'min'):
         if key not in _Aggregators:
             raise ValueError(
                 f'Wrong key {key}. '
                 f'Available aggregators: {list(_Aggregators)}')
-        self._key_name = key
-        self.key = _Aggregators[key]
+        self.key = key
 
-    @property
-    def id(self):
-        return f'{self._key_name.capitalize()} ALL-ALL distance'
+    def rtype(self) -> str:
+        return 'float'
 
     def calculate(
             self, structure: Structure,
@@ -220,7 +222,7 @@ class AllDist(AbstractVariable):
             lambda r1, r2: (
                 r1.get_id()[1],
                 r2.get_id()[1],
-                agg_dist(r1, r2, self.key)),
+                agg_dist(r1, r2, _Aggregators[self.key])),
             cs)
         if mapping:
             m_rev = {v: k for k, v in mapping.items()}
@@ -231,24 +233,27 @@ class AllDist(AbstractVariable):
         return list(ds)
 
 
-class Dihedral(AbstractVariable):
+class Dihedral(StructureVariable):
     def __init__(
             self,
-            pos1: int, pos2: int, pos3: int, pos4: int,
-            atom1: str, atom2: str, atom3: str, atom4: str,
+            p1: int, p2: int, p3: int, p4: int,
+            a1: str, a2: str, a3: str, a4: str,
             name: str = 'Dihedral',
             verify_consecutive: bool = True):
         self.name = name
-        self.p1, self.p2, self.p3, self.p4 = pos1, pos2, pos3, pos4
-        self.a1, self.a2, self.a3, self.a4 = atom1, atom2, atom3, atom4
-        self.positions = [pos1, pos2, pos3, pos4]
-        self.atoms = [atom1, atom2, atom3, atom4]
+        self.p1, self.p2, self.p3, self.p4 = p1, p2, p3, p4
+        self.a1, self.a2, self.a3, self.a4 = a1, a2, a3, a4
+        self.positions = [p1, p2, p3, p4]
+        self.atoms = [a1, a2, a3, a4]
         self.verify_consecutive = verify_consecutive
 
-    @property
-    def id(self):
-        return f'{self.name} {self.p1}:{self.a1}-{self.p2}:{self.a2}-' \
-               f'{self.p3}:{self.a3}-{self.p4}:{self.a4}'
+    # @property
+    # def id(self):
+    #     return f'Dihedral(pos1={self.p1},pos2={self.p2},pos3={self.p3},pos4={self.p4}' \
+    #            f'atom1={self.a1},atom2={self.a2},atom3={self.a3},atom4={self.a4}' \
+    #            # f'name={self.name},{ver})'
+    #     # return f'{self.name} {self.p1}:{self.a1}-{self.p2}:{self.a2}-' \
+    #     #        f'{self.p3}:{self.a3}-{self.p4}:{self.a4}'
 
     @staticmethod
     def _verify_consecutive(positions: t.Iterable[int]) -> None:
@@ -265,6 +270,10 @@ class Dihedral(AbstractVariable):
                 raise FailedCalculation(
                     f'Positions {previous} and {current} are not consecutive '
                     f'in a given list {positions}')
+
+    @property
+    def rtype(self) -> str:
+        return 'float'
 
     def calculate(
             self, structure: Structure,
@@ -300,8 +309,7 @@ class Dihedral(AbstractVariable):
 
 
 class PseudoDihedral(Dihedral):
-    def __init__(
-            self, pos1: int, pos2: int, pos3: int, pos4: int):
+    def __init__(self, pos1: int, pos2: int, pos3: int, pos4: int):
         super().__init__(
             pos1, pos2, pos3, pos4,
             'CA', 'CA', 'CA', 'CA',
@@ -332,12 +340,13 @@ class Omega(Dihedral):
             name='Psi')
 
 
-class CompositeDihedral(AbstractVariable):
+class CompositeDihedral(StructureVariable):
     def __init__(self, dihedrals: t.Sequence[Dihedral]):
         self.dihedrals = dihedrals
 
-    def id(self):
-        raise NotImplementedError
+    @property
+    def rtype(self) -> str:
+        return 'float'
 
     def calculate(
             self, structure: Structure,
@@ -361,23 +370,27 @@ class CompositeDihedral(AbstractVariable):
 class Chi1(CompositeDihedral):
     def __init__(self, pos: int):
         self.pos = pos
-        dihedrals = [
+        super().__init__(self.get_dihedrals(pos))
+
+    @staticmethod
+    def get_dihedrals(pos):
+        return [
             Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'CG', 'Chi1_CG'),
             Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'CG1', 'Chi1_CG1'),
             Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'OG', 'Chi1_OG'),
             Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'OG1', 'Chi1_OG1'),
             Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'SG', 'Chi1_SG')
         ]
-        super().__init__(dihedrals)
-
-    def id(self):
-        return f'Chi1 Dihedral (CG, CG1, OG, OG1, SG)'
 
 
 class Chi2(CompositeDihedral):
     def __init__(self, pos: int):
         self.pos = pos
-        dihedrals = [
+        super().__init__(self.get_dihedrals(pos))
+
+    @staticmethod
+    def get_dihedrals(pos):
+        return [
             Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG', 'CD', 'Chi2_CG-CD'),
             Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG', 'OD1', 'Chi2_CG-OD1'),
             Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG', 'ND1', 'Chi2_CG-ND1'),
@@ -385,10 +398,6 @@ class Chi2(CompositeDihedral):
             Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG', 'CD1', 'Chi2_CG-CD1'),
             Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG', 'SD', 'Chi2_CG-SD'),
         ]
-        super().__init__(dihedrals)
-
-    def id(self):
-        return f'Chi2 Dihedral (CG-CD,CG-OD1,CG-ND1,CG1-CD,CG-CD1,CG-SD)'
 
 
 def calculate_dihedral(
@@ -427,7 +436,7 @@ def calculate_dihedral(
     return np.arctan2(y, x)
 
 
-def parse_variables(inp: str) -> _ParsedVariables:
+def parse_var(inp: str) -> _ParsedVariables:
     # TODO: link a complete description of variables syntax
     """
     Parse raw input into a collection of variables, structures, and levels
@@ -456,9 +465,11 @@ def parse_variables(inp: str) -> _ParsedVariables:
         variables = inp
         domains, proteins = None, None
 
-    variables = list(map(dispatch_var, variables.split(',')))
-    proteins = [None] if proteins is None else proteins.split(',')
-    domains = [None] if domains is None else domains.split(',')
+    variables = list(map(init_var, variables.split(',')))
+    if proteins is not None:
+        proteins = proteins.split(Sep.list)
+    if domains is not None:
+        domains = domains.split(Sep.list)
 
     LOGGER.debug(f'Split input {inp} into Variables={variables},'
                  f'Proteins={proteins},Domains={domains}')
@@ -466,17 +477,17 @@ def parse_variables(inp: str) -> _ParsedVariables:
     return variables, proteins, domains
 
 
-def dispatch_var(var: str) -> AbstractVariable:
+def init_var(var: str) -> _V:
     """
     Convert a textual representation of a single variable
     into a concrete and initialized variable.
 
-    >>> assert isinstance(dispatch_var('123'), SeqEl)
-    >>> assert isinstance(dispatch_var('1-2'), Dist)
-    >>> assert isinstance(dispatch_var('1-2-3-4'), PseudoDihedral)
+    >>> assert isinstance(init_var('123'), SeqEl)
+    >>> assert isinstance(init_var('1-2'), Dist)
+    >>> assert isinstance(init_var('1-2-3-4'), PseudoDihedral)
 
     :param var: textual representation of a variable.
-    :return: subclass of a :class:`AbstractVariable`
+    :return: initialized variable, a concrete subclass of an :class:`AbstractVariable`
     """
 
     def split_pos(_pos: str) -> t.Tuple[int, t.Optional[str]]:
