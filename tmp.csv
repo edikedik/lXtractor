@@ -1,0 +1,5 @@
+,Protein,Domain,Variable,Result
+0,P00523_2OIQ:A,Protein kinase(<-P00523_2OIQ:A):267-520,"Dist(pos1=1,pos2=2,atom1='CA',atom2=None,com=True)",
+1,P00523_2OIQ:A,Protein kinase(<-P00523_2OIQ:A):267-520,"Dist(pos1=1,pos2=350,atom1=None,atom2='CA',com=True)",
+2,P12931_2SRC:A,Protein kinase(<-P12931_2SRC:A):270-523,"Dist(pos1=1,pos2=2,atom1='CA',atom2=None,com=True)",
+3,P12931_2SRC:A,Protein kinase(<-P12931_2SRC:A):270-523,"Dist(pos1=1,pos2=350,atom1=None,atom2='CA',com=True)",

@@ -59,6 +59,9 @@ class Protein:
         else:
             raise ValueError('Wrong key type')
 
+    def __iter__(self):
+        yield from self.domains.values()
+
     def dump(self, base_dir: Path):
         if self.dir_name is None:
             path = base_dir / self._id

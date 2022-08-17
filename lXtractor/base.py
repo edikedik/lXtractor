@@ -260,12 +260,16 @@ class Segment:
     data: t.Optional[t.Dict[str, t.Any]] = field(
         default_factory=dict)
 
-    def __str__(self):
-        return self.__repr__()
-
-    def __repr__(self):
+    @property
+    def id(self) -> str:
         parent = f'(<-{self.parent_name})' if self.parent_name else ''
         return f'{self.name}{parent}:{self.start}-{self.end}'
+
+    def __str__(self):
+        return self.id
+
+    def __repr__(self):
+        return self.id
 
     def __iter__(self):
         return iter(range(self.start, self.end + 1))
@@ -321,20 +325,12 @@ class Domain(Segment):
     variables: t.Optional[Variables] = None
     parent: t.Any = None
 
-    @property
-    def id(self):
-        return self.name
-
-    def __str__(self):
-        return self.__repr__()
-
-    def __repr__(self):
-        parent = f'(<-{self.parent_name})' if self.parent_name else ''
-        return f'{self.name}{parent}:{self.start}-{self.end}'
-
     def __post_init__(self):
         if self.variables is None:
             self.variables = Variables()
+
+    def __repr__(self) -> str:
+        return self.id
 
 
 # Domains = t.Dict[str, Domain]

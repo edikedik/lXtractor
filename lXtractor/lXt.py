@@ -16,7 +16,7 @@ from tqdm.auto import tqdm
 from lXtractor.alignment import Alignment, mafft_align, map_pairs_numbering, _Align_method
 from lXtractor.base import (
     SeqRec, FormatError, MissingData, AbstractVariable,
-    FailedCalculation, Seq, Domain, AminoAcidDict, Sep)
+    FailedCalculation, Seq, Domain, AminoAcidDict, Sep, StructureVariable, SequenceVariable)
 from lXtractor.cutters import extract_pdb_domains
 from lXtractor.input_parser import init
 from lXtractor.pdb import PDB, get_sequence, wrap_raw_pdb
@@ -171,6 +171,17 @@ class lXtractor:
     @property
     def domains(self) -> t.List[Domain]:
         return list(chain.from_iterable(p.domains.values() for p in self))
+
+    @property
+    def variables(self) -> pd.DataFrame:
+        xs = []
+        for protein in self:
+            for v, r in protein.variables.items():
+                xs.append((protein, np.nan, v, r))
+            for domain in protein:
+                for v, r in domain.variables.items():
+                    xs.append((protein, domain, v, r))
+        return pd.DataFrame(xs, columns=['Protein', 'Domain', 'Variable', 'Result'])
 
     def subset(self, key: _KeyT, deep: bool = False) -> "lXtractor":
         ps = self.__getitem__(key)
@@ -455,6 +466,7 @@ class lXtractor:
                 proteins[r.id].domains = r.domains
 
     def compute_seq_meta(self, exclude_mod: t.Tuple[str, ...] = ('HOH',)):
+        # TODO: rm when range variable implemented
         proteins = [
             p for p in self.proteins if (p.structure and p.pdb_seq and p.uniprot_seq)]
         if proteins:
@@ -605,15 +617,15 @@ class lXtractor:
         else:
             results = starmap(calculate, staged)
 
-        for p_id, d_id, v, res in chain.from_iterable(results):
+        for p_id, domain_name, v, res in chain.from_iterable(results):
             obj_id = p_id
-            if d_id:
-                obj_id += f'{Sep.dom}{d_id}'
+            if domain_name:
+                obj_id += f'{Sep.dom}{domain_name}'
             if isinstance(res, Exception):
                 LOGGER.error(f'Failed on {obj_id} due to: {res}')
             else:
                 LOGGER.debug(f'Calculated variable {v}={res} for {obj_id}')
-                self[p_id][d_id].variables[v] = res
+                self[p_id][domain_name].variables[v] = res
 
     def dump(self):
         raise NotImplementedError
