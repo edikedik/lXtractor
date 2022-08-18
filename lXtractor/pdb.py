@@ -14,9 +14,9 @@ from more_itertools import flatten, unzip, partition, mark_ends, pairwise, rstri
 from toolz import groupby, curry, pipe, identity
 from toolz.curried import map, filter
 
-from lXtractor.base import AminoAcidDict, MissingData, AmbiguousData, SeqRec, Seq
-from lXtractor.protein import Protein
-from lXtractor.utils import download_text, fetch_iterable, try_fetching_until
+from .base import AminoAcidDict, MissingData, AmbiguousData, SeqRec, Seq
+from .protein import Protein
+from .utils import download_text, fetch_iterable, try_fetching_until
 
 WrappedResult = t.Tuple[
     str, Structure, t.Optional[t.List[t.Tuple[str, t.Any]]]]

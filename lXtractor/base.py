@@ -246,8 +246,7 @@ class Segment:
     Dataclass holding a definition of an arbitrary segment.
 
     Minimum data required is ``start`` and ``and``.
-    It can be helpful to define both
-     name of the segment and
+    It can be helpful to define both name of the segment and
     where it comes from (via ``parent_name``).
 
     A dictionary with arbitrary data resides within ``data``

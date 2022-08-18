@@ -233,7 +233,7 @@ class UniProt:
         """
         Fetch fasta sequences for each of the given collection of proteins.
         Write the fetched sequences in terms of ``SeqRecord`` objects
-            into ``uniprot_seq`` attribute of each ``Protein``.
+        into ``uniprot_seq`` attribute of each ``Protein``.
 
         :param proteins: A collection of ``Protein`` objects.
         """

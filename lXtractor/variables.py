@@ -444,11 +444,10 @@ def parse_var(inp: str) -> _ParsedVariables:
 
     :param inp: ``"[variable_specs]--[protein_specs]::[domains]"`` format, where:
 
-        #. `variable_specs` define the variable type
-        (e.g., `1:CA-2:CA` for CA-CA distance between positions 1 and 2)
-        #. `protein_specs` define proteins for which to calculate variables
-        #. `domains` list the domain names for the given protein collection
-
+        - `variable_specs` define the variable type
+            (e.g., `1:CA-2:CA` for CA-CA distance between positions 1 and 2)
+        - `protein_specs` define proteins for which to calculate variables
+        - `domains` list the domain names for the given protein collection
     :return: a namedtuple with (1) variables, (2) list of proteins (or ``[None]``),
         and (3) a list of domains (or ``[None]``).
     """

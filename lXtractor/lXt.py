@@ -1,3 +1,6 @@
+"""
+Main module for the package containing an ``lXtractor`` interface.
+"""
 import logging
 import typing as t
 from copy import deepcopy, copy
@@ -8,26 +11,23 @@ import numpy as np
 import pandas as pd
 import ray
 from Bio.PDB.Structure import Structure
+from Bio.SeqRecord import SeqRecord as SeqRec
 from more_itertools import flatten, peekable, ilen
 from toolz import pipe, curry
 from toolz.curried import filter, map, groupby
 from tqdm.auto import tqdm
 
-from lXtractor.alignment import Alignment, mafft_align, map_pairs_numbering, _Align_method
-from lXtractor.base import (
-    SeqRec, FormatError, MissingData, AbstractVariable,
-    FailedCalculation, Seq, Domain, AminoAcidDict, Sep, StructureVariable, SequenceVariable)
-from lXtractor.cutters import extract_pdb_domains
-from lXtractor.input_parser import init
-from lXtractor.pdb import PDB, get_sequence, wrap_raw_pdb
-from lXtractor.protein import Protein
-from lXtractor.sifts import SIFTS
-from lXtractor.uniprot import UniProt
-from lXtractor.utils import run_handles
-from lXtractor.variables import _ParsedVariables, _V, parse_var
+from .alignment import Alignment, mafft_align, map_pairs_numbering, _Align_method
+from .base import (FormatError, MissingData, FailedCalculation, Seq, Domain, AminoAcidDict, Sep)
+from .cutters import extract_pdb_domains
+from .input_parser import init
+from .pdb import PDB, get_sequence, wrap_raw_pdb
+from .protein import Protein
+from .sifts import SIFTS
+from .uniprot import UniProt
+from .utils import run_handles
+from .variables import _ParsedVariables, _V, parse_var
 
-_VariableSetup = t.Tuple[AbstractVariable, t.Optional[str], t.Optional[str]]
-_ChainLevel = 'Chain'
 _KeyT = t.Union[int, str, slice, t.Sequence[bool], np.ndarray]
 _AlnT = t.Union[t.List[SeqRec], t.List[str], Alignment]
 LOGGER = logging.getLogger(__name__)
@@ -43,6 +43,9 @@ T = t.TypeVar('T')
 
 
 class lXtractor:
+    """
+    Main interface encompassing core functionalities.
+    """
     def __init__(
             self, inputs: t.Optional[t.Sequence[str]] = None,
             proteins: t.Optional[t.List[Protein]] = None,
@@ -55,6 +58,19 @@ class lXtractor:
             alignment: t.Optional[Alignment] = None,
             num_threads: t.Optional[int] = None
     ):
+        """
+
+        :param inputs: A sequence of inputs to be parsed into ``Protein`` objects.
+        :param proteins: A list of protein objects. If provided, ignores ``inputs`` argument.
+        :param expected_domains:
+        :param uniprot:
+        :param pdb:
+        :param sifts:
+        :param sifts_id_mapping:
+        :param sifts_segment_mapping:
+        :param alignment:
+        :param num_threads:
+        """
 
         if inputs is None and proteins is None:
             raise ValueError('Must provide either ``inputs`` or ``proteins``')

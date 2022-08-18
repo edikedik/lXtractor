@@ -10,8 +10,8 @@ from Bio import SeqIO
 from more_itertools import partition, ilen
 from toolz import curry
 
-from lXtractor.base import Seq, SeqRec, AbstractResource, AmbiguousData, LengthMismatch
-from lXtractor.utils import run_sp
+from .base import Seq, SeqRec, AbstractResource, AmbiguousData, LengthMismatch
+from .utils import run_sp
 
 _GAP = '-'
 _Add_method = t.Callable[
@@ -137,7 +137,13 @@ def hmmer_align(
         hmmalign_exe: str = 'hmmalign'
 ) -> t.List[SeqRec]:
     """
-    Align a collection of sequences to a profile using `hmmalign`
+    Align sequences using hmmalign from hmmer.
+    The latter must be installed and available.
+
+    :param seqs: Sequences to align.
+    :param profile_path: A path to a profile.
+    :param hmmalign_exe: Name of the executable.
+    :return: A list of aligned sequences.
     """
     handle = NamedTemporaryFile('w')
     SeqIO.write(seqs, handle, 'fasta')
@@ -217,6 +223,17 @@ def seq_identity(
         seq1: SeqRec, seq2: SeqRec, align: bool = True,
         align_method: _Align_method = mafft_align
 ) -> float:
+    """
+    Calculate sequence identity between a pair of sequences.
+
+    :param seq1: Protein seq.
+    :param seq2: Protein seq.
+    :param align: Align before calculating.
+        If ``False``, sequences are assumed to be aligned.
+    :param align_method: Align method to use.
+        Must be a callable accepting and returning a list of sequences.
+    :return: A number of matching characters divided by a smaller sequence's length.
+    """
     if align:
         seq1, seq2 = align_method([seq1, seq2])
     if len(seq1) != len(seq2):
@@ -230,17 +247,28 @@ def seq_identity(
 
 
 def seq_coverage(
-        seq: SeqRec, cover: SeqRec, align: bool = True, 
-        align_method: _Align_method = mafft_align):
+        seq: SeqRec, cover: SeqRec, align: bool = True,
+        align_method: _Align_method = mafft_align
+) -> float:
     """
-    Fraction of ``seq`` covered by ``cover``
+    Calculate which fraction of ``seq`` is covered by ``cover``.
+    The latter is assumed to be a subsequence of the former
+    (otherwise, 100% coverage is guaranteed).
+
+    :param seq: A protein sequence.
+    :param cover: A protein sequence to check against ``seq``.
+    :param align: Align before calculating.
+        If ``False``, sequences are assumed to be aligned.
+    :param align_method: Align method to use.
+        Must be a callable accepting and returning a list of sequences.
+    :return: A number of non-gap characters divided by the ``seq``'s length.
     """
     if align:
         seq, cover = align_method([seq, cover])
     if len(seq) != len(cover):
         raise ValueError('Seq lengths must match')
     seq_len = len(str(seq.seq).replace('-', ''))
-    num_cov = sum(1 for c1, c2 in zip(seq, cover) 
+    num_cov = sum(1 for c1, c2 in zip(seq, cover)
                   if c1 != '-' and c2 != '-')
     return num_cov / seq_len
 
@@ -250,6 +278,27 @@ def map_pairs_numbering(
         s2: SeqRec, s2_numbering: t.Iterable[int],
         align: bool = True, align_method: _Align_method = mafft_align
 ) -> t.Iterator[t.Tuple[t.Optional[int], t.Optional[int]]]:
+    """
+    Map numbering between a pair of sequences.
+
+    >>> from Bio.SeqRecord import SeqRecord as SeqRec
+    >>> from Bio.Seq import Seq
+    >>> s1, s2 = SeqRec(Seq('-AAA')), SeqRec(Seq('B-AA'))
+    >>> mapping = map_pairs_numbering(s1, [1, 2, 3], s2, [4, 5, 6], align=False)
+    >>> assert list(mapping) == [(None, 4), (1, None), (2, 5), (3, 6)]
+
+    :param s1: The first protein sequence.
+    :param s1_numbering: The first sequence's numbering.
+    :param s2: The second protein sequence.
+    :param s2_numbering: The second sequence's numbering.
+    :param align: Align before calculating.
+        If ``False``, sequences are assumed to be aligned.
+    :param align_method: Align method to use.
+        Must be a callable accepting and returning a list of sequences.
+    :return: Iterator over character pairs (`a`, `b`),
+        where `a` and `b` are the original sequences' numberings.
+        One of `a` or `b` in a pair can be ``None`` to represent a gap.
+    """
 
     s1_numbering, s2_numbering = map(list, [s1_numbering, s2_numbering])
 
@@ -355,7 +404,7 @@ class Alignment(AbstractResource):
         self._verify(self.seqs)
 
     @property
-    def shape(self):
+    def shape(self) -> t.Tuple[int, int]:
         """
         :return: (a number of sequences, an alignment length)
         """
@@ -363,7 +412,7 @@ class Alignment(AbstractResource):
         aln_len = 0 if not self.seqs else len(self.seqs[0])
         return num_rec, aln_len
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f'{self.name},shape={self.shape}'
 
     def __contains__(self, item: t.Union[SeqRec, str]):
@@ -411,14 +460,7 @@ class Alignment(AbstractResource):
     def _verify(self, seqs: t.Iterable[SeqRec]):
         lengths = set(len(s) for s in seqs)
         if len(lengths) > 1:
-            raise ValueError(
-                f'Expected all seqs to have the same length, got {lengths}')
-        for seq in seqs:
-            for char in seq:
-                if char.isalpha() or char == self.gap:
-                    continue
-                raise ValueError(
-                    f'Invalid character {char} in sequence {seq}')
+            raise ValueError(f'Expected all seqs to have the same length, got {lengths}')
 
     @property
     def ids(self) -> t.Optional[t.List[str]]:
@@ -434,7 +476,7 @@ class Alignment(AbstractResource):
         """
         :param upper: uppercase the sequences.
         :return: an iterator over ungapped alignment sequences.
-            `None` if there are no :attr:`Alignment.seqs`.
+        `None` if there are no :attr:`Alignment.seqs`.
         """
         if self.seqs is None:
             return None
@@ -463,6 +505,7 @@ class Alignment(AbstractResource):
         """
         Removes alignment columns, such that their gap fraction
         exceeds a given threshold.
+        Uses :func:`remove_gap_columns`.
 
         :param max_fraction_of_gaps: gap threshold.
         :param overwrite: overwrite :attr:`~seqs` with the results.
@@ -504,38 +547,65 @@ class Alignment(AbstractResource):
         raise NotImplementedError
 
     def fetch(self, url: str):
+        """
+        A method for subclasses to define fetch strategy to acquire resource.
+        """
         raise NotImplementedError
 
-    def dump(self, path: str) -> None:
+    def dump(self, path: t.Union[str, Path]) -> int:
+        """
+        :param path: Path to save seqs.
+        :return: The number of written seqs.
+        """
         num_dumped = SeqIO.write(self.seqs, path, self.fmt)
         LOGGER.debug(f'Wrote {num_dumped} sequences to {path}')
+        return num_dumped
 
     def add_sequences(
-            self, seqs: t.Collection[SeqRec], overwrite: bool = False,
+            self, seqs: t.Sequence[SeqRec], overwrite: bool = False,
     ) -> t.Tuple[t.Sequence[SeqRec], t.Sequence[SeqRec]]:
+        """
+        Add given sequences to the alignment.
 
-        LOGGER.debug(
-            f'Adding {len(seqs)} sequences using the method {self.add_method}')
+        :param seqs: Sequences to add.
+        :param overwrite: Overwrite existing :attr:`seqs` with the results.
+        :return: A tuple with two elements:
+            (1) a list of sequences after addition ``seqs``,
+            (2) a list of added sequences extracted from the alignment after the addition.
+        """
+
+        LOGGER.debug(f'Adding {len(seqs)} sequences using the method {self.add_method}')
 
         if self._handle is None:
             self._handle = NamedTemporaryFile('w')
             SeqIO.write(self.seqs, self._handle.name, 'fasta')
             self._handle.seek(0)
-            LOGGER.debug(
-                f'Created new temporary file with the MSA {self._handle.name}')
+            LOGGER.debug(f'Created new temporary file with the MSA {self._handle.name}')
 
-        alignment, added = self.add_method(
-            Path(self._handle.name), seqs)
+        prev_shape = self.shape
+        alignment, added = self.add_method(Path(self._handle.name), seqs)
+        curr_shape = (len(alignment), len(alignment[0]))
+
+        if prev_shape[1] != curr_shape[1]:
+            raise ValueError(f'Expected to preserve the number of columns '
+                             f'(shape_before={prev_shape},shape_now={curr_shape})')
 
         if overwrite:
             self.seqs = alignment
+
         return alignment, added
 
     def remove_sequences(
             self, ids: t.Collection[str], overwrite: bool = True
     ) -> t.List[SeqRec]:
-        LOGGER.debug(
-            f'Removing {len(ids)} sequences with the following ids: {list(ids)}')
+        """
+        Remove sequences with given ids from the alignment.
+
+        :param ids: A collection of IDs to remove.
+        :param overwrite: Overwrite existing :attr:`seqs` with the result.
+        :return: A list of seqs without the excluded ones.
+        """
+        LOGGER.debug(f'Removing {len(ids)} sequences with the following ids: {list(ids)}')
         alignment = [s for s in self.seqs if s.id not in ids]
         if overwrite:
             self.seqs = alignment
@@ -543,30 +613,39 @@ class Alignment(AbstractResource):
 
     def map_seq_numbering(
             self, seq: SeqRec,
-            seq_numbering: t.Sequence[int]
+            seq_numbering: t.Sequence[int],
+            seq_added: bool = False,
     ) -> t.Dict[int, int]:
         # TODO: support matching seq by ID and sequence to avoid unneeded alignments
         """
-        Map between a sequence numbering and the alignment columns.
+        Map between a sequence's numbering to the alignment columns.
 
-        :param seq:
-        :param seq_numbering:
-        :return:
+        :param seq: A sequence whose numbering to map.
+        :param seq_numbering: Optional numbering of the provided seq.
+            Must be the same length as ``seq``.
+        :param seq_added: Do not call :meth:`add_sequences`,
+            assuming the sequence is already added.
+        :return: A dictionary mapping ``seq_numbering`` to alignment's columns indices.
         """
 
         if not len(seq_numbering) == len(seq):
             raise AmbiguousData(
                 f'Numbering length {len(seq_numbering)} does not match '
                 f'the sequence length {len(seq)}')
+
         LOGGER.debug(
             f'Mapping between sequence {seq.id} (size {len(seq)}) '
             f'and the alignment columns numbering.')
-        # add a sequence to the seqs and extract it right away
-        _, aligned_msa = self.add_sequences([seq], False)
-        aligned_msa = aligned_msa[-1]
-        LOGGER.debug(
-            f'Aligned and extracted sequence {len(aligned_msa.id)} '
-            f'with size {len(aligned_msa)}')
+
+        if seq_added:
+            aligned_msa = seq
+        else:
+            # add a sequence to the seqs and extract it right away
+            _, aligned_msa = self.add_sequences([seq], False)
+            aligned_msa = aligned_msa[-1]
+            LOGGER.debug(
+                f'Aligned and extracted sequence {len(aligned_msa.id)} '
+                f'with size {len(aligned_msa)}')
 
         # align the extracted sequence and the original one
         # extract the (second time) aligned sequence
@@ -577,8 +656,7 @@ class Alignment(AbstractResource):
 
         # Obtain the filtered numbering with the sequence elements
         # really present in the MSA-aligned sequence
-        ori2aligned = (i for i, c in zip(
-            seq_numbering, aligned_ori) if c != '-')
+        ori2aligned = (i for i, c in zip(seq_numbering, aligned_ori) if c != '-')
 
         return {i: next(ori2aligned) for i, c in
                 enumerate(aligned_msa, start=1) if c != '-'}
