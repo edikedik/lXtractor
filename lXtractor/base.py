@@ -19,10 +19,16 @@ Sep = InputSeparators(',', ':', '::', '_', '--')
 
 
 class AminoAcidDict:
-    # TODO: consider morphing into a proper dict subclass
     """
     Complete and flexible amino acid dictionary, mapping between
     3->1 and 1->3-letter codes.
+
+    >>> d = AminoAcidDict()
+    >>> assert d['A'] == 'ALA'
+    >>> assert d['ALA'] == 'A'
+    >>> assert d['XXX'] == 'X'
+    >>> assert d['X'] == 'UNK'
+
     """
 
     def __init__(
@@ -102,7 +108,7 @@ class AminoAcidDict:
 
 class AbstractResource(metaclass=ABCMeta):
     """
-    Abstract base class defyning basic interface any resource must provide.
+    Abstract base class defining basic interface any resource must provide.
     """
 
     def __init__(self, resource_path: t.Optional[Path],
@@ -112,31 +118,36 @@ class AbstractResource(metaclass=ABCMeta):
 
     @abstractmethod
     def read(self):
+        """
+        Read the resource using the :attr:`resource_path`
+        """
         raise NotImplementedError
 
     @abstractmethod
     def parse(self):
+        """
+        Parse the read resource, so it's ready for usage.
+        """
         raise NotImplementedError
 
     @abstractmethod
     def dump(self, path: Path):
+        """
+        Save the resource under the given `path`.
+        """
         raise NotImplementedError
 
     @abstractmethod
     def fetch(self, url: str):
+        """
+        Download the resource.
+        """
         raise NotImplementedError
 
 
 class AbstractVariable(metaclass=ABCMeta):
     """
     Abstract base class for variables.
-
-    A variable is any quantity that can be calculated given a
-    :class:`Bio.PDB.Structure.Structure` object and a mapping
-    between alignment numbering and structure's numbering.
-
-    During ``__init__`` each a variable encapsulates alignment-related data,
-    so the mapping is necessary for the calculation of any variable.
     """
 
     __slots__ = ()
@@ -172,50 +183,67 @@ class AbstractVariable(metaclass=ABCMeta):
     @abstractmethod
     def rtype(self) -> str:
         """
-        A string such that eval(result_type)(result) converts the result
+        A string such that ``eval(result_type)(result)`` converts the result
         into the correct type. For instance, "float".
         """
         raise NotImplementedError
 
     @abstractmethod
     def calculate(
-            self, structure: t.Union[Structure, SeqRec],
-            mapping: t.Optional[t.Mapping[int, int]] = None):
+            self, obj: t.Union[Structure, SeqRec],
+            mapping: t.Optional[t.Mapping[int, int]] = None
+    ) -> t.Union[str, float]:
         """
         Calculate the variable. Each variable defines its own calculation
         strategy within this method.
 
-        :param structure:
-        :param mapping:
-        :return:
+        :param obj: An object used for variable's calculation.
+        :param mapping: An optional mapping between an ``obj``'s sequence
+            and alignment positions.
+        :return: Calculation result.
+        :raises: :class:`FailedCalculation` if the calculation fails.
         """
         raise NotImplementedError
 
 
 class StructureVariable(AbstractVariable):
+    """
+    A type of variable whose :meth:`calculate` method requires protein structure.
+    """
     @abstractmethod
-    def calculate(
-            self, structure: Structure,
-            mapping: t.Optional[t.Mapping[int, int]] = None):
+    def calculate(self, obj: Structure, mapping: t.Optional[t.Mapping[int, int]] = None):
         raise NotImplementedError
 
 
 class SequenceVariable(AbstractVariable):
+    """
+    A type of variable whose :meth:`calculate` method requires protein sequence.
+    """
     @abstractmethod
-    def calculate(
-            self, structure: Structure,
-            mapping: t.Optional[t.Mapping[int, int]] = None):
+    def calculate(self, obj: SeqRec, mapping: t.Optional[t.Mapping[int, int]] = None):
         raise NotImplementedError
 
 
 class Variables(t.Dict):
+    """
+    A subclass of :class:`dict` holding variables (:class:`AbstractVariable` subclasses).
+
+    The keys are the :class:`AbstractVariable` subclasses' instances (since these are hashable objects),
+    and values are calculation results.
+    """
 
     @property
     def structure(self) -> t.Iterator[StructureVariable]:
+        """
+        :return: values that are :class:`StructureVariable` instances.
+        """
         return filter(lambda v: isinstance(v, StructureVariable), self.keys())
 
     @property
     def sequence(self) -> t.Iterator[SequenceVariable]:
+        """
+        :return: values that are :class:`SequenceVariable` instances.
+        """
         return filter(lambda v: isinstance(v, SequenceVariable), self.keys())
 
 
@@ -311,6 +339,15 @@ class Segment:
 
 @dataclass
 class Domain(Segment):
+    """
+    A mutable dataclass container, holding data associated with a protein domain:
+    PDB and UniProt sequences, PDB structure (cut according to domain boundaries), etc.
+
+    :attr:`name` of the domain is given in the following format:
+    "{domain_name}(<-{parent_name}):{start}-{end}, where ``domain_name`` is typically how
+    it appears in UniProt, ``parent_name`` is the original :meth:`lXtractor.protein.Protein.id`.
+    ``start`` and ``end`` correspond to domain boundaries.
+    """
     uniprot_seq: t.Optional[SeqRec] = None
     pdb_seq: t.Optional[SeqRec] = None
     pdb_seq_raw: t.Optional[t.Tuple[str, ...]] = None

@@ -89,12 +89,9 @@ class SeqEl(StructureVariable):
     def rtype(self) -> str:
         return 'str'
 
-    def calculate(
-            self, structure: Structure,
-            mapping: t.Optional[t.Mapping[int, int]] = None
-    ) -> str:
+    def calculate(self, obj: Structure, mapping: t.Optional[t.Mapping[int, int]] = None) -> str:
         pos = _try_map(self.aln_pos, mapping)
-        res = _try_find_residue(pos, structure)
+        res = _try_find_residue(pos, obj)
         resname = res.get_resname()
         return f'{pos}_{resname}_{self.amino_acid_dict[resname]}'
 
@@ -128,16 +125,13 @@ class Dist(StructureVariable):
     def rtype(self) -> str:
         return 'float'
 
-    def calculate(
-            self, structure: Structure,
-            mapping: t.Optional[t.Mapping[int, int]] = None
-    ) -> float:
+    def calculate(self, obj: Structure, mapping: t.Optional[t.Mapping[int, int]] = None) -> float:
         # TODO: simplify via piping
         pos1, pos2 = map(
             lambda p: _try_map(p, mapping),
             [self.pos1, self.pos2])
         res1, res2 = map(
-            lambda p: _try_find_residue(p, structure),
+            lambda p: _try_find_residue(p, obj),
             [pos1, pos2])
 
         xyz1, xyz2 = starmap(
@@ -181,15 +175,12 @@ class AggDist(StructureVariable):
     def rtype(self) -> str:
         return 'float'
 
-    def calculate(
-            self, structure: Structure,
-            mapping: t.Optional[t.Mapping[int, int]] = None
-    ) -> t.Union[str, float]:
+    def calculate(self, obj: Structure, mapping: t.Optional[t.Mapping[int, int]] = None) -> t.Union[str, float]:
         pos1, pos2 = map(
             lambda p: _try_map(p, mapping),
             [self.pos1, self.pos2])
         res1, res2 = map(
-            lambda p: _try_find_residue(p, structure),
+            lambda p: _try_find_residue(p, obj),
             [pos1, pos2])
         return agg_dist(res1, res2, _Aggregators[self.key])
 
@@ -205,14 +196,11 @@ class AllDist(StructureVariable):
     def rtype(self) -> str:
         return 'float'
 
-    def calculate(
-            self, structure: Structure,
-            mapping: t.Optional[t.Mapping[int, int]] = None
-    ) -> t.List[t.Tuple[int, int, float]]:
+    def calculate(self, obj: Structure, mapping: t.Optional[t.Mapping[int, int]] = None) -> t.List[t.Tuple[int, int, float]]:
         # residues = filter(
         #     lambda r: r.get_full_id()[-1][0] == ' ',
         #     structure.get_residues())
-        residues = structure.get_residues()
+        residues = obj.get_residues()
         if mapping:
             residues = filter(
                 lambda r: r.get_id()[1] in mapping.values(),
@@ -275,10 +263,7 @@ class Dihedral(StructureVariable):
     def rtype(self) -> str:
         return 'float'
 
-    def calculate(
-            self, structure: Structure,
-            mapping: t.Optional[t.Mapping[int, int]] = None
-    ) -> float:
+    def calculate(self, obj: Structure, mapping: t.Optional[t.Mapping[int, int]] = None) -> float:
         # Map positions to the PDB numbering
         positions = list(map(lambda p: _try_map(p, mapping), self.positions))
         LOGGER.debug(f'Mapped alignment positions {self.positions} to {positions}')
@@ -289,7 +274,7 @@ class Dihedral(StructureVariable):
             LOGGER.debug(f'Verified positions are consecutive')
 
         # Attempt to find residues at mapped positions
-        residues = list(map(lambda p: _try_find_residue(p, structure), positions))
+        residues = list(map(lambda p: _try_find_residue(p, obj), positions))
         LOGGER.debug(f'Found residues {residues} at positions {positions}')
 
         # Attempt to find atoms of interest and their coordinates
@@ -348,14 +333,11 @@ class CompositeDihedral(StructureVariable):
     def rtype(self) -> str:
         return 'float'
 
-    def calculate(
-            self, structure: Structure,
-            mapping: t.Optional[t.Mapping[int, int]] = None
-    ) -> float:
+    def calculate(self, obj: Structure, mapping: t.Optional[t.Mapping[int, int]] = None) -> float:
         res = None
         for dihedral in self.dihedrals:
             try:
-                res = dihedral.calculate(structure, mapping)
+                res = dihedral.calculate(obj, mapping)
                 break
             except FailedCalculation:
                 pass
