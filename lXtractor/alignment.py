@@ -406,7 +406,7 @@ class Alignment(AbstractResource):
     @property
     def shape(self) -> t.Tuple[int, int]:
         """
-        :return: (a number of sequences, an alignment length)
+        :return: (# sequences, # columns)
         """
         num_rec = 0 if not self.seqs else len(self.seqs)
         aln_len = 0 if not self.seqs else len(self.seqs[0])

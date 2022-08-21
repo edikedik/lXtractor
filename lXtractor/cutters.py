@@ -1,3 +1,6 @@
+"""
+Module to encompass helper functions extracting protein substructures and subsequences.
+"""
 import logging
 import typing as t
 
@@ -21,6 +24,17 @@ PDB_CUT_RESULT = t.NamedTuple(
 def cut_record(
         rec: SeqRec, segment: Segment
 ) -> t.Tuple[int, int, SeqRec]:
+    """
+    Cut sequence in ``rec`` using ``segment``'s boundaries.
+
+    :param rec: Sequence record.
+    :param segment: Arbitrary segment. Makes sense for
+        :attr:`lXtractor.base.Segment.start` and :attr:`lXtractor.base.Segment.end`
+        to  define some subsequence's boundaries.
+    :return: A sequence record cut according to ``segment``'s boundaries.
+        A suffix "/{start}-{end]" is appended to ``rec``'s id, name and  description.
+    """
+
     overlap = segment.overlap(Segment(1, len(rec)))
 
     if segment.end != overlap.end:
@@ -49,11 +63,19 @@ def cut_structure(
         mapping: t.Dict[int, t.Optional[int]],
 ) -> PDB_CUT_RESULT:
     """
-    :param structure: biopython's ``Structure`` object with ``id``
-        in the format "PDB_Code:Chain"
-    :param segment:
-    :param mapping:
-    :return:
+    Extract a structure and subset the mapping according to
+    a :class:`Segment` boundaries.
+
+    :param structure: :class:`Structure` object with :attr:`Structure.id`
+        in the format "PDB_Code:Chain".
+    :param segment: segment with ``structure``'s UniProt subsequence's boundaries
+        defined by :attr:`lXtractor.base.Segment.start`
+        and :attr:`lXtractor.base.Segment.end`.
+    :param mapping: mapping from ``segment``'s numbering to ``structure``'s numbering.
+    :return: A namedtuple with substructure,
+        substructure's sequence -- 1-letter code and 3-letter codes,
+        subset of mapping corresponding to boundaries,
+        cut mapping, start and end of segment boundaries.
     """
 
     pdb_chain = structure.id.split('_')[0]
@@ -106,8 +128,15 @@ def cut_structure(
 
 def extract_uniprot_domains(
         protein: Protein,
-        keep_parent: bool = True
 ) -> Protein:
+    """
+    For any :class:`lXtractor.base.Domain` the protein contains, extract its
+    subsequence from :attr:`lXtractor.protein.Protein.uniprot_seq` and save it to
+    :attr:`lXtractor.base.Domain.uniprot_seq`.
+
+    :param protein: Protein with UniProt sequence filled in.
+    :return: Protein with changes applied to any domains it contains.
+    """
     if protein.domains is None:
         raise MissingData(f'No domains for protein {protein.id}')
 
@@ -119,16 +148,22 @@ def extract_uniprot_domains(
         domain.start, domain.end = start, end
         domain.uniprot_seq = rec
 
-    if not keep_parent:
-        protein.uniprot_seq = None
-
     return protein
 
 
 def extract_pdb_domains(
         protein: Protein,
-        keep_parent: bool = True
 ) -> Protein:
+    """
+    For any :class:`Domain` the protein contains, extract domain's
+    substructure from :attr:`lXtractor.protein.Protein.structure` and save it to
+    :attr:`lXtractor.base.Domain.structure`.
+
+    :param protein: A protein that has :attr:`Protein.structure`
+        and some :class:`Domain` objects.
+    :return: a :class:`lXtractor.protein.Protein` object with extracted
+        domain substructures.
+    """
     if protein.structure is None:
         raise MissingData(f'Protein {protein.id} has no structure')
     if ':' not in protein.structure.id:
@@ -158,9 +193,6 @@ def extract_pdb_domains(
         domain.pdb_seq = SeqRec(Seq(cut_result.Seq), _id, _id, _id)
         domain.pdb_seq_raw = cut_result.SeqRaw
         domain.uni_pdb_map = cut_result.Mapping
-
-    if not keep_parent:
-        protein.structure = None
 
     return protein
 

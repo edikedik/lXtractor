@@ -1,3 +1,7 @@
+"""
+Module contains helper functions to parse :class:`lXtractor.lXt.lXtractor`
+input into a collection of :class:`lXtractor.protein.Protein` objects.
+"""
 import logging
 import typing as t
 from itertools import product, chain
@@ -8,7 +12,7 @@ from Bio.PDB import PDBParser
 from Bio.PDB.Structure import Structure
 from more_itertools import flatten
 
-from lXtractor.base import SeqRec, FormatError, MissingData, Sep, InputSeparators
+from lXtractor.base import SeqRec, FormatError, MissingData, Sep, InputSeparators, Variables
 from lXtractor.protein import Protein
 from lXtractor.sifts import SIFTS
 
@@ -25,6 +29,14 @@ ProteinAttributes = t.NamedTuple(
 
 
 def parse_pdb_input(inp: str) -> t.Tuple[str, t.Optional[Structure]]:
+    """
+    Parse single PDB input.
+
+    >>> assert parse_pdb_input('1abc') == ('1ABC', None)
+
+    :param inp: input string.
+    :return: (pdb code and optional structure if ``inp`` is a path to a structure.
+    """
 
     if inp.endswith('.pdb'):
         LOGGER.debug(f'Path to a PDB file expected in {inp}')
@@ -42,6 +54,14 @@ def parse_pdb_input(inp: str) -> t.Tuple[str, t.Optional[Structure]]:
 
 
 def parse_uniprot_input(inp: str) -> t.Tuple[str, SeqRec]:
+    """
+
+    >>> assert parse_uniprot_input('anything') == ('anything', None)
+
+    :param inp: input string for a single protein.
+    :return: (UniProt ID, optional sequence record if ``inp``
+        is a path to such a sequecne.
+    """
     # No special name parsing. We instead assume the provided ID
     # to be a valid UniProt accession
 
@@ -66,6 +86,17 @@ def parse_uniprot_input(inp: str) -> t.Tuple[str, SeqRec]:
 def parse_protein(
         inp: str, sep: InputSeparators = Sep
 ) -> t.Tuple[t.Optional[str], t.Optional[SeqRec], t.Optional[str], t.Optional[Structure]]:
+    """
+    Separate input into UniProt and PDB ID, then call
+    :func:`parse_uniprot_input` and :func:`parse_pdb_input` on both parts.
+
+    >>> assert parse_protein(f'UniProtID{Sep.uni_pdb}PDBI') == ('UniProtID', None, 'PDBI', None)
+
+    :param inp: input string for a single protein.
+    :param sep: input separators.
+    :return: (UniProt ID, UniProt sequence, PDB ID, PDB structure),
+        where each element can be optional, but either UniProt or PDB ID are present.
+    """
     if sep.uni_pdb in inp:
         uni, pdb = inp.split(sep.uni_pdb)
     else:
@@ -79,12 +110,30 @@ def parse_protein(
 
 
 def convert_to_attributes(inp: str, sep: InputSeparators = Sep) -> t.Iterator[ProteinAttributes]:
+    """
+    Convert input to protein attributes -- a set of arguments necessary to initialize a valid
+    :class:`lXtractor.protein.Protein`.
+
+    >>> conv = list(convert_to_attributes(f'PDB1{Sep.list}UniProt2{Sep.chain}A{Sep.dom}DomName'))
+    >>> assert len(conv) == 2
+    >>> att1, att2  = conv
+    >>> assert att1.domains == att2.domains == ['DomName']
+    >>> assert att1.chain_id == att2.chain_id == 'A'
+    >>> assert att1.pdb_id == 'PDB1'
+    >>> assert att2.pdb_id is None
+    >>> assert att1.uniprot_id is None
+    >>> assert att2.uniprot_id == 'UniProt2'
+
+    :param inp: input string.
+    :param sep: input separators.
+    :return: an iterable over `ProteinAttributes`, each sufficient to specify a protein.
+    """
 
     def safe_split(_inp: str, _sep: str) -> t.Tuple[str, t.List[t.Optional[str]]]:
         if _sep in _inp:
             inp_split = _inp.split(_sep)
             if len(inp_split) > 2:
-                raise FormatError(f'>1 {sep.dom} in {_inp} is not allowed')
+                raise FormatError(f'>1 {_sep} in {_inp} is not allowed')
             left, right = inp_split
             return left, right.split(sep.list)
         return _inp, [None]
@@ -102,7 +151,9 @@ def infer_and_explode_attributes(
         var: ProteinAttributes, sifts: SIFTS
 ) -> t.Iterator[ProteinAttributes]:
     """
-    Try inferring missing data from SIFTS.
+    In case either UniProt or PDB IDs are missing in provided attributes,
+    try inferring them from SIFTS. If inferring was successful, "explode"
+    attributes into unique UniProt-PDB ID pairs. If not, raise an error.
 
     :param var: a (possibly incomplete) set of attributes.
     :param sifts: initialized :class:`lXtractor.sifts.SIFTS` mapping.
@@ -175,6 +226,33 @@ def infer_and_explode_attributes(
 
 
 def init(inp: str, sifts: t.Optional[SIFTS]) -> t.Iterator[Protein]:
+    """
+    Given a "raw" input string specifying a protein in the following form:
+
+    --
+
+    "[{uniprot_id}{uni_pdb_sep}{pdb_id},...]{chain_sep}[chain_id,...]{dom_sep}[domain name,...]"
+
+    --
+
+    Parse it and initialize Protein objects with relevant attributes filled in.
+
+    Either UniProt ID or PDB ID is required. The rest is optional.
+
+    :class:`lXtractor.base.Sep` specifies separators.
+
+    >>> ps = list(init(f'1ABC,2ABC{Sep.chain}A,B{Sep.dom}dom1,dom2', None))
+    >>> assert len(ps) == 4
+    >>> assert all('dom1' in p.expected_domains and 'dom2' in p.expected_domains for p in ps)
+
+    :param inp: a single input string supplied to :class:`lXtractor.lXt.lXtractor` via ``inputs``.
+    :param sifts: if provided, "wildcard" is assumed for any incomplete UniProt_ID-PDB_ID pair
+        in provided ``inp``. Omitting either UniProt or PDB ID (but not both, obviously), will
+        result in trying to infer corresponding PDB or UniProt IDs via SIFTS using
+        :func:`infer_and_explode_attributes`. If SIFTS-based inferring fails, the whole input
+        will fail to parse.
+    :return: An iterator over initialized proteins.
+    """
     # Parse initial input into a (merged) attributes
     attributes = convert_to_attributes(inp)
     LOGGER.debug(f'Parsed {inp} into attributes')
@@ -192,7 +270,7 @@ def init(inp: str, sifts: t.Optional[SIFTS]) -> t.Iterator[Protein]:
             _id=_id, dir_name=_id, pdb=att.pdb_id, chain=att.chain_id,
             uniprot_id=att.uniprot_id, uniprot_seq=att.uniprot_seq,
             expected_domains=att.domains, structure=att.structure,
-            variables={})
+            variables=Variables())
 
 
 if __name__ == '__main__':
