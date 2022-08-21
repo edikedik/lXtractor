@@ -21,7 +21,7 @@ from .alignment import Alignment, mafft_align, map_pairs_numbering, _Align_metho
 from .base import (FormatError, MissingData, FailedCalculation, Seq, Domain, AminoAcidDict, Sep)
 from .cutters import extract_pdb_domains
 from .input_parser import init
-from .pdb import PDB, get_sequence, wrap_raw_pdb
+from .pdb import PDB, get_sequence, _wrap_raw_pdb
 from .protein import Protein
 from .sifts import SIFTS
 from .uniprot import UniProt
@@ -652,7 +652,7 @@ def parse_structure_remote(
         path: Path
 ) -> t.Union[t.Tuple[Structure, t.List[t.Tuple[str, t.Any]]], t.Tuple[str, Exception]]:
     try:
-        _, structure, meta = wrap_raw_pdb(path.read_text())
+        _, structure, meta = _wrap_raw_pdb(path.read_text())
         return structure, meta
     except Exception as e:
         return path.stem, e

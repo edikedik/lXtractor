@@ -1,5 +1,6 @@
 """
-Module comprises utils for fetching PDB entries and manipulating the fetched structures.
+Module comprises utils for fetching, splitting, extracting sub-structures
+and sub-sequences of/from PDB files.
 """
 import logging
 import typing as t
@@ -18,9 +19,7 @@ from .base import AminoAcidDict, MissingData, AmbiguousData, SeqRec, Seq
 from .protein import Protein
 from .utils import download_text, fetch_iterable, try_fetching_until
 
-WrappedResult = t.Tuple[
-    str, Structure, t.Optional[t.List[t.Tuple[str, t.Any]]]]
-LOGGER = logging.getLogger(__name__)
+WrappedResult = t.Tuple[str, Structure, t.Optional[t.List[t.Tuple[str, t.Any]]]]
 META_FIELDS = (
     'idcode',
     'name',
@@ -28,7 +27,7 @@ META_FIELDS = (
     'structure_method',
     'deposition_date',
 )
-
+LOGGER = logging.getLogger(__name__)
 
 class PDB:
     """
@@ -36,7 +35,7 @@ class PDB:
     """
 
     def __init__(
-            self, max_retries: int = 10,
+            self, max_retries: int = 3,
             num_threads: t.Optional[int] = None,
             meta_fields: t.Optional[t.Tuple[str, ...]] = META_FIELDS,
             expected_method: t.Optional[str] = 'x-ray diffraction',
@@ -46,7 +45,7 @@ class PDB:
     ):
         """
         :param max_retries: a maximum number of fetching attempts.
-        :param num_threads: a number of threads for the ``ThreadPoolExecutor``.
+        :param num_threads: a number of threads for the :class:`ThreadPoolExecutor`.
         :param meta_fields: a tuple of metadata names (potentially) returned by
             :func:`Bio.PDB.parse_pdb_header`. :meth:`PDB.fetch` will include
             these fields into :attr:`lXtractor.protein.Protein.metadata`.
@@ -54,7 +53,7 @@ class PDB:
             annotated by a given value.
         :param min_resolution: filter to structures having "resolution" lower or
             equal than a given value.
-        :param verbose: ...
+        :param verbose: progress bar on/off.
         """
         self.max_retries = max_retries
         self.num_threads = num_threads
@@ -92,7 +91,7 @@ class PDB:
 
         :param proteins: a collection of :class:`lXtractor.protein.Protein` objects.
         :return: a list of :class:`lXtractor.protein.Protein` objects with populated
-            :attr:`lXtractor.protein.Protein._structure` (and, optionally,
+            :attr:`lXtractor.protein.Protein.structure` (and, optionally,
             :attr:`lXtractor.protein.Protein.metadata`) attributes
         """
 
@@ -250,14 +249,14 @@ class PDB:
 
 
 @curry
-def wrap_raw_pdb(
+def _wrap_raw_pdb(
         res: str,
         meta_fields: t.Optional[t.Tuple[str]] = META_FIELDS
 ) -> WrappedResult:
     """
-    :param res: string with raw PDB text file
-    :param meta_fields: expected metadata fields to parse from header
-    :return: PDB.Structure object and basic metadata
+    :param res: string with raw PDB text file.
+    :param meta_fields: expected metadata fields to parse from header.
+    :return: PDB.Structure object and basic metadata.
     """
     parser = PDBParser(QUIET=True)
     structure = parser.get_structure('', StringIO(res))
@@ -273,18 +272,16 @@ def wrap_raw_pdb(
 
 def fetch_pdb(
         ids: t.Iterable[str],
-        num_threads: t.Optional[int] = None,
         meta_fields: t.Optional[t.Tuple[str]] = META_FIELDS,
-        verbose: bool = False
+        **kwargs
 ) -> t.List[WrappedResult]:
     """
     A helper function to download PDB files.
+    Additional kwargs are passed to :func:`fetch_iterable`.
 
     :param ids: an iterable over PDB IDs.
-    :param num_threads: a number of threads for the ``ThreadPoolExecutor``.
-    :param meta_fields:
-    :param verbose: expose progress bar.
-    :return:
+    :param meta_fields: a collection of metadata fields to parse from the fetched file.
+    :return: a list with fetched structures and corresponding metadata.
     """
     url = 'https://files.rcsb.org/download/'
 
@@ -295,36 +292,44 @@ def fetch_pdb(
             raise ValueError(f'Chunk {chunk} contains more than 1 element')
         return download_text(f'{url}{chunk.pop()}.pdb')
 
-    results = fetch_iterable(ids, fetch_chunk, chunk_size=1, num_threads=num_threads, verbose=verbose)
+    results = fetch_iterable(ids, fetch_chunk, **kwargs)
 
-    return list(map(wrap_raw_pdb(meta_fields=meta_fields), results))
+    return list(map(_wrap_raw_pdb(meta_fields=meta_fields), results))
 
 
 def read_pdb(
-        ids: t.Collection[str], pdb_dir: Path
+        ids: t.Collection[str], pdb_dir: Path, **kwargs,
 ) -> t.Tuple[t.List[WrappedResult], t.List[str]]:
+    """
+    "Soft-read" structures with given ids from a directory.
+
+    :param ids: A collection of PDB codes.
+    :param pdb_dir: A directory where proteins specified by ``ids``
+        (supposedly) reside.
+    :return: Two lists: (1) successfully parsed structures -- tuples of the form
+        (raw text, structure, metadata fields), and (2) extracted PDB IDs,
+        for each structure in (1).
+    """
     ids = list(ids)
     paths = [p for p in pdb_dir.iterdir() if p.stem in ids]
     if not paths:
         LOGGER.debug(f'No structures among {ids} are in {pdb_dir}')
         return [], []
     LOGGER.debug(f'Will read {len(paths)} from {pdb_dir}')
-    results = [parse_structure(p) for p in paths]
-    outputs, failures = partition(
-        lambda x: isinstance(x[0], Exception), results)
-    for stem, e in failures:
-        LOGGER.warning(f'Failed to read {stem} due to {e}')
+    results = [_parse_structure(p, **kwargs) for p in paths]
+    outputs, _ = partition(lambda x: isinstance(x[0], Exception), results)
     results, ids = map(list, unzip(outputs))
     return results, ids
 
 
-def parse_structure(
-        path: Path
+def _parse_structure(
+        path: Path, **kwargs
 ) -> t.Union[t.Tuple[WrappedResult, str], t.Tuple[Exception, str]]:
     try:
-        res = wrap_raw_pdb(path.read_text())
+        res = _wrap_raw_pdb(path.read_text(), **kwargs)
         return res, path.stem
     except Exception as e:
+        LOGGER.exception(f'Failed to read {path} due to {e}')
         return e, path.stem
 
 
@@ -379,8 +384,9 @@ def get_sequence(
         trim_het_tail: bool = True,
         numbering: bool = False,
 ) -> t.Union[str, t.Tuple[str, ...], t.Tuple[int, ...]]:
+    # TODO: either return numbering regardless or separate this functionality
     """
-    Extract structure's residues.
+    Extract structure's residues -- either their sequence or numbering.
 
     Optionally convert the sequence into one-letter codes.
     Any unknown residue names are marked as "X".
@@ -389,9 +395,12 @@ def get_sequence(
     :param structure: biopython's ``Structure`` object.
     :param convert: convert 3-letter codes into 1-letter codes.
     :param filter_out: a collection of 3-letter codes to filter out.
-    :param trim_het_tail: cut discontinuous hetatoms ending a chain.
-    :param get_numbering:
-    :return: a one-letter code sequence as a string.
+    :param trim_het_tail: cut discontinuous HETATOMs ending a chain.
+    :param numbering: Instead of sequence, extract its numbering.
+    :return: One of the following:
+        (1) joined one-letter codes of a protein sequence,
+        (2) the same as (1) but without converting to one-letter codes,
+        (3) a numbering of sequence elements from the PDB structure.
     """
     mapping = AminoAcidDict(any_unk='X')
 
@@ -427,7 +436,7 @@ def get_sequence(
 class Selector(Select):
     """
     Biopython's way of sub-setting structures.
-    `None` attributes are ommitted during the selection.
+    `None` attributes are omitted during the selection.
     """
 
     def __init__(
