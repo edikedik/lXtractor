@@ -1,5 +1,6 @@
 import logging
 import typing as t
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -7,10 +8,13 @@ import pandas as pd
 from Bio import SeqIO
 from Bio.PDB.PDBParser import PDBParser
 from Bio.PDB.Structure import Structure
+from Bio.Seq import Seq
 from more_itertools import partition
 
-from .base import SeqRec, ProteinDumpNames, LengthMismatch, Domain, Variables
-from .utils import Dumper
+from lXtractor.core.base import SeqRec, ProteinDumpNames, LengthMismatch, Segment, Variables, Sep, MissingData, AmbiguousMapping
+from lXtractor.util.io import Dumper
+from lXtractor.util.seq import cut_record
+from lXtractor.util.structure import cut_structure
 
 LOGGER = logging.getLogger(__name__)
 
@@ -18,36 +22,45 @@ LOGGER = logging.getLogger(__name__)
 @dataclass
 class Protein:
     """
-    A flexible container to accumulate and save data related to
-    a single protein chain
+    A flexible container to accumulate and save data
+    related to a single protein chain
+
+    :param pdb: PDB data
     """
     pdb: t.Optional[str] = None
     chain: t.Optional[str] = None
     uniprot_id: t.Optional[str] = None
-    variables: t.Optional[Variables] = None
-    domains: t.Dict[str, Domain] = field(default_factory=dict)
-    _id: t.Optional[t.Union[int, str]] = None
-    dir_name: t.Optional[str] = None
-    uniprot_seq: t.Optional[SeqRec] = None
-    pdb_seq: t.Optional[SeqRec] = None
-    pdb_seq_raw: t.Optional[t.Tuple[str, ...]] = None
     expected_domains: t.Optional[t.Sequence[str]] = None
-    metadata: t.List[t.Tuple[str, t.Any]] = field(default_factory=list)
+
+    uniprot_seq: t.Optional[SeqRec] = None
+    pdb_seq1: t.Optional[SeqRec] = None
+    pdb_seq3: t.Optional[t.Tuple[str, ...]] = None
+
     structure: t.Optional[Structure] = None
+
     aln_mapping: t.Optional[t.Dict[int, int]] = None
     uni_pdb_map: t.Optional[t.Dict[int, t.Optional[int]]] = None
     uni_pdb_aln: t.Optional[t.Tuple[SeqRec, SeqRec]] = None
 
+    metadata: t.List[t.Tuple[str, t.Any]] = field(default_factory=list)
+    variables: t.Optional[Variables] = field(default_factory=Variables)
+
+    # TODO: consider a different data structure?
+    # For instance Domain->Domain mapping after making Domain hashable
+    domains: t.Dict[str, 'Domain'] = field(default_factory=dict)
+
     @property
     def id(self) -> str:
-        return str(id(self)) if self._id is None else self._id
-
-    def __post_init__(self):
-        if self.variables is None or not isinstance(self.variables, Variables):
-            self.variables = Variables()
+        return f'{self.uniprot_id}{Sep.uni_pdb}{self.pdb}{Sep.chain}{self.chain}'
 
     def __repr__(self) -> str:
         return self.id
+
+    def __str__(self) -> str:
+        return self.id
+
+    def __hash__(self):
+        return hash(self.id)
 
     def __getitem__(self, key):
         if not self.domains:
@@ -62,26 +75,23 @@ class Protein:
     def __iter__(self):
         yield from self.domains.values()
 
-    def dump(self, base_dir: Path):
-        if self.dir_name is None:
-            path = base_dir / self._id
-        else:
-            path = base_dir / self.dir_name
+    def read(self):
+        pass
+
+    def write(self, base_dir: Path):
+        path = base_dir / self.id
         try:
             path.mkdir(parents=True, exist_ok=True)
         except PermissionError:
             raise ValueError(f'Cannot write to {base_dir}')
-        dump(path, self.id, uniprot_seq=self.uniprot_seq,    structure=self.structure, pdb_seq=self.pdb_seq,
+        dump(path, self.id, uniprot_seq=self.uniprot_seq, structure=self.structure, pdb_seq=self.pdb_seq,
              pdb_seq_raw=self.pdb_seq_raw, metadata=self.metadata, variables=self.variables,
              aln_mapping=self.aln_mapping, uni_pdb_map=self.uni_pdb_map, uni_pdb_aln=self.uni_pdb_aln)
 
         if self.domains:
             for domain in self.domains.values():
 
-                if domain.pdb_segment_boundaries:
-                    start, end = domain.pdb_segment_boundaries
-                else:
-                    start, end = None, None
+                start, end = domain.pdb_start, domain.pdb_end
 
                 metadata = [
                     ('Name', domain.name),
@@ -102,6 +112,99 @@ class Protein:
                      variables=domain.variables, aln_mapping=domain.aln_mapping, uni_pdb_map=domain.uni_pdb_map,
                      uni_pdb_aln=domain.uni_pdb_aln)
 
+    def extract_domains(self, pdb: bool = True, inplace: bool = True) -> t.List['Domain']:
+        """
+        For any :class:`lXtractor.base.Domain` the protein contains, extract its
+        subsequence from :attr:`lXtractor.protein.Protein.uniprot_seq` and save it to
+        :attr:`lXtractor.base.Domain.uniprot_seq`.
+
+        :param pdb: Also extract sub-structures and sub-sequences.
+        :param inplace: :func:`deepcopy` domains before populating the data.
+        :return: A list of domains with extracted data.
+        """
+        domains = []
+
+        for domain in self:
+            try:
+                domain = domain.extract_uniprot(inplace)
+            except (MissingData, AmbiguousMapping) as e:
+                LOGGER.exception(f'Failed to extract {domain} from {self} due to {e}')
+            if pdb:
+                try:
+                    domain = domain.extract_pdb(inplace)
+                except (MissingData, AmbiguousMapping) as e:
+                    LOGGER.exception(f'Failed to extract {domain} from {self} due to {e}')
+            domains.append(domain)
+        return domains
+
+
+# @dataclass
+class Domain(Protein, Segment):
+    """
+    A mutable dataclass container, holding data associated with a protein domain:
+    PDB and UniProt sequences, PDB structure (cut according to domain boundaries), etc.
+    """
+    pdb_start: t.Optional[int] = None
+    pdb_end: t.Optional[int] = None
+    parent: t.Optional[Protein] = None
+
+    @property
+    def id(self):
+        return f'{super().id}{Sep.dom}{self.name}{Sep.start_end}{self.pdb_start}-{self.pdb_end}'
+
+    def __str__(self):
+        return self.id
+
+    def __repr__(self):
+        return self.id
+
+    def extract_uniprot(self, inplace: bool = True) -> 'Domain':
+        """
+        """
+
+        if self.parent is None:
+            raise MissingData('Domain requires parent protein to extract data')
+        if self.parent.uniprot_seq is None:
+            raise MissingData('Domain requires UniProt sequence to extract sequence domain')
+        start, end, rec = cut_record(self.parent.uniprot_seq, self)
+
+        if (self.start, self.end) != (start, end):
+            LOGGER.warning(
+                f'Obtained domain boundaries {(start, end)} differ from '
+                f'the existing ones {(self.start, self.end)}')
+        obj = self if inplace else deepcopy(self)
+        obj.start, obj.end = start, end
+        obj.uniprot_seq = rec
+
+        return obj
+
+    def extract_pdb(self, inplace: bool = True) -> 'Domain':
+        """
+        """
+        if self.parent is None:
+            raise MissingData('Domain requires parent protein to extract data')
+        if self.parent.structure is None:
+            raise MissingData(
+                f'Require structure to extract structure domain, '
+                f'but parent {self.parent} is missing it.')
+        if not self.parent.uni_pdb_map:
+            raise MissingData(
+                f'Mapping between UniProt and PDB numbering is needed '
+                f'to extract structure domain, but parent {self.parent} lacks it.')
+
+        cut_res = cut_structure(self.parent.structure, self, self.parent.uni_pdb_map)
+
+        _id = f'{self.pdb}{Sep.chain}{self.chain}{Sep.start_end}{cut_res.start}-{cut_res.end}'
+
+        obj = self if inplace else deepcopy(self)
+        obj.structure = cut_res.structure
+        obj.pdb_start, obj.pdb_end = cut_res.start, cut_res.end
+        obj.pdb_seq1 = SeqRec(Seq(cut_res.seq1), _id, _id, _id)
+        obj.pdb_seq3 = cut_res.seq3
+        obj.uni_pdb_map = cut_res.mapping
+
+        return obj
+
 
 def dump(
         base_path: Path,
@@ -116,6 +219,7 @@ def dump(
         uni_pdb_map: t.Optional[t.Dict[int, int]] = None,
         uni_pdb_aln: t.Optional[t.Tuple[SeqRec, SeqRec]] = None
 ) -> None:
+    # TODO: move into method?
     dumper = Dumper(base_path)
     if uniprot_seq:
         LOGGER.debug(f'{log_prefix} -- dumping UniProt sequence')
@@ -279,8 +383,8 @@ def _read_files(base_dir: Path):
     files = {x.name: x for x in files}
 
     uni_pdb_map, aln_mapping, uniprot_seq, pdb_seq, \
-        pdb_seq_raw, structure, uni_pdb_aln = (
-            None, None, None, None, None, None, None)
+    pdb_seq_raw, structure, uni_pdb_aln = (
+        None, None, None, None, None, None, None)
     meta, vs = [], {}
 
     if ProteinDumpNames.pdb_meta in files:

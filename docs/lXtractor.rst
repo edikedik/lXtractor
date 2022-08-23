@@ -7,34 +7,12 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
+   lXtractor.core
    lXtractor.resources
+   lXtractor.util
 
 Submodules
 ----------
-
-lXtractor.alignment module
---------------------------
-
-.. automodule:: lXtractor.alignment
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-lXtractor.base module
----------------------
-
-.. automodule:: lXtractor.base
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-lXtractor.cutters module
-------------------------
-
-.. automodule:: lXtractor.cutters
-   :members:
-   :undoc-members:
-   :show-inheritance:
 
 lXtractor.experimental module
 -----------------------------
@@ -56,46 +34,6 @@ lXtractor.lXt module
 --------------------
 
 .. automodule:: lXtractor.lXt
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-lXtractor.pdb module
---------------------
-
-.. automodule:: lXtractor.pdb
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-lXtractor.protein module
-------------------------
-
-.. automodule:: lXtractor.protein
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-lXtractor.sifts module
-----------------------
-
-.. automodule:: lXtractor.sifts
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-lXtractor.uniprot module
-------------------------
-
-.. automodule:: lXtractor.uniprot
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-lXtractor.utils module
-----------------------
-
-.. automodule:: lXtractor.utils
    :members:
    :undoc-members:
    :show-inheritance:

@@ -8,14 +8,14 @@ from Bio.PDB.Residue import Residue
 from Bio.PDB.Structure import Structure
 from more_itertools import unique_justseen
 
-from .base import (
+from lXtractor.core.base import (
     FailedCalculation, AminoAcidDict, FormatError, Sep,
     SequenceVariable, StructureVariable)
-from .utils import split_validate
+from lXtractor.util.misc import split_validate
 
-_V = t.TypeVar('_V', StructureVariable, SequenceVariable)
+_VarT = t.TypeVar('_VarT', StructureVariable, SequenceVariable)
 _ParsedVariables = t.Tuple[
-    t.List[_V],
+    t.List[_VarT],
     t.List[t.Optional[str]],
     t.List[t.Optional[str]]]
 _Aggregators = {'min': np.min, 'max': np.max, 'mean': np.mean, 'median': np.median}
@@ -458,7 +458,7 @@ def parse_var(inp: str) -> _ParsedVariables:
     return variables, proteins, domains
 
 
-def init_var(var: str) -> _V:
+def init_var(var: str) -> _VarT:
     """
     Convert a textual representation of a single variable
     into a concrete and initialized variable.

@@ -12,9 +12,9 @@ from Bio.PDB import PDBParser
 from Bio.PDB.Structure import Structure
 from more_itertools import flatten
 
-from lXtractor.base import SeqRec, FormatError, MissingData, Sep, InputSeparators, Variables
-from lXtractor.protein import Protein
-from lXtractor.sifts import SIFTS
+from lXtractor.core.base import SeqRec, FormatError, MissingData, Sep, Separators, Variables
+from lXtractor.core.protein import Protein
+from lXtractor.core.sifts import SIFTS
 
 LOGGER = logging.getLogger(__name__)
 ProteinAttributes = t.NamedTuple(
@@ -84,7 +84,7 @@ def parse_uniprot_input(inp: str) -> t.Tuple[str, SeqRec]:
 
 
 def parse_protein(
-        inp: str, sep: InputSeparators = Sep
+        inp: str, sep: Separators = Sep
 ) -> t.Tuple[t.Optional[str], t.Optional[SeqRec], t.Optional[str], t.Optional[Structure]]:
     """
     Separate input into UniProt and PDB ID, then call
@@ -109,7 +109,7 @@ def parse_protein(
     return uni_id, uni_seq, pdb_id, pdb_str
 
 
-def convert_to_attributes(inp: str, sep: InputSeparators = Sep) -> t.Iterator[ProteinAttributes]:
+def convert_to_attributes(inp: str, sep: Separators = Sep) -> t.Iterator[ProteinAttributes]:
     """
     Convert input to protein attributes -- a set of arguments necessary to initialize a valid
     :class:`lXtractor.protein.Protein`.
@@ -264,10 +264,9 @@ def init(inp: str, sifts: t.Optional[SIFTS]) -> t.Iterator[Protein]:
 
     # for each variable set -- initialize `Protein` object
     for att in attributes:
-        _id = f'{att.uniprot_id}_{att.pdb_id}:{att.chain_id}'
-        LOGGER.debug(f'Initializing protein {_id} by attributes {att}')
+        LOGGER.debug(f'Initializing protein by attributes {att}')
         yield Protein(
-            _id=_id, dir_name=_id, pdb=att.pdb_id, chain=att.chain_id,
+            pdb=att.pdb_id, chain=att.chain_id,
             uniprot_id=att.uniprot_id, uniprot_seq=att.uniprot_seq,
             expected_domains=att.domains, structure=att.structure,
             variables=Variables())

@@ -21,8 +21,9 @@ import pandas as pd
 from more_itertools import unzip
 
 from lXtractor import resources as local
-from .utils import download_to_file, col2col
-from .base import AbstractResource, Segment, OverlapError, LengthMismatch, MissingData
+from lXtractor.core.base import AbstractResource, Segment, OverlapError, LengthMismatch, MissingData
+from lXtractor.util.io import download_to_file
+from lXtractor.util.misc import col2col
 
 LOGGER = logging.getLogger(__name__)
 SIFTS_FTP = 'ftp://ftp.ebi.ac.uk/pub/databases/msd/sifts/flatfiles/csv/uniprot_segments_observed.csv.gz'

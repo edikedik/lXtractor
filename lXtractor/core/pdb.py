@@ -5,19 +5,18 @@ and sub-sequences of/from PDB files.
 import logging
 import typing as t
 from io import StringIO
-from itertools import chain
 from pathlib import Path
 
-from Bio.PDB import PDBParser, Select, PDBIO
-from Bio.PDB.Residue import Residue
+from Bio.PDB import PDBParser
 from Bio.PDB.Structure import Structure
-from more_itertools import flatten, unzip, partition, mark_ends, pairwise, rstrip
-from toolz import groupby, curry, pipe, identity
+from more_itertools import flatten, unzip, partition
+from toolz import groupby, curry
 from toolz.curried import map, filter
 
-from .base import AminoAcidDict, MissingData, AmbiguousData, SeqRec, Seq
-from .protein import Protein
-from .utils import download_text, fetch_iterable, try_fetching_until
+from lXtractor.core.base import MissingData, AmbiguousData, SeqRec, Seq
+from lXtractor.core.protein import Protein
+from lXtractor.util.io import try_fetching_until, download_text, fetch_iterable
+from lXtractor.util.structure import extract_sub_structure, get_sequence
 
 WrappedResult = t.Tuple[str, Structure, t.Optional[t.List[t.Tuple[str, t.Any]]]]
 META_FIELDS = (
@@ -28,6 +27,18 @@ META_FIELDS = (
     'deposition_date',
 )
 LOGGER = logging.getLogger(__name__)
+
+
+def _parse_structure(
+        path: Path, **kwargs
+) -> t.Union[t.Tuple[WrappedResult, str], t.Tuple[Exception, str]]:
+    try:
+        res = _wrap_raw_pdb(path.read_text(), **kwargs)
+        return res, path.stem
+    except Exception as e:
+        LOGGER.exception(f'Failed to read {path} due to {e}')
+        return e, path.stem
+
 
 class PDB:
     """
@@ -320,142 +331,6 @@ def read_pdb(
     outputs, _ = partition(lambda x: isinstance(x[0], Exception), results)
     results, ids = map(list, unzip(outputs))
     return results, ids
-
-
-def _parse_structure(
-        path: Path, **kwargs
-) -> t.Union[t.Tuple[WrappedResult, str], t.Tuple[Exception, str]]:
-    try:
-        res = _wrap_raw_pdb(path.read_text(), **kwargs)
-        return res, path.stem
-    except Exception as e:
-        LOGGER.exception(f'Failed to read {path} due to {e}')
-        return e, path.stem
-
-
-def extract_sub_structure(
-        structure: Structure,
-        chain_id: t.Optional[str],
-        res_start: t.Optional[int],
-        res_end: t.Optional[int]) -> Structure:
-    """
-    Extract a specific region of a protein chain within structure.
-
-    :param structure: biopython's ``Structure`` object.
-    :param chain_id: a PDB chain identifier.
-    :param res_start: a start of the desired segment.
-    :param res_end: an end of the desired segment.
-    :return: biopython's ``Structure`` object containing
-        sub-structure resulting from the selection.
-    """
-    # the shortest way to subset structures is by making io
-    # write a selection into a handle, and then use this handle
-    # to setup a new `Structure` object
-    selector = Selector(chain_id, res_start, res_end)
-    handle = StringIO()
-    io = PDBIO()
-    io.set_structure(structure)
-    io.save(handle, selector)
-    parser = PDBParser(QUIET=True)
-    handle.seek(0)
-    new_id = f'{structure.id}:{chain_id}_{res_start}-{res_end}'
-    sub_structure = parser.get_structure(new_id, handle)
-    LOGGER.debug(f'selected new sub-structure {new_id} from {structure.id}')
-    return sub_structure
-
-
-def split_chains(structure: Structure) -> t.Iterator[t.Tuple[str, Structure]]:
-    """
-    Split ``Structure`` based on chain IDs.
-
-    :param structure: biopython's ``Structure`` object.
-    :return: an iterator over tuples ("chain_id", "sub-structure").
-    """
-    chain_ids = [c.id for c in structure.get_chains()]
-    LOGGER.debug(f'Found {len(chain_ids)} chains in {structure.id}')
-    for c in chain_ids:
-        yield c, extract_sub_structure(structure, c, None, None)
-
-
-def get_sequence(
-        structure: Structure,
-        convert: bool = True,
-        filter_out: t.Collection[str] = ('HOH',),
-        trim_het_tail: bool = True,
-        numbering: bool = False,
-) -> t.Union[str, t.Tuple[str, ...], t.Tuple[int, ...]]:
-    # TODO: either return numbering regardless or separate this functionality
-    """
-    Extract structure's residues -- either their sequence or numbering.
-
-    Optionally convert the sequence into one-letter codes.
-    Any unknown residue names are marked as "X".
-    (Known residue codes are specified within :class:`lXtractor.base.AminoAcidDict`).
-
-    :param structure: biopython's ``Structure`` object.
-    :param convert: convert 3-letter codes into 1-letter codes.
-    :param filter_out: a collection of 3-letter codes to filter out.
-    :param trim_het_tail: cut discontinuous HETATOMs ending a chain.
-    :param numbering: Instead of sequence, extract its numbering.
-    :return: One of the following:
-        (1) joined one-letter codes of a protein sequence,
-        (2) the same as (1) but without converting to one-letter codes,
-        (3) a numbering of sequence elements from the PDB structure.
-    """
-    mapping = AminoAcidDict(any_unk='X')
-
-    def trim_tail(residues: t.Iterable[Residue]):
-        def pred(
-                pair: t.Tuple[Residue, Residue]
-        ) -> bool:
-            r1, r2 = pair
-            i1, i2 = r1.id[1], r2.id[2]
-            return i1 + 1 != i2 and (len(r2.resname) == 1 or r2.resname not in mapping)
-
-        pairs = pairwise(residues)
-        pairs_stripped = rstrip(pairs, pred)
-        pairs_marked = mark_ends(pairs_stripped)
-        residues = chain.from_iterable(
-            # if is the last element get both residues else get only the first one
-            (x[2][0], x[2][1]) if x[1] else (x[2][0],)
-            for x in pairs_marked)
-        return residues
-
-    return pipe(
-        structure.get_residues(),
-        filter(lambda r: r.get_resname() not in filter_out),
-        trim_tail if trim_het_tail else identity,
-        lambda residues: tuple(
-            (r.get_id()[1] if numbering else r.get_resname())
-            for r in residues),
-        (lambda resnames: "".join(mapping[name] for name in resnames))
-        if convert and not numbering else identity
-    )
-
-
-class Selector(Select):
-    """
-    Biopython's way of sub-setting structures.
-    `None` attributes are omitted during the selection.
-    """
-
-    def __init__(
-            self, chain_id: t.Optional[str],
-            res_start: t.Optional[int],
-            res_end: t.Optional[int]):
-        self.chain_id = chain_id
-        self.res_start = res_start
-        self.res_end = res_end
-
-    def accept_residue(self, residue):
-        full_id = residue.full_id
-        match_chain = self.chain_id is None or full_id[2] == self.chain_id
-        match_lower = self.res_start is None or full_id[3][1] >= self.res_start
-        match_upper = self.res_end is None or full_id[3][1] <= self.res_end
-        return all([match_chain, match_lower, match_upper])
-
-    def accept_chain(self, _chain):
-        return self.chain_id is None or _chain.id == self.chain_id
 
 
 if __name__ == '__main__':

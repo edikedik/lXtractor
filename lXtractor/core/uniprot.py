@@ -16,9 +16,10 @@ from Bio.Seq import Seq
 from more_itertools import flatten
 from toolz import groupby, curry
 
-from .base import SeqRec, MissingData, Domain
-from .protein import Protein
-from .utils import download_text, fetch_iterable, try_fetching_until, _Fetcher, _Getter, subset_by_idx
+from lXtractor.core.base import SeqRec, MissingData, _Fetcher, _Getter
+from lXtractor.core.protein import Protein, Domain
+from lXtractor.util.io import try_fetching_until, download_text, fetch_iterable
+from lXtractor.util.seq import subset_by_idx
 
 T = t.TypeVar('T')
 LOGGER = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ LOGGER = logging.getLogger(__name__)
 
 class UniProt:
     """
-    Class to retreive and parse UniProt data.
+    Class to retrieve and parse UniProt data.
     Methods accept ``Protein`` objects, fetch data,
     and fill in corresponding fields in the ``Protein`` objects.
     Thus, each method is "dirty" from the functional perspective,
@@ -85,9 +86,9 @@ class UniProt:
             **kwargs
     ) -> t.Tuple[t.List[Protein], pd.DataFrame]:
         """
-        Fetches data from UniProt and populates ``protein.Protein`` instances.
+        Fetches data from UniProt and populates `Protein` instances.
 
-        By default, fetches domain boundaries and populates ``protein.Protein.domains``
+        By default, fetches domain boundaries and populates :attr:`Protein.domains`
             with relevant subsequences.
 
         :param proteins: A collection of ``Protein`` objects.
@@ -145,6 +146,7 @@ class UniProt:
             return
 
         def populate_dom(p: Protein, dom_info: t.Tuple[int, int, str]) -> None:
+            # Populate, but don't extract any data yet.
             start, end, name = dom_info
             if p.uniprot_seq is not None:
                 seq = subset_by_idx(p.uniprot_seq, list(range(start, end + 1)))

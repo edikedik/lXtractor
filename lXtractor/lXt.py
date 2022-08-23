@@ -17,16 +17,18 @@ from toolz import pipe, curry
 from toolz.curried import filter, map, groupby
 from tqdm.auto import tqdm
 
-from .alignment import Alignment, mafft_align, map_pairs_numbering, _Align_method
-from .base import (FormatError, MissingData, FailedCalculation, Seq, Domain, AminoAcidDict, Sep)
-from .cutters import extract_pdb_domains
-from .input_parser import init
-from .pdb import PDB, get_sequence, _wrap_raw_pdb
-from .protein import Protein
-from .sifts import SIFTS
-from .uniprot import UniProt
-from .utils import run_handles
-from .variables import _ParsedVariables, _V, parse_var
+from lXtractor.core.alignment import Alignment
+from lXtractor.core.base import (
+    FormatError, MissingData, FailedCalculation, Seq, AminoAcidDict, Sep, _Align_method)
+from lXtractor.core.pdb import PDB, _wrap_raw_pdb
+from lXtractor.core.protein import Protein, Domain
+from lXtractor.core.sifts import SIFTS
+from lXtractor.core.uniprot import UniProt
+from lXtractor.input_parser import init
+from lXtractor.util.io import run_handles
+from lXtractor.util.seq import map_pairs_numbering, mafft_align
+from lXtractor.util.structure import get_sequence
+from lXtractor.variables import parse_var, _VarT, _ParsedVariables
 
 _KeyT = t.Union[int, str, slice, t.Sequence[bool], np.ndarray]
 _AlnT = t.Union[t.List[SeqRec], t.List[str], Alignment]
@@ -46,6 +48,7 @@ class lXtractor:
     """
     Main interface encompassing core functionalities.
     """
+
     def __init__(
             self, inputs: t.Optional[t.Sequence[str]] = None,
             proteins: t.Optional[t.List[Protein]] = None,
@@ -570,9 +573,9 @@ class lXtractor:
         def calculate(
                 protein_id: str, domain_id: t.Optional[str],
                 target: t.Union[Structure, SeqRec],
-                variables: t.Iterable[_V],
+                variables: t.Iterable[_VarT],
                 mapping: t.Dict[int, int]
-        ) -> t.List[t.Tuple[str, str, _V, t.Union[str, float, Exception]]]:
+        ) -> t.List[t.Tuple[str, str, _VarT, t.Union[str, float, Exception]]]:
             rs = []
             for v in variables:
                 try:
@@ -599,7 +602,7 @@ class lXtractor:
         @curry
         def get_vars(
                 obj: t.Union[Protein, Domain], str_var: bool = True
-        ) -> t.Optional[t.Tuple[str, t.Optional[str], Structure, t.List[_V], t.Dict[int, int]]]:
+        ) -> t.Optional[t.Tuple[str, t.Optional[str], Structure, t.List[_VarT], t.Dict[int, int]]]:
             vs = list(filter(
                 lambda v: missing and obj.variables[v] is None or not missing,
                 obj.variables.structure if str_var else obj.variables.sequence

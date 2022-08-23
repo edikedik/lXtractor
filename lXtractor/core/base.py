@@ -13,9 +13,16 @@ Seq = Seq.Seq
 T = t.TypeVar('T')
 _Fetcher = t.Callable[[t.Iterable[str]], T]
 _Getter = t.Callable[[T, t.Sequence[str]], t.Sequence[str]]
+_Add_method = t.Callable[
+    [t.Union[t.Iterable[SeqRec], Path], t.Iterable[SeqRec]],
+    t.Tuple[t.Sequence[SeqRec], t.Sequence[SeqRec]]
+]
+_Align_method = t.Callable[
+    [t.Iterable[SeqRec]], t.Sequence[SeqRec]
+]
 
-InputSeparators = namedtuple('InputSeparators', ['list', 'chain', 'dom', 'uni_pdb', 'str'])
-Sep = InputSeparators(',', ':', '::', '_', '--')
+Separators = namedtuple('Separators', ['list', 'chain', 'dom', 'uni_pdb', 'str', 'start_end'])
+Sep = Separators(',', ':', '::', '_', '--', '/')
 
 
 class AminoAcidDict:
@@ -170,6 +177,7 @@ class AbstractVariable(metaclass=ABCMeta):
         """
         Variable identifier such that eval(x.id) produces another instance.
         """
+
         def parse_value(v):
             if isinstance(v, str):
                 return f"\'{v}\'"
@@ -210,6 +218,7 @@ class StructureVariable(AbstractVariable):
     """
     A type of variable whose :meth:`calculate` method requires protein structure.
     """
+
     @abstractmethod
     def calculate(self, obj: Structure, mapping: t.Optional[t.Mapping[int, int]] = None):
         raise NotImplementedError
@@ -219,12 +228,14 @@ class SequenceVariable(AbstractVariable):
     """
     A type of variable whose :meth:`calculate` method requires protein sequence.
     """
+
     @abstractmethod
     def calculate(self, obj: SeqRec, mapping: t.Optional[t.Mapping[int, int]] = None):
         raise NotImplementedError
 
 
 class Variables(t.Dict):
+    # TODO: inherit from UserDict instead
     """
     A subclass of :class:`dict` holding variables (:class:`AbstractVariable` subclasses).
 
@@ -309,7 +320,7 @@ class Segment:
     def do_overlap(self, other: 'Segment') -> bool:
         """
         Check whether a segment overlaps with the other segment.
-        Use :meth:`overlap` to find an acual overlap.
+        Use :meth:`overlap` to find an actual overlap.
 
         :param other: other :class:`Segment` instance.
         :return: ``True`` if segments overlap and ``False`` otherwise.
@@ -335,41 +346,6 @@ class Segment:
             name=other.name,
             parent_name=other.parent_name,
             data=other.data)
-
-
-@dataclass
-class Domain(Segment):
-    """
-    A mutable dataclass container, holding data associated with a protein domain:
-    PDB and UniProt sequences, PDB structure (cut according to domain boundaries), etc.
-
-    :attr:`name` of the domain is given in the following format:
-    "{domain_name}(<-{parent_name}):{start}-{end}, where ``domain_name`` is typically how
-    it appears in UniProt, ``parent_name`` is the original :meth:`lXtractor.protein.Protein.id`.
-    ``start`` and ``end`` correspond to domain boundaries.
-    """
-    uniprot_seq: t.Optional[SeqRec] = None
-    pdb_seq: t.Optional[SeqRec] = None
-    pdb_seq_raw: t.Optional[t.Tuple[str, ...]] = None
-    structure: t.Optional[Structure] = None
-    uni_pdb_map: t.Optional[t.Dict[int, t.Optional[int]]] = None
-    uni_pdb_aln: t.Optional[t.Tuple[SeqRec, SeqRec]] = None
-    aln_mapping: t.Optional[t.Dict[int, int]] = None
-    pdb_segment_boundaries: t.Optional[t.Tuple[int, int]] = None
-    metadata: t.Optional[t.List[t.Tuple[str, t.Any]]] = field(default_factory=list)
-    dir_name: t.Optional[Path] = None
-    variables: t.Optional[Variables] = None
-    parent: t.Any = None
-
-    def __post_init__(self):
-        if self.variables is None:
-            self.variables = Variables()
-
-    def __repr__(self) -> str:
-        return self.id
-
-
-# Domains = t.Dict[str, Domain]
 
 
 class InitError(ValueError):

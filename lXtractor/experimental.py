@@ -1,19 +1,19 @@
-import typing as t
+"""
+Module with misc experimental procedures.
+"""
 import logging
-from random import sample, shuffle
+import typing as t
+from random import sample
 
 import pandas as pd
 import ray
-from Bio.Seq import Seq
-from tqdm.auto import tqdm
 from toolz import groupby, curry
+from tqdm.auto import tqdm
 
 from lXtractor import Protein, UniProt
-from lXtractor.base import SeqRec
-from lXtractor.protein import unduplicate
-from lXtractor.alignment import seq_identity, seq_coverage, mafft_align
-from lXtractor.cutters import extract_uniprot_domains
-from lXtractor.utils import run_handles, cluster_cdhit
+from lXtractor.util.seq import seq_identity, seq_coverage, mafft_align
+from lXtractor.core.protein import unduplicate
+from lXtractor.util.io import run_handles
 
 LOGGER = logging.getLogger(__name__)
 
