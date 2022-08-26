@@ -11,7 +11,9 @@ from Bio.PDB.Structure import Structure
 from Bio.Seq import Seq
 from more_itertools import partition
 
-from lXtractor.core.base import SeqRec, ProteinDumpNames, LengthMismatch, Segment, Variables, Sep, MissingData, AmbiguousMapping
+from lXtractor.core.base import (
+    SeqRec, ProteinDumpNames, Segment, Variables,
+    Sep, MissingData, AmbiguousMapping, LengthMismatch)
 from lXtractor.util.io import Dumper
 from lXtractor.util.seq import cut_record
 from lXtractor.util.structure import cut_structure
@@ -114,9 +116,8 @@ class Protein:
 
     def extract_domains(self, pdb: bool = True, inplace: bool = True) -> t.List['Domain']:
         """
-        For any :class:`lXtractor.base.Domain` the protein contains, extract its
-        subsequence from :attr:`lXtractor.protein.Protein.uniprot_seq` and save it to
-        :attr:`lXtractor.base.Domain.uniprot_seq`.
+        For any :class:`Domain` the protein contains, extract its subsequence
+        from :attr:`uniprot_seq` and save it to :attr:`Domain.uniprot_seq`.
 
         :param pdb: Also extract sub-structures and sub-sequences.
         :param inplace: :func:`deepcopy` domains before populating the data.
@@ -137,8 +138,52 @@ class Protein:
             domains.append(domain)
         return domains
 
+    def spawn_domain(
+            self, start: int, end: int, name: str,
+            extract_seq: bool = True, extract_pdb: bool = True,
+            save: bool = True
+    ) -> 'Domain':
+        """
+        Use existing protein data and given domain boundaries to create new domain
+        and (optionally) extract sequence/structure according to boundaries.
 
-# @dataclass
+        :param start: Domain's start (seq numbering).
+        :param end: Domain's end (seq numbering).
+        :param name: Domain's name.
+        :param extract_seq: Extract UniProt sequence according to boundaries.
+            Requires :attr:`uniprot_seq`.
+            See :meth:`Domain.extract_uniprot`.
+        :param extract_pdb: Extract PDB structure and sequence.
+            Requires :attr:`structure`.
+            See :meth:`Domain.extract_pdb`.
+        :param save: Save the result to :attr:`domains`
+        :return: New :class:`Domain` instance.
+        """
+        # TODO: consider subsetting uni-pdb aln and aln mapping as well?
+        dom = Domain(
+            start, end, name,
+            pdb=self.pdb, chain=self.chain, uniprot_id=self.uniprot_id,
+            parent=self, parent_name=self.id, variables=self.variables,
+        )
+        if extract_seq:
+            try:
+                dom.extract_uniprot(inplace=True)
+            except MissingData as e:
+                LOGGER.exception(
+                    f'Failed to extract UniProt domain from {dom} due to {e}')
+        if extract_pdb:
+            try:
+                dom.extract_pdb(inplace=True)
+            except MissingData as e:
+                LOGGER.exception(
+                    f'Failed to extract PDB domain from {dom} due to {e}')
+        if save:
+            self.domains[dom.id] = dom
+
+        return dom
+
+
+@dataclass
 class Domain(Protein, Segment):
     """
     A mutable dataclass container, holding data associated with a protein domain:
@@ -150,7 +195,8 @@ class Domain(Protein, Segment):
 
     @property
     def id(self):
-        return f'{super().id}{Sep.dom}{self.name}{Sep.start_end}{self.pdb_start}-{self.pdb_end}'
+        # TODO: should I use start/end for id? {Sep.start_end}{self.pdb_start}-{self.pdb_end}
+        return f'{super().id}{Sep.dom}{self.name}'
 
     def __str__(self):
         return self.id
@@ -160,6 +206,11 @@ class Domain(Protein, Segment):
 
     def extract_uniprot(self, inplace: bool = True) -> 'Domain':
         """
+        Extract UniProt sequence from parent's :attr:`Protein.uniprot_seq`.
+
+        :param inplace: Perform the extraction on `self`. Otherwise, create a new object.
+        :return: A domain with extracted sequence.
+        :raises: :class:`MissingData` if required data is missing.
         """
 
         if self.parent is None:
@@ -180,6 +231,23 @@ class Domain(Protein, Segment):
 
     def extract_pdb(self, inplace: bool = True) -> 'Domain':
         """
+        Extract PDB structure given the domain boundaries.
+
+        Requires:
+            - :attr:`parent`
+            - :attr:`Protein.structure`
+            - :attr:`Protein.uni_pdb_map`
+
+        Populates:
+            - :attr:`structure`
+            - :attr:`pdb_start`
+            - :attr:`pdb_end`
+            - :attr:`pdb_seq1`
+            - :attr:`pdb_seq3`
+
+        :param inplace: Perform the extraction on `self`. Otherwise, create a new object.
+        :return: Domain with extracted data.
+        :raises: :class:`MissingData` if required data is missing.
         """
         if self.parent is None:
             raise MissingData('Domain requires parent protein to extract data')
@@ -219,7 +287,6 @@ def dump(
         uni_pdb_map: t.Optional[t.Dict[int, int]] = None,
         uni_pdb_aln: t.Optional[t.Tuple[SeqRec, SeqRec]] = None
 ) -> None:
-    # TODO: move into method?
     dumper = Dumper(base_path)
     if uniprot_seq:
         LOGGER.debug(f'{log_prefix} -- dumping UniProt sequence')

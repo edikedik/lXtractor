@@ -148,18 +148,14 @@ class UniProt:
         def populate_dom(p: Protein, dom_info: t.Tuple[int, int, str]) -> None:
             # Populate, but don't extract any data yet.
             start, end, name = dom_info
-            if p.uniprot_seq is not None:
-                seq = subset_by_idx(p.uniprot_seq, list(range(start, end + 1)))
-            else:
-                seq = None
-            dom = Domain(start=start, end=end, name=name, uniprot_seq=seq, parent_name=p.id)
-            if overwrite or name not in p.domains:
-                p.domains[name] = dom
+            dom = p.spawn_domain(
+                start, end, name, extract_seq=True, extract_pdb=False,
+                save=overwrite or name not in p.domains)
             if not overwrite and complement and name in p.domains:
                 p.domains[name].start = start
                 p.domains[name].end = end
-                if seq is not None:
-                    p.domains[name].uniprot_seq = seq
+                if dom.uniprot_seq is not None:
+                    p.domains[name].uniprot_seq = dom.uniprot_seq
             return
 
         fields = base_fields
