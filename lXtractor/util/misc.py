@@ -1,10 +1,12 @@
+import typing as t
 from collections import UserDict
 from itertools import groupby
+from pathlib import Path
 
 import pandas as pd
 from more_itertools import take
 
-from lXtractor.core.base import FormatError
+from lXtractor.core.base import FormatError, Sep
 
 
 class SizedDict(UserDict):
@@ -34,6 +36,12 @@ def col2col(df: pd.DataFrame, col_fr: str, col_to: str):
     sub = df[[col_fr, col_to]].drop_duplicates().sort_values([col_fr, col_to])
     groups = groupby(zip(sub[col_fr], sub[col_to]), key=lambda x: x[0])
     return {k: [x[1] for x in group] for k, group in groups}
+
+
+def parse_protein_path(path: Path) -> t.Tuple[str, str, str]:
+    uni_id, pdb = path.name.split(Sep.uni_pdb)
+    pdb_id, pdb_chain = pdb.split(Sep.chain)
+    return uni_id, pdb_id, pdb_chain
 
 
 if __name__ == '__main__':

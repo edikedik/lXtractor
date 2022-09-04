@@ -395,7 +395,7 @@ def subset_by_idx(seq: SeqRec, idx: t.Sequence[int], start=1):
     return SeqRec(Seq(sub), new_id, new_id, new_id)
 
 
-def cut_record(
+def cut(
         rec: SeqRec, segment: Segment
 ) -> t.Tuple[int, int, SeqRec]:
     """

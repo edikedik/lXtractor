@@ -5,6 +5,7 @@ import logging
 import typing as t
 from io import StringIO
 from itertools import chain
+from pathlib import Path
 
 from Bio.PDB import PDBIO, PDBParser, Select
 from Bio.PDB.Residue import Residue
@@ -191,6 +192,14 @@ def get_sequence(
         (lambda resnames: "".join(mapping[name] for name in resnames))
         if convert and not numbering else identity
     )
+
+
+def dump_pdb(structure: Structure, path: Path) -> None:
+    io = PDBIO()
+    io.set_structure(structure)
+    with path.open('w') as handle:
+        io.save(handle)
+    LOGGER.debug(f'Saved PDB structure {structure.id} to {path}')
 
 
 class Selector(Select):

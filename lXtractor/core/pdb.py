@@ -249,12 +249,12 @@ class PDB:
             for p in group:
                 p.metadata += meta
                 p.structure = sub_structure
-                p.pdb_seq = SeqRec(
+                p.pdb_seq1 = SeqRec(
                     Seq(seq_1_letter),
                     id=sub_structure.id,
                     description=sub_structure.id,
                     name=sub_structure.id)
-                p.pdb_seq_raw = seq_3_letter
+                p.pdb_seq3 = seq_3_letter
 
         return list(flatten(_proteins.values()))
 

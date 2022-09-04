@@ -3,31 +3,33 @@ import typing as t
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
+from pydoc import locate
 
 import pandas as pd
 from Bio import SeqIO
 from Bio.PDB.PDBParser import PDBParser
 from Bio.PDB.Structure import Structure
 from Bio.Seq import Seq
-from more_itertools import partition
+from more_itertools import partition, unique_everseen
 
 from lXtractor.core.base import (
     SeqRec, ProteinDumpNames, Segment, Variables,
     Sep, MissingData, AmbiguousMapping, LengthMismatch)
-from lXtractor.util.io import Dumper
-from lXtractor.util.seq import cut_record
-from lXtractor.util.structure import cut_structure
+from lXtractor.util.misc import parse_protein_path
+from lXtractor.util.seq import cut
+from lXtractor.util.structure import cut_structure, dump_pdb
 
 LOGGER = logging.getLogger(__name__)
+
+
+# TODO: check mapping types list vs dict (list when we allow None)
+# TODO: change `metadata` type to dict
 
 
 @dataclass
 class Protein:
     """
-    A flexible container to accumulate and save data
-    related to a single protein chain
-
-    :param pdb: PDB data
+    A flexible container to accumulate and save data related to a single protein chain
     """
     pdb: t.Optional[str] = None
     chain: t.Optional[str] = None
@@ -77,42 +79,23 @@ class Protein:
     def __iter__(self):
         yield from self.domains.values()
 
-    def read(self):
-        pass
+    @classmethod
+    def read(
+            cls, path: Path,
+            dump_names: ProteinDumpNames = ProteinDumpNames
+    ) -> 'Protein':
+        prot = ProteinIO(path, dump_names).read(Protein)
+        prot.domains = {
+            p.name: ProteinIO(p, dump_names).read(Domain)
+            for p in path.glob('domains/*')}
+        return prot
 
-    def write(self, base_dir: Path):
+    def write(self, base_dir: Path, dump_names: ProteinDumpNames = ProteinDumpNames):
         path = base_dir / self.id
-        try:
-            path.mkdir(parents=True, exist_ok=True)
-        except PermissionError:
-            raise ValueError(f'Cannot write to {base_dir}')
-        dump(path, self.id, uniprot_seq=self.uniprot_seq, structure=self.structure, pdb_seq=self.pdb_seq,
-             pdb_seq_raw=self.pdb_seq_raw, metadata=self.metadata, variables=self.variables,
-             aln_mapping=self.aln_mapping, uni_pdb_map=self.uni_pdb_map, uni_pdb_aln=self.uni_pdb_aln)
-
-        if self.domains:
-            for domain in self.domains.values():
-
-                start, end = domain.pdb_start, domain.pdb_end
-
-                metadata = [
-                    ('Name', domain.name),
-                    ('UniProt_start', domain.start),
-                    ('UniProt_end', domain.end),
-                    ('PDB', self.pdb),
-                    ('Chain', self.chain),
-                    ('PDB_start', start),
-                    ('PDB_end', end)
-                ]
-
-                log_pref = f'{domain.name}_{domain.start}-{domain.end}'
-
-                dom_path = path / f'{domain.name}'
-                dom_path.mkdir(exist_ok=True)
-                dump(dom_path, log_pref, uniprot_seq=domain.uniprot_seq, structure=domain.structure,
-                     pdb_seq=domain.pdb_seq, pdb_seq_raw=domain.pdb_seq_raw, metadata=domain.metadata + metadata,
-                     variables=domain.variables, aln_mapping=domain.aln_mapping, uni_pdb_map=domain.uni_pdb_map,
-                     uni_pdb_aln=domain.uni_pdb_aln)
+        path.mkdir(parents=True, exist_ok=True)
+        io = ProteinIO(path, dump_names)
+        io.write(self)
+        LOGGER.debug(f'Written {self.id} to {path}')
 
     def extract_domains(self, pdb: bool = True, inplace: bool = True) -> t.List['Domain']:
         """
@@ -129,12 +112,14 @@ class Protein:
             try:
                 domain = domain.extract_uniprot(inplace)
             except (MissingData, AmbiguousMapping) as e:
-                LOGGER.exception(f'Failed to extract {domain} from {self} due to {e}')
+                LOGGER.exception(
+                    f'Failed to extract sequence {domain} from {self} due to {e}')
             if pdb:
                 try:
                     domain = domain.extract_pdb(inplace)
                 except (MissingData, AmbiguousMapping) as e:
-                    LOGGER.exception(f'Failed to extract {domain} from {self} due to {e}')
+                    LOGGER.exception(
+                        f'Failed to extract structure {domain} from {self} due to {e}')
             domains.append(domain)
         return domains
 
@@ -163,7 +148,7 @@ class Protein:
         dom = Domain(
             start, end, name,
             pdb=self.pdb, chain=self.chain, uniprot_id=self.uniprot_id,
-            parent=self, parent_name=self.id, variables=self.variables,
+            parent=self, parent_name=self.id, variables=Variables(),
         )
         if extract_seq:
             try:
@@ -178,7 +163,7 @@ class Protein:
                 LOGGER.exception(
                     f'Failed to extract PDB domain from {dom} due to {e}')
         if save:
-            self.domains[dom.id] = dom
+            self.domains[dom.name] = dom
 
         return dom
 
@@ -195,14 +180,24 @@ class Domain(Protein, Segment):
 
     @property
     def id(self):
-        # TODO: should I use start/end for id? {Sep.start_end}{self.pdb_start}-{self.pdb_end}
-        return f'{super().id}{Sep.dom}{self.name}'
+        # TODO: should I use PDB start/end for id?
+        _id = f'{super().id}{Sep.dom}{self.name}'
+        if self.start is not None and self.end is not None:
+            _id += f'{Sep.start_end}{self.start}-{self.end}'
+        return _id
 
     def __str__(self):
         return self.id
 
     def __repr__(self):
         return self.id
+
+    @classmethod
+    def read(
+            cls, path: Path,
+            dump_names: ProteinDumpNames = ProteinDumpNames
+    ) -> 'Domain':
+        return ProteinIO(path, dump_names).read(Domain)
 
     def extract_uniprot(self, inplace: bool = True) -> 'Domain':
         """
@@ -217,7 +212,7 @@ class Domain(Protein, Segment):
             raise MissingData('Domain requires parent protein to extract data')
         if self.parent.uniprot_seq is None:
             raise MissingData('Domain requires UniProt sequence to extract sequence domain')
-        start, end, rec = cut_record(self.parent.uniprot_seq, self)
+        start, end, rec = cut(self.parent.uniprot_seq, self)
 
         if (self.start, self.end) != (start, end):
             LOGGER.warning(
@@ -274,284 +269,286 @@ class Domain(Protein, Segment):
         return obj
 
 
-def dump(
-        base_path: Path,
-        log_prefix: str,
-        uniprot_seq: t.Optional[SeqRec] = None,
-        structure: t.Optional[Structure] = None,
-        pdb_seq: t.Optional[SeqRec] = None,
-        pdb_seq_raw: t.Optional[t.Tuple[str, ...]] = None,
-        metadata: t.Optional[t.Iterable[t.Tuple[str, t.Any]]] = None,
-        variables: t.Optional[t.Dict] = None,
-        aln_mapping: t.Optional[t.Dict[int, int]] = None,
-        uni_pdb_map: t.Optional[t.Dict[int, int]] = None,
-        uni_pdb_aln: t.Optional[t.Tuple[SeqRec, SeqRec]] = None
-) -> None:
-    dumper = Dumper(base_path)
-    if uniprot_seq:
-        LOGGER.debug(f'{log_prefix} -- dumping UniProt sequence')
-        dumper.dump_seq_rec(
-            uniprot_seq, ProteinDumpNames.uniprot_seq)
-    if structure:
-        LOGGER.debug(f'{log_prefix} -- dumping full PDB structure')
-        dumper.dump_pdb(
-            structure, ProteinDumpNames.pdb_structure)
-    if pdb_seq:
-        LOGGER.debug(f'{log_prefix} -- dumping full PDB sequence')
-        dumper.dump_seq_rec(pdb_seq, ProteinDumpNames.pdb_seq)
-    if pdb_seq_raw:
-        LOGGER.debug(f'{log_prefix} -- dumping raw PDB sequence')
-        dumper.dump_pdb_raw(pdb_seq_raw, ProteinDumpNames.pdb_seq_raw)
-    if metadata:
-        LOGGER.debug(f'{log_prefix} -- dumping metadata')
-        dumper.dump_meta(metadata, ProteinDumpNames.pdb_meta)
-    if variables:
-        LOGGER.debug(f'{log_prefix} -- dumping variables')
-        dumper.dump_variables(variables, ProteinDumpNames.variables)
-        maps = filter(
-            lambda _item: 'ALL' in _item[0] and _item[1][1] is not None,
-            variables.items())
-        for item in maps:
-            k, (v, val) = item
-            agg_name = k.split()[0]
-            name = f'{ProteinDumpNames.distance_map_base}_{agg_name}.tsv'
-            dumper.dump_distance_map(val, name)
-    if aln_mapping:
-        LOGGER.debug(f'{log_prefix} -- dumping aln mapping')
-        dumper.dump_mapping(aln_mapping, ProteinDumpNames.aln_mapping)
-    if uni_pdb_map:
-        LOGGER.debug(f'{log_prefix} -- dumping UniProt-PDB SIFTS mapping')
-        dumper.dump_mapping(uni_pdb_map, ProteinDumpNames.uni_pdb_map)
-    if uni_pdb_aln:
-        LOGGER.debug(f'{log_prefix} -- dumping uni-pdb aln')
-        dumper.dump_seq_rec(uni_pdb_aln, ProteinDumpNames.uni_pdb_aln)
+_ObjT = t.TypeVar('_ObjT', bound=t.Type[Protein])
 
 
-def _check_dir(path: Path):
-    if not path.exists():
-        raise FileNotFoundError(f'{path} does not exist')
-    if not path.is_dir():
-        raise NotADirectoryError
+class ProteinIO:
+    def __init__(
+            self, base_dir: Path,
+            dump_names: ProteinDumpNames = ProteinDumpNames
+    ):
+        self.base_dir = base_dir
+        self.dump_names = dump_names
 
+    def write_pdb(self, structure: Structure) -> None:
+        path = self.base_dir / self.dump_names.pdb_structure
+        dump_pdb(structure, path)
 
-def _read_mapping(path: Path) -> t.Dict[int, t.Optional[int]]:
-    with path.open() as f:
-        lines = filter(
-            lambda x: len(x) == 2,
-            (x.rstrip().split('\t') for x in f if x != '\n'))
-        return {
-            int(p1): (int(p2) if p2 != 'None' else None)
-            for p1, p2 in lines}
+    def write_rec(
+            self, rec: t.Union[SeqRec, t.Iterable[SeqRec]], name: str
+    ) -> None:
+        if isinstance(rec, SeqRec):
+            rec = [rec]
+        path = self.base_dir / name
+        SeqIO.write(rec, path, 'fasta')
 
+    def write_meta(self, meta: t.Iterable[t.Tuple[str, t.Any]]) -> None:
+        path = self.base_dir / self.dump_names.meta
+        records = unique_everseen(meta)
+        with path.open('w') as f:
+            for name, value in records:
+                print(name, value, sep='\t', file=f)
 
-def _read_seqs(
-        path: Path, num_expected: int = 1, fmt='fasta',
-) -> t.Union[SeqRec, t.List[SeqRec]]:
-    seqs = list(SeqIO.parse(path, fmt))
-    if len(seqs) != num_expected:
-        raise LengthMismatch(
-            f'Expected to find {num_expected} seqs in {path} '
-            f'but found {len(seqs)}')
-    if num_expected == 1:
-        return seqs.pop()
-    return seqs
+    def write_variables(
+            self, variables: Variables,
+            skip_if_contains: t.Collection[str] = ('ALL',)
+    ) -> None:
+        _path = self.base_dir / self.dump_names.variables
+        items = (f'{v.id}\t{r}' for v, r in variables.items()
+                 if all(x not in v.id for x in skip_if_contains))
+        _path.write_text('\n'.join(items))
+        LOGGER.debug(f'Saved {len(variables)} variables to {_path}')
 
+    def write_pdist(self, distances: t.Iterable[t.Tuple[int, int, float]], path) -> None:
+        # path = self.base_dir / self.dump_names.pdist_base_name
+        with path.open('w') as f:
+            for pos1, pos2, dist in distances:
+                print(pos1, pos2, dist, sep='\t', file=f)
 
-def read_protein(base_dir: Path):
-    _check_dir(base_dir)
-    domain_dirs, _ = partition(
-        lambda p: p.is_file(), base_dir.glob('*'))
-    domains = {}
-    for dom_dir in domain_dirs:
-        try:
-            domains[dom_dir.name] = read_domain(dom_dir)
-            domains[dom_dir.name].parent_name = base_dir.name.split('_')[0]
-        except Exception as e:
+    def write_mapping(self, mapping: t.Dict[t.Any, t.Any], name: str) -> None:
+        path = self.base_dir / name
+        with path.open('w') as f:
+            for k, v in mapping.items():
+                print(k, v, sep='\t', file=f)
+
+    def write_pdb_seq3(self, seq: t.Tuple[str, ...]) -> None:
+        path = self.base_dir / self.dump_names.pdb_seq3
+        with path.open('w') as f:
+            print(*seq, sep='\n', file=f)
+
+    def _write_obj(self, obj: t.Union[Protein, Domain]):
+        if obj.uniprot_seq is not None:
+            self.write_rec(obj.uniprot_seq, self.dump_names.uniprot_seq)
+        if obj.pdb_seq1 is not None:
+            self.write_rec(obj.pdb_seq1, self.dump_names.pdb_seq1)
+        if obj.uni_pdb_aln:
+            self.write_rec(obj.uni_pdb_aln, self.dump_names.uni_pdb_aln)
+        if obj.pdb_seq3 is not None:
+            self.write_pdb_seq3(obj.pdb_seq3)
+        if obj.structure is not None:
+            self.write_pdb(obj.structure)
+        if obj.metadata is not None:
+            meta = dict(obj.metadata)
+            meta_base = [
+                ('UniProt_ID', obj.uniprot_id),
+                ('PDB', obj.pdb),
+                ('Chain', obj.chain),
+            ]
+            if isinstance(obj, Domain):
+                meta_base += [
+                    ('Domain', obj.name),
+                    ('UniProt_start', obj.start),
+                    ('UniProt_end', obj.end),
+                    ('PDB_start', obj.pdb_start),
+                    ('PDB_end', obj.pdb_end)
+                ]
+            meta.update(dict(meta_base))
+            self.write_meta(list(meta.items()))
+        if obj.aln_mapping:
+            self.write_mapping(obj.aln_mapping, self.dump_names.aln_mapping)
+        if obj.uni_pdb_map:
+            self.write_mapping(obj.uni_pdb_map, self.dump_names.uni_pdb_map)
+        if obj.variables is not None:
+            self.write_variables(obj.variables)
+            pdist_maps = filter(lambda _v: 'ALL' in _v.id, obj.variables)
+            for pdist in pdist_maps:
+                agg_name = pdist.split()
+                path = (self.base_dir /
+                        self.dump_names.pdist_base_dir /
+                        f'{self.dump_names.pdist_base_name}_{agg_name}.tsv')
+                self.write_pdist(obj.variables[pdist], path)
+
+    def write(self, obj: t.Union[Protein, Domain]):
+        self.base_dir.mkdir(exist_ok=True, parents=True)
+        self._write_obj(obj)
+        LOGGER.debug(f'Saved {obj} to {self.base_dir}')
+        if isinstance(obj, Protein):
+            for k, v in obj.domains.items():
+                base_dir = self.base_dir / self.dump_names.domains_dir / v.name
+                base_dir.mkdir(exist_ok=True, parents=True)
+                io = self.__class__(base_dir)
+                io._write_obj(v)
+                LOGGER.debug(f'Saved {k} to {base_dir}')
+
+    @staticmethod
+    def _read_n_col_table(path: Path, n: int) -> t.Optional[pd.DataFrame]:
+        df = pd.read_csv(path, sep='\t', header=None)
+        if len(df.columns) != n:
             LOGGER.error(
-                f'Failed to init domain form {dom_dir} due to error {e}')
-    parsed_files = _read_files(base_dir)
+                f'Expected two columns in the table {path}, '
+                f'but found {len(df.columns)}')
+            return None
+        return df
 
-    uniprot_id, pdb_id, chain_id = None, None, None
-    try:
-        uniprot_id, pdb = base_dir.name.split('_')
-        pdb_id, chain_id = pdb.split(':')
-    except ValueError:
-        LOGGER.warning(
-            f'Failed to parse dir {base_dir}. '
-            f'Perhaps it does not follow the standard UniProtID_PDBID:Chain.')
+    @staticmethod
+    def _infer_boundaries(
+            obj: t.Union[Protein, Domain], pdb: bool = False
+    ) -> t.Tuple[int, int]:
+        start, end = None, None
+        bound_type = 'PDB' if pdb else 'UniProt'
+        start_name, end_name = f'{bound_type}_start', f'{bound_type}_end'
+        seq = obj.pdb_seq1 if pdb else obj.uniprot_seq
+        if seq is not None:
+            try:
+                start, end = map(int, seq.id.split('/')[-1].split('-'))
+            except (ValueError, IndexError):
+                LOGGER.warning(
+                    f'Failed to find sequence boundaries in the ID {seq.id}'
+                    f' of the UniProt sequence for {obj}')
+        if obj.metadata is not None and any([start is None, end is None]):
+            try:
+                meta = dict(obj.metadata)
+                start = meta[start_name]
+                end = meta[end_name]
+            except (ValueError, KeyError):
+                LOGGER.warning(
+                    f'Failed to find sequence boundaries in the metadata of {obj}')
+        if start is None or end is None:
+            LOGGER.warning(f'Failed to find {bound_type} domain boundaries of {obj}')
+            start, end = -1, -1
+        return start, end
 
-    uniprot_seq = parsed_files[ProteinDumpNames.uniprot_seq]
-    if uniprot_id is None and uniprot_seq is not None:
+    @staticmethod
+    def _infer_ids(
+            obj: t.Union[Protein, Domain], path: t.Optional[Path], parent: t.Optional[Protein],
+    ) -> t.Tuple[t.Optional[str], t.Optional[str], t.Optional[str]]:
+        if obj.metadata is not None:
+            try:
+                meta = dict(obj.metadata)
+                return meta['UniProt_ID'], meta['PDB'], meta['Chain']
+            except KeyError:
+                LOGGER.warning(f'Failed to infer IDs from existing metadata of {obj}')
+        if path is not None:
+            return parse_protein_path(path)
+        if parent is not None:
+            return parent.uniprot_id, parent.pdb, parent.chain
+        LOGGER.warning(f'Failed to infer IDs for {obj}')
+        return None, None, None
+
+    def read_variables(self, path: Path) -> Variables:
+        # TODO: read pdist
+        assert path.exists()
+
         try:
-            uniprot_id = uniprot_seq.id.split('|')[1]
-        except IndexError:
-            pass
+            vs = self._read_n_col_table(path, 2)
+        except pd.errors.EmptyDataError:
+            vs = pd.DataFrame()
+        variables = Variables()
 
-    return Protein(
-        _id=base_dir.name,
-        pdb=pdb_id, chain=chain_id, uniprot_id=uniprot_id,
-        metadata=parsed_files[ProteinDumpNames.pdb_meta],
-        uniprot_seq=parsed_files[ProteinDumpNames.uniprot_seq],
-        pdb_seq=parsed_files[ProteinDumpNames.pdb_seq],
-        pdb_seq_raw=parsed_files[ProteinDumpNames.pdb_seq_raw],
-        structure=parsed_files[ProteinDumpNames.pdb_structure],
-        variables=parsed_files[ProteinDumpNames.variables],
-        aln_mapping=parsed_files[ProteinDumpNames.aln_mapping],
-        uni_pdb_map=parsed_files[ProteinDumpNames.uni_pdb_map],
-        uni_pdb_aln=parsed_files[ProteinDumpNames.uni_pdb_aln],
-        domains=domains)
+        for v_id, v_val in vs.itertuples(index=False):
+            v_name = v_id.split('(')[0]
+            import_statement = f'from lXtractor.core.variables import {v_name}'
+            try:
+                exec(import_statement)
+            except ImportError:
+                LOGGER.exception(
+                    f'Failed to exec {import_statement} for variable {v_name} '
+                    f'causing variable\'s init to fail')
+                continue
+            try:
+                v = eval(v_id)
+            except Exception as e:
+                LOGGER.exception(f'Failed to eval variable {v_id} due to {e}')
+                continue
+            try:
+                v_val = eval(v_val)
+            except Exception as e:
+                LOGGER.debug(f'Failed to eval {v_val} for variable {v_name} due to {e}')
+            variables[v] = v_val
 
+        return variables
 
-def read_domain(base_dir: Path) -> Domain:
-    parsed_files = _read_files(base_dir)
-    uniprot_seq = parsed_files[ProteinDumpNames.uniprot_seq]
-    meta = parsed_files[ProteinDumpNames.pdb_meta]
-    start, end = None, None
-    if uniprot_seq:
-        try:
-            start, end = map(int, uniprot_seq.id.split('/')[-1].split('-'))
-        except (ValueError, IndexError):
-            LOGGER.warning(
-                f'Failed to find sequence boundaries in the ID'
-                f' of the UniProt sequence for domain {base_dir}')
-    if meta and any([start is None, end is None]):
-        try:
-            _meta = dict(meta)
-            start = _meta['UniProt_start']
-            end = _meta['UniProt_end']
-        except (ValueError, KeyError):
-            LOGGER.warning(
-                f'Failed to find sequence boundaries in the metadata '
-                f'for domain {base_dir}')
-    if start is None or end is None:
-        LOGGER.warning(
-            f'Failed to find domain boundaries of domain in {base_dir}')
-        start, end = -1, -1
-    return Domain(
-        name=base_dir.name,
-        start=start,
-        end=end,
-        metadata=meta,
-        uniprot_seq=uniprot_seq,
-        pdb_seq=parsed_files[ProteinDumpNames.pdb_seq],
-        pdb_seq_raw=parsed_files[ProteinDumpNames.pdb_seq_raw],
-        structure=parsed_files[ProteinDumpNames.pdb_structure],
-        variables=parsed_files[ProteinDumpNames.variables],
-        aln_mapping=parsed_files[ProteinDumpNames.aln_mapping],
-        uni_pdb_map=parsed_files[ProteinDumpNames.uni_pdb_map],
-        uni_pdb_aln=parsed_files[ProteinDumpNames.uni_pdb_aln]
-    )
+    def read_mapping(
+            self, path: Path, as_dict: bool = True
+    ) -> t.Union[
+        t.Dict[int, t.Optional[int]],
+        t.List[t.Tuple[t.Optional[int], t.Optional[int]]]
+    ]:
+        df = self._read_n_col_table(path, 2)
+        mapping = [(x1, x2) for x1, x2 in df.itertuples(index=False)]
+        if as_dict:
+            mapping = dict(mapping)
+            if None in mapping:
+                LOGGER.warning(
+                    f'Mapping {path} converted to dict type but has `None` within the keys, '
+                    f'so maybe converting was a mistake')
+        return mapping
 
+    @staticmethod
+    def read_seqs(
+            path: Path, num_expected: int = 1, fmt='fasta',
+    ) -> t.Union[SeqRec, t.List[SeqRec]]:
+        seqs = list(SeqIO.parse(path, fmt))
+        if len(seqs) != num_expected:
+            raise LengthMismatch(
+                f'Expected to find {num_expected} seqs in {path} '
+                f'but found {len(seqs)}')
+        if num_expected == 1:
+            return seqs.pop()
+        return seqs
 
-def _read_files(base_dir: Path):
-    _check_dir(base_dir)
-    _, files = partition(
-        lambda p: p.is_file(), base_dir.glob('*'))
-    files = {x.name: x for x in files}
+    def read(
+            self,
+            obj_type: t.Type[_ObjT],
+            obj: t.Optional[_ObjT] = None,
+            parent: t.Optional[Protein] = None,
+    ) -> _ObjT:
 
-    uni_pdb_map, aln_mapping, uniprot_seq, pdb_seq, \
-    pdb_seq_raw, structure, uni_pdb_aln = (
-        None, None, None, None, None, None, None)
-    meta, vs = [], {}
+        if obj is None:
+            if obj_type is Protein:
+                obj = obj_type()
+            else:
+                obj = obj_type(start=-1, end=-1, name='')
 
-    if ProteinDumpNames.pdb_meta in files:
-        path = files[ProteinDumpNames.pdb_meta]
-        meta = pd.read_csv(path, sep='\t', header=None)
-        if len(meta.columns) != 2:
-            LOGGER.error(
-                f'Expected two columns in the metadata table {path}, '
-                f'but found {len(meta.columns)}')
-            meta = None
-        else:
-            meta = [tuple(x[1:]) for x in meta.itertuples()]
+        _, files = partition(lambda p: p.is_file(), self.base_dir.glob('*'))
+        files = {x.name: x for x in files}
 
-    # TODO: maybe find an easy way to properly init objects from their IDs?
-    if ProteinDumpNames.variables in files:
-        path = files[ProteinDumpNames.variables]
-        vs = pd.read_csv(path, sep='\t')
-        if len(vs.columns) != 2:
-            LOGGER.error(
-                f'Expected two columns in the variables table {path}, '
-                f'but found {len(vs.columns)}')
-        vs = {
-            name: (None, value) for _, name, value in vs.itertuples()}
+        if self.dump_names.meta in files:
+            meta = self._read_n_col_table(files[self.dump_names.meta], 2)
+            if meta is not None:
+                obj.metadata = [(x1, x2) for x1, x2 in meta.itertuples(index=False)]
+        if self.dump_names.variables in files:
+            obj.variables = self.read_variables(files[self.dump_names.variables])
+        if self.dump_names.uni_pdb_map in files:
+            obj.uni_pdb_map = self.read_mapping(files[self.dump_names.uni_pdb_map])
+        if self.dump_names.aln_mapping in files:
+            obj.aln_mapping = self.read_mapping(files[self.dump_names.aln_mapping])
+        if self.dump_names.uniprot_seq in files:
+            obj.uniprot_seq = self.read_seqs(files[self.dump_names.uniprot_seq], 1)
+        if self.dump_names.pdb_seq1 in files:
+            obj.pdb_seq1 = self.read_seqs(files[self.dump_names.pdb_seq1], 1)
+        if self.dump_names.uni_pdb_aln in files:
+            obj.uni_pdb_aln = self.read_seqs(files[self.dump_names.uni_pdb_aln], 2)
+        if self.dump_names.pdb_seq3 in files:
+            obj.pdb_seq3 = self._read_n_col_table(
+                files[self.dump_names.pdb_seq3], 1).iloc[:, 0].tolist()
+        if self.dump_names.pdb_structure in files:
+            path = files[self.dump_names.pdb_structure]
+            obj.structure = PDBParser(QUIET=True).get_structure(path.stem, path)
 
-    if ProteinDumpNames.uni_pdb_map in files:
-        path = files[ProteinDumpNames.uni_pdb_map]
-        try:
-            uni_pdb_map = _read_mapping(path)
-        except ValueError as e:
-            LOGGER.error(
-                f'Failed to read SIFTS mapping {path} '
-                f'due to: {e}')
+        obj_path = self.base_dir
+        if isinstance(obj, Domain):
+            obj.start, obj.end = self._infer_boundaries(obj, pdb=False)
+            obj.pdb_start, obj.pdb_end = self._infer_boundaries(obj, pdb=True)
+            try:
+                obj.name = dict(obj.metadata)['Domain']
+            except KeyError:
+                obj.name = self.base_dir
+            obj_path = self.base_dir.parent.parent
 
-    if ProteinDumpNames.aln_mapping in files:
-        path = files[ProteinDumpNames.aln_mapping]
-        try:
-            aln_mapping = _read_mapping(path)
-        except ValueError as e:
-            LOGGER.error(
-                f'Failed to read alignment mapping {path} '
-                f'due to: {e}')
+        obj.uniprot_id, obj.pdb, obj.chain = self._infer_ids(obj, obj_path, parent)
 
-    if ProteinDumpNames.uniprot_seq in files:
-        path = files[ProteinDumpNames.uniprot_seq]
-        try:
-            uniprot_seq = _read_seqs(path)
-        except (LengthMismatch, ValueError) as e:
-            LOGGER.error(
-                f'Failed to read uniprot seq from {path} '
-                f'due to: {e}')
-
-    if ProteinDumpNames.pdb_seq in files:
-        path = files[ProteinDumpNames.pdb_seq]
-        try:
-            pdb_seq = _read_seqs(path)
-        except (LengthMismatch, ValueError) as e:
-            LOGGER.error(
-                f'Failed to read pdb seq from {path} '
-                f'due to: {e}')
-    if ProteinDumpNames.pdb_seq_raw in files:
-        path = files[ProteinDumpNames.pdb_seq_raw]
-        try:
-            with path.open() as f:
-                pdb_seq_raw = [
-                    line.rstrip() for line in f
-                    if line and line != '\n']
-        except Exception as e:
-            LOGGER.error(
-                f'Failed to read pdb raw sequence from {path} '
-                f'due to {e}')
-
-    if ProteinDumpNames.pdb_structure in files:
-        path = files[ProteinDumpNames.pdb_structure]
-        try:
-            parser = PDBParser(QUIET=True)
-            structure = parser.get_structure(path.stem, path)
-        except Exception as e:
-            LOGGER.error(
-                f'Failed to read a structure {path} due to {e}')
-
-    if ProteinDumpNames.uni_pdb_aln in files:
-        path = files[ProteinDumpNames.uni_pdb_aln]
-        try:
-            uni_pdb_aln = _read_seqs(path, 2)
-        except Exception as e:
-            LOGGER.error(
-                f'Failed to read UniProt-PDB alignment at {path} '
-                f'due to {e}')
-
-    return {
-        ProteinDumpNames.pdb_structure: structure,
-        ProteinDumpNames.pdb_seq: pdb_seq,
-        ProteinDumpNames.uniprot_seq: uniprot_seq,
-        ProteinDumpNames.variables: vs,
-        ProteinDumpNames.pdb_meta: meta,
-        ProteinDumpNames.uni_pdb_map: uni_pdb_map,
-        ProteinDumpNames.aln_mapping: aln_mapping,
-        ProteinDumpNames.uni_pdb_aln: uni_pdb_aln,
-        ProteinDumpNames.pdb_seq_raw: pdb_seq_raw,
-    }
+        return obj
 
 
 def unduplicate(

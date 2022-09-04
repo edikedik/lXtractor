@@ -28,7 +28,7 @@ from lXtractor.input_parser import init
 from lXtractor.util.io import run_handles
 from lXtractor.util.seq import map_pairs_numbering, mafft_align
 from lXtractor.util.structure import get_sequence
-from lXtractor.variables import parse_var, _VarT, _ParsedVariables
+from lXtractor.core.variables import parse_var, _VarT, _ParsedVariables
 
 _KeyT = t.Union[int, str, slice, t.Sequence[bool], np.ndarray]
 _AlnT = t.Union[t.List[SeqRec], t.List[str], Alignment]
@@ -348,7 +348,7 @@ class lXtractor:
         seqs = pipe(
             objs,
             filter(accept),
-            map(lambda x: x.pdb_seq if pdb else x.uniprot_seq),
+            map(lambda x: x.pdb_seq1 if pdb else x.uniprot_seq),
             filter(lambda x: x is not None),
             list)
 
@@ -367,7 +367,7 @@ class lXtractor:
 
     def map_numbering_to_msa(
             self, alignment: _AlnT, domains: t.Optional[t.Union[t.Sequence[str], str]] = None,
-            pdb_seq: bool = True, parallel: bool = True, missing: bool = True) -> None:
+            pdb_seq: bool = True, parallel: bool = False, missing: bool = True) -> None:
 
         def map_to_alignment(
                 seq: str, num: t.Sequence[int], aln: Alignment
@@ -379,9 +379,9 @@ class lXtractor:
 
         def get_seq(obj: t.Union[Protein, Domain]) -> str:
             if pdb_seq:
-                if obj.pdb_seq is None:
+                if obj.pdb_seq1 is None:
                     return get_sequence(obj.structure)
-                return str(obj.pdb_seq.seq)
+                return str(obj.pdb_seq1.seq)
             return str(obj.uniprot_seq.seq)
 
         def get_num(obj: t.Union[Protein, Domain]) -> t.Tuple[int, ...]:
@@ -455,7 +455,8 @@ class lXtractor:
                 protein: Protein
         ) -> t.Union[Protein, t.Tuple[str, Exception]]:
             try:
-                return extract_pdb_domains(protein)
+                _ = protein.extract_domains(pdb=True, inplace=True)
+                return protein
             except Exception as e:
                 return protein.id, e
 
@@ -530,7 +531,7 @@ class lXtractor:
         def try_parse(v: str) -> t.Optional[_ParsedVariables]:
             try:
                 parsed_var = parse_var(v)
-                LOGGER.debug(f'Successfully parsed variable {v}')
+                LOGGER.debug(f'Successfully parsed input {v}')
                 return parsed_var
             except (ValueError, FormatError) as e:
                 LOGGER.exception(
@@ -548,21 +549,23 @@ class lXtractor:
 
         for vs, p_specs, d_specs in parsed_variables:
             _objs = self.query(p_specs, d_specs)
+            print(vs, p_specs, d_specs, _objs)
             if not _objs:
                 LOGGER.warning(
                     f'No objects falling under specifications '
                     f'protein={p_specs} domain={d_specs} for variables {vs}')
             for obj in _objs:
-                for v in vs:
-                    if v in obj.variables:
+                for variable in vs:
+                    print(obj, variable)
+                    if variable in obj.variables:
                         if overwrite:
-                            obj.variables[v] = None
-                            LOGGER.debug(f'Overwritten existing {obj.id}-s variable {v}')
+                            obj.variables[variable] = None
+                            LOGGER.debug(f'Overwritten existing {obj}-s variable {variable}')
                         else:
-                            LOGGER.debug(f'Skipping existing {obj.id}-s variable {v}')
+                            LOGGER.debug(f'Skipping existing {obj}-s variable {variable}')
                     else:
-                        obj.variables[v] = None
-                        LOGGER.debug(f'Assigned new variable {v} to {obj.id}')
+                        obj.variables[variable] = None
+                        LOGGER.debug(f'Assigned new variable {variable} to {obj}')
 
         LOGGER.debug(f'Successfully assigned variables')
 

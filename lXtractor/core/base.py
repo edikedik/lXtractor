@@ -265,15 +265,17 @@ class _ProteinDumpNames:
     used for dumping data.
     """
     uniprot_seq: str = 'sequence.fasta'
-    pdb_seq: str = 'structure.fasta'
-    pdb_seq_raw: str = 'structure.txt'
+    pdb_seq1: str = 'structure.fasta'
+    pdb_seq3: str = 'structure.txt'
     pdb_structure: str = 'structure.pdb'
-    pdb_meta: str = 'meta.tsv'
+    meta: str = 'meta.tsv'
     variables: str = 'variables.tsv'
     aln_mapping: str = 'aln_mapping.tsv'
     uni_pdb_map: str = 'uni_pdb_map.tsv'
-    distance_map_base: str = 'DM'
+    pdist_base_dir: str = 'PDIST'
+    pdist_base_name: str = 'pdist'
     uni_pdb_aln: str = 'uni_pdb_aln.fasta'
+    domains_dir: str = 'domains'
 
 
 ProteinDumpNames = _ProteinDumpNames()

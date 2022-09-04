@@ -10,86 +10,13 @@ from time import sleep
 
 import ray
 import requests
-from Bio import SeqIO
-from Bio.PDB import PDBIO
-from Bio.PDB.Structure import Structure
-from Bio.SeqRecord import SeqRecord as SeqRec
-from more_itertools import divide, unique_everseen
+from more_itertools import divide
 from tqdm.auto import tqdm
 
 from lXtractor.core.base import _Fetcher, _Getter
 
 T = t.TypeVar('T')
 LOGGER = logging.getLogger(__name__)
-
-
-# =================================== Dumping ========================================
-
-class Dumper:
-    def __init__(self, dump_dir: Path):
-        self.dump_dir = dump_dir
-
-    def dump_pdb(self, structure: Structure, name: str) -> None:
-        _path = self.dump_dir / name
-        io = PDBIO()
-        io.set_structure(structure)
-        with _path.open('w') as handle:
-            io.save(handle)
-        LOGGER.debug(f'Saved PDB structure {structure.id} to {_path}')
-
-    def dump_seq_rec(
-            self, seq_rec: t.Union[SeqRec, t.Iterable[SeqRec]],
-            name: str
-    ) -> None:
-        _path = self.dump_dir / name
-        SeqIO.write(seq_rec, _path, 'fasta')
-        if isinstance(seq_rec, SeqRec):
-            LOGGER.debug(f'Saved sequence {seq_rec.id} to {_path}')
-        else:
-            LOGGER.debug(f'Saved sequences {[s.id for s in seq_rec]} to {_path}')
-
-    def dump_meta(self, meta: t.Iterable[t.Tuple[str, t.Any]], name: str) -> None:
-        _path = self.dump_dir / name
-        records = list(unique_everseen(meta))
-        with _path.open('w') as f:
-            for name, value in records:
-                print(name, value, sep='\t', file=f)
-        LOGGER.debug(f'Saved {len(records)} metadata records to {_path}')
-
-    def dump_variables(
-            self, variables, name: str,
-            skip_if_contains: t.Collection[str] = ('ALL',)) -> None:
-        # TODO: must be reimplemented
-        _path = self.dump_dir / name
-        with _path.open('w') as f:
-            for name, (_, value) in variables.items():
-                if skip_if_contains and any(
-                        x in name for x in skip_if_contains):
-                    continue
-                print(name, value, sep='\t', file=f)
-        LOGGER.debug(f'Saved {len(variables)} variables to {_path}')
-
-    def dump_distance_map(
-            self, distances: t.Iterable[t.Tuple[int, int, float]],
-            name: str) -> None:
-        _path = self.dump_dir / name
-        with _path.open('w') as f:
-            for pos1, pos2, dist in distances:
-                print(pos1, pos2, dist, sep='\t', file=f)
-        LOGGER.debug(f'Saved distance map to {_path}')
-
-    def dump_mapping(self, mapping: t.Dict[t.Any, t.Any], name: str) -> None:
-        _path = self.dump_dir / name
-        with _path.open('w') as f:
-            for k, v in mapping.items():
-                print(k, v, sep='\t', file=f)
-        LOGGER.debug(f'Saved mapping to {_path}')
-
-    def dump_pdb_raw(self, seq: t.Tuple[str, ...], name: str) -> None:
-        _path = self.dump_dir / name
-        with _path.open('w') as f:
-            print(*seq, sep='\n', file=f)
-        LOGGER.debug(f'Saved raw sequence to {_path}')
 
 
 # =================================== Fetching ========================================
