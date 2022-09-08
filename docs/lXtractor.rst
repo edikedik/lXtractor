@@ -38,14 +38,6 @@ lXtractor.lXt module
    :undoc-members:
    :show-inheritance:
 
-lXtractor.variables module
---------------------------
-
-.. automodule:: lXtractor.variables
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 Module contents
 ---------------
 

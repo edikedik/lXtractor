@@ -3,7 +3,6 @@ import typing as t
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
-from pydoc import locate
 
 import pandas as pd
 from Bio import SeqIO
@@ -29,7 +28,7 @@ LOGGER = logging.getLogger(__name__)
 @dataclass
 class Protein:
     """
-    A flexible container to accumulate and save data related to a single protein chain
+    A flexible container holding data related to a single protein chain.
     """
     pdb: t.Optional[str] = None
     chain: t.Optional[str] = None
@@ -84,13 +83,31 @@ class Protein:
             cls, path: Path,
             dump_names: ProteinDumpNames = ProteinDumpNames
     ) -> 'Protein':
+        """
+        Initialize a :class:`Protein` instance from the existing dump.
+
+        Internally, initializes :class:`ProteinIO` instance for protein
+        and calls the :meth:`ProteinIO.read`.
+        Does the same for each domain the protein contains.
+
+        :param path: Path to a dumped protein data.
+        :param dump_names: Names of files (keep the default).
+        :return: Initialized `Protein` instance.
+        """
         prot = ProteinIO(path, dump_names).read(Protein)
         prot.domains = {
             p.name: ProteinIO(p, dump_names).read(Domain)
             for p in path.glob('domains/*')}
         return prot
 
-    def write(self, base_dir: Path, dump_names: ProteinDumpNames = ProteinDumpNames):
+    def write(self, base_dir: Path, dump_names: ProteinDumpNames = ProteinDumpNames) -> None:
+        """
+        Dump protein data (including all domains it contains).
+        Will write `Protein` attributes under the provided `path`.
+
+        :param base_dir: Path to a dump dir.
+        :param dump_names: Filenames (keep the default).
+        """
         path = base_dir / self.id
         path.mkdir(parents=True, exist_ok=True)
         io = ProteinIO(path, dump_names)
@@ -129,8 +146,10 @@ class Protein:
             save: bool = True
     ) -> 'Domain':
         """
-        Use existing protein data and given domain boundaries to create new domain
-        and (optionally) extract sequence/structure according to boundaries.
+        Use existing protein data and the provided domain boundaries to create new domain
+        and (optionally) extract protein's sequence/structure.
+
+        Won't transfer the existing :attr:`variables`
 
         :param start: Domain's start (seq numbering).
         :param end: Domain's end (seq numbering).
@@ -197,6 +216,11 @@ class Domain(Protein, Segment):
             cls, path: Path,
             dump_names: ProteinDumpNames = ProteinDumpNames
     ) -> 'Domain':
+        """
+        A wrapper around :meth:`ProteinIO.read`.
+
+        Initialize the domain from existing data dump.
+        """
         return ProteinIO(path, dump_names).read(Domain)
 
     def extract_uniprot(self, inplace: bool = True) -> 'Domain':
@@ -273,26 +297,48 @@ _ObjT = t.TypeVar('_ObjT', bound=t.Type[Protein])
 
 
 class ProteinIO:
+    """
+    A collection of methods to read/write protein/domain-related data.
+    Two main methods are :meth:`read` and :meth:`write.
+    """
     def __init__(
             self, base_dir: Path,
             dump_names: ProteinDumpNames = ProteinDumpNames
     ):
+        """
+        :param base_dir: Directory to read from / write to.
+        :param dump_names: Filenames (safe to keep the default).
+        """
         self.base_dir = base_dir
         self.dump_names = dump_names
 
     def write_pdb(self, structure: Structure) -> None:
+        """
+        Dumps the structure in PDB format.
+        """
         path = self.base_dir / self.dump_names.pdb_structure
         dump_pdb(structure, path)
 
     def write_rec(
             self, rec: t.Union[SeqRec, t.Iterable[SeqRec]], name: str
-    ) -> None:
+    ) -> int:
+        """
+        :param rec: a single sequence record or iterable over such.
+        :param name: filename.
+        :return: the number of written sequences.
+        """
         if isinstance(rec, SeqRec):
             rec = [rec]
         path = self.base_dir / name
-        SeqIO.write(rec, path, 'fasta')
+        return SeqIO.write(rec, path, 'fasta')
 
     def write_meta(self, meta: t.Iterable[t.Tuple[str, t.Any]]) -> None:
+        """
+        Writes metadata in tsv format.
+
+        :param meta: an iterable over pairs (name, value) where
+            `value` is convertible to `str`.
+        """
         path = self.base_dir / self.dump_names.meta
         records = unique_everseen(meta)
         with path.open('w') as f:
@@ -303,6 +349,12 @@ class ProteinIO:
             self, variables: Variables,
             skip_if_contains: t.Collection[str] = ('ALL',)
     ) -> None:
+        """
+        :param variables: `Variables` holding items (var_id, var_value).
+        :param skip_if_contains: Skip if variable ID contains any the provided strings.
+            By defaults, skips all `ALL`-containing variables as these are expected to
+            be pairwise distance matrices.
+        """
         _path = self.base_dir / self.dump_names.variables
         items = (f'{v.id}\t{r}' for v, r in variables.items()
                  if all(x not in v.id for x in skip_if_contains))
@@ -310,18 +362,32 @@ class ProteinIO:
         LOGGER.debug(f'Saved {len(variables)} variables to {_path}')
 
     def write_pdist(self, distances: t.Iterable[t.Tuple[int, int, float]], path) -> None:
+        """
+        :param distances: Iterable over (pos1, pos2, dist) tuples.
+        :param path: full path to the file (won't use :attr:`base_dir` here).
+        """
         # path = self.base_dir / self.dump_names.pdist_base_name
         with path.open('w') as f:
             for pos1, pos2, dist in distances:
                 print(pos1, pos2, dist, sep='\t', file=f)
 
-    def write_mapping(self, mapping: t.Dict[t.Any, t.Any], name: str) -> None:
+    def write_mapping(self, mapping: t.Dict[int, t.Optional[int]], name: str) -> None:
+        """
+        Write pos-to-pos mapping in .tsv format.
+
+        :param mapping: mapping between different protein numbering schemes.
+        :param name:
+        :return:
+        """
         path = self.base_dir / name
         with path.open('w') as f:
             for k, v in mapping.items():
                 print(k, v, sep='\t', file=f)
 
     def write_pdb_seq3(self, seq: t.Tuple[str, ...]) -> None:
+        """
+        Writes `seq` elements into a file, one per line.
+        """
         path = self.base_dir / self.dump_names.pdb_seq3
         with path.open('w') as f:
             print(*seq, sep='\n', file=f)
@@ -369,6 +435,12 @@ class ProteinIO:
                 self.write_pdist(obj.variables[pdist], path)
 
     def write(self, obj: t.Union[Protein, Domain]):
+        """
+        Write `obj`'s data into :attr:`base_dir` using filenames provided by :attr:`dump_names`.
+
+        :param obj: protein or domain.
+        :return:
+        """
         self.base_dir.mkdir(exist_ok=True, parents=True)
         self._write_obj(obj)
         LOGGER.debug(f'Saved {obj} to {self.base_dir}')
@@ -381,8 +453,11 @@ class ProteinIO:
                 LOGGER.debug(f'Saved {k} to {base_dir}')
 
     @staticmethod
-    def _read_n_col_table(path: Path, n: int) -> t.Optional[pd.DataFrame]:
-        df = pd.read_csv(path, sep='\t', header=None)
+    def _read_n_col_table(path: Path, n: int, sep='\t') -> t.Optional[pd.DataFrame]:
+        """
+        Read table from file and ensure it has exactly `n` columns.
+        """
+        df = pd.read_csv(path, sep=sep, header=None)
         if len(df.columns) != n:
             LOGGER.error(
                 f'Expected two columns in the table {path}, '
@@ -394,6 +469,17 @@ class ProteinIO:
     def _infer_boundaries(
             obj: t.Union[Protein, Domain], pdb: bool = False
     ) -> t.Tuple[int, int]:
+        """
+        Attempts to find domain boundaries from:
+            (1) object's sequence header (PDB or UniProt)
+            (2) metadata
+
+        If the above fails, returns -1, -1 for both start and end.
+
+        :param obj: protein or domain.
+        :param pdb: infer PDB domain boundaries, otherwise -- the UniProt ones.
+        :return: a pair of (start, end).
+        """
         start, end = None, None
         bound_type = 'PDB' if pdb else 'UniProt'
         start_name, end_name = f'{bound_type}_start', f'{bound_type}_end'
@@ -422,6 +508,18 @@ class ProteinIO:
     def _infer_ids(
             obj: t.Union[Protein, Domain], path: t.Optional[Path], parent: t.Optional[Protein],
     ) -> t.Tuple[t.Optional[str], t.Optional[str], t.Optional[str]]:
+        """
+        Infer UniProt ID, PDB ID and PDB chain from:
+            (1) metadata
+            (2) path name
+            (3) parent data (if `obj` is domain).
+
+        :param obj: protein or domain.
+        :param path: :class:`Protein` path in the format _UniProt_PDB:Chain_.
+        :param parent: Parent :class:`Protein`. If provided, we assume `obj`
+            to be a :class:`Domain.
+        :return: A tuple of (UniProt ID, PDB ID, PDB chain).
+        """
         if obj.metadata is not None:
             try:
                 meta = dict(obj.metadata)
@@ -437,7 +535,14 @@ class ProteinIO:
 
     def read_variables(self, path: Path) -> Variables:
         # TODO: read pdist
-        assert path.exists()
+        """
+        Read and initialize variables.
+
+        :param path: Path to a two-column .tsv file holding pairs (var_id, var_value).
+            Will use `var_id` to initialize variable (importing dynamically relevant
+            class from :mod:`variables`.
+        :return: A dict mapping variable object to its value.
+        """
 
         try:
             vs = self._read_n_col_table(path, 2)
@@ -474,6 +579,11 @@ class ProteinIO:
         t.Dict[int, t.Optional[int]],
         t.List[t.Tuple[t.Optional[int], t.Optional[int]]]
     ]:
+        """
+        :param path: Path to a two-column tsv file holding pairs of positions (pos1, pos2).
+        :param as_dict: Convert the result to dict. Otherwise, return a list of pairs.
+        :return: parsed mapping dict or list.
+        """
         df = self._read_n_col_table(path, 2)
         mapping = [(x1, x2) for x1, x2 in df.itertuples(index=False)]
         if as_dict:
@@ -488,6 +598,13 @@ class ProteinIO:
     def read_seqs(
             path: Path, num_expected: int = 1, fmt='fasta',
     ) -> t.Union[SeqRec, t.List[SeqRec]]:
+        """
+        :param path: Path to a file with sequences.
+        :param num_expected: The number of sequences one expects to find.
+        :param fmt: Any format accepted by `SeqIO.parse`.
+        :return: Parsed seq records (one or list of many (>=2)).
+        :raises LengthMismatch: If the number of sequences doesn't match the expected one.
+        """
         seqs = list(SeqIO.parse(path, fmt))
         if len(seqs) != num_expected:
             raise LengthMismatch(
@@ -503,6 +620,18 @@ class ProteinIO:
             obj: t.Optional[_ObjT] = None,
             parent: t.Optional[Protein] = None,
     ) -> _ObjT:
+        """
+        Read data and initialize :class:`Protein` or :class:`Domain`
+        from the data found in :attr:`base_dir`.
+
+        Other `read_*` methods define how the data is read.
+
+        :param obj_type: Type of object (a class itself) to init.
+        :param obj: Initialized object (will overwrite existing data).
+        :param parent: If an `obj_type` is domain, provide `parent`
+            to search for relevant metadata.
+        :return: initialized `obj_type`.
+        """
 
         if obj is None:
             if obj_type is Protein:

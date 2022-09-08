@@ -52,6 +52,14 @@ lXtractor.core.uniprot module
    :undoc-members:
    :show-inheritance:
 
+lXtractor.core.variables module
+-------------------------------
+
+.. automodule:: lXtractor.core.variables
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
