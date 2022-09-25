@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import logging
+import operator as op
 import typing as t
-from io import StringIO
-from itertools import tee
+from collections import abc
+from io import StringIO, TextIOBase
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -9,22 +12,53 @@ import numpy as np
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord as SeqRec
-from more_itertools import split_at, ilen, partition
-from toolz import curry
+from more_itertools import split_at, partition, split_before, tail
 
-from lXtractor.core.base import SeqRec, LengthMismatch, Segment, Seq, _Align_method
+from lXtractor.core.base import SupportsWrite, AlignMethod
+from lXtractor.core.exceptions import LengthMismatch, MissingData
+from lXtractor.core.segment import Segment
 from lXtractor.util.io import run_sp
 
 LOGGER = logging.getLogger(__name__)
 
+GAP_CHARS = ('-',)
 
-@curry
+
+def read_fasta(
+        inp: Path | TextIOBase | abc.Iterable[str], strip_id: bool = True
+) -> abc.Iterator[tuple[str, str]]:
+    def _yield_seqs(buffer):
+        items = split_before(map(str.rstrip, buffer), lambda x: x[0] == '>')
+        for it in items:
+            header, seq = it[0][1:], it[1:]
+            if strip_id:
+                header = header.split()[0]
+            yield header, ''.join(seq)
+
+    if isinstance(inp, Path):
+        with inp.open() as f:
+            yield from _yield_seqs(f)
+    elif isinstance(inp, (TextIOBase, abc.Iterable)):
+        yield from _yield_seqs(inp)
+    else:
+        raise TypeError(f'Unsupported input type {type(inp)}')
+
+
+def write_fasta(inp: abc.Iterable[tuple[str, str]], out: Path | SupportsWrite) -> None:
+    data = '\n'.join(f'>{header}\n{seq}' for header, seq in inp)
+    if isinstance(out, Path):
+        out.write_text(data)
+    elif isinstance(out, SupportsWrite):
+        out.write(data)
+    else:
+        raise TypeError(f'Unsupported output type {type(out)}')
+
+
 def mafft_add(
-        msa: t.Union[t.Iterable[SeqRec], Path],
-        seqs: t.Iterable[SeqRec],
-        thread: int = 1, keeplength: bool = True,
-        mafft: str = 'mafft'
-) -> t.Tuple[t.List[SeqRec], t.List[SeqRec]]:
+        msa: abc.Iterable[tuple[str, str]] | Path,
+        seqs: abc.Iterable[tuple[str, str]], *,
+        mafft: str = 'mafft', thread: int = 1, keeplength: bool = True,
+) -> abc.Iterator[tuple[str, str]]:
     """
     Add a sequence using mafft.
     All sequences are assumed to be :class:`Bio.SeqRecord.SeqRecord` objects.
@@ -40,88 +74,57 @@ def mafft_add(
         with (1) alignment sequences with addition,
         and (2) aligned addition, separately.
     """
-    seqs, seqs_ = tee(seqs)
-    num_to_add = ilen(seqs_)
-    LOGGER.debug(f'Will add {num_to_add} sequences')
+
+    seqs = list(seqs)
+    if not seqs:
+        raise MissingData('No sequences to add')
 
     if isinstance(msa, Path):
         if not msa.exists():
             raise ValueError(f'Invalid path to sequences {msa}')
         msa_path = str(msa)
-        msa_handle = None
-        LOGGER.debug(f'Found existing path to MSA seqs {msa_path}')
-    else:
+    elif isinstance(msa, abc.Iterable):
         msa_handle = NamedTemporaryFile('w')
-        num_aln = SeqIO.write(msa, msa_handle, 'fasta')
-        LOGGER.debug(f'Wrote {num_aln} sequences into {msa_handle.name}')
+        write_fasta(msa, msa_handle)
         msa_handle.seek(0)
         msa_path = msa_handle.name
+    else:
+        raise TypeError(f'Unsupported msa type {type(msa)}')
 
     add_handle = NamedTemporaryFile('w')
-    num_add = SeqIO.write(seqs, add_handle, 'fasta')
-    LOGGER.debug(f'Wrote {num_add} sequences into {add_handle.name}')
+    write_fasta(seqs, add_handle)
     add_handle.seek(0)
 
     # Run the subprocess command
     keeplength = '--keeplength' if keeplength else ''
-    cmd = f'{mafft} --add {add_handle.name} {keeplength} --anysymbol ' \
-          f'--inputorder --thread {thread} {msa_path}'
-    LOGGER.debug(f'Will run the command {cmd}')
-    res = run_sp(cmd)
+    cmd = (f'{mafft} --add {add_handle.name} {keeplength} --anysymbol '
+           f'--inputorder --thread {thread} {msa_path}')
 
-    # Read the seqs into `SeqRec` objects from the stdout
-    alignment = list(SeqIO.parse(StringIO(res.stdout), 'fasta'))
-    LOGGER.debug(
-        f'Addition resulted in alignment with {len(alignment)} sequences')
-    if not alignment:
-        raise ValueError('Resulted in an empty seqs')
-
-    # Close handles and return the results
-    add_handle.close()
-    if msa_handle:
-        msa_handle.close()
-
-    return alignment, alignment[-num_to_add:]
+    return tail(len(seqs), read_fasta(StringIO(run_sp(cmd).stdout)))
 
 
-@curry
 def mafft_align(
-        seqs: t.Iterable[SeqRec],
-        thread: int = 1,
-        mafft: str = 'mafft-linsi'
-) -> t.List[SeqRec]:
+        seqs: abc.Iterable[tuple[str, str]] | Path,
+        *, mafft: str = 'mafft-linsi', thread: int = 1,
+) -> t.Iterator[tuple[str, str]]:
     """
     Align an arbitrary number of sequences using mafft.
-    All sequences are assumed to be :class:`Bio.SeqRecord.SeqRecord` objects.
-    This is a minimalistic function, not a proper CLI for mafft.
-    This is a curried function: incomplete argument set yield
-    partially evaluated function (e.g. ``mafft_align(mafft='mafft')``).
 
-    :param seqs: an iterable over arbitrary sequences.
-    :param thread: how many threads to dedicate for `mafft`.
+    :param seqs: An iterable over (header, seq) pairs
+        or path to file with sequences to align.
+    :param thread: How many threads to dedicate for `mafft`.
     :param mafft: `mafft` executable (path or env variable).
-    :return: a list of aligned sequences, the order is preserved.
+    :return: An Iterator over aligned (header, seq) pairs.
     """
-    # Write all sequences into a temporary file
-    handle = NamedTemporaryFile('w')
-    num_seq = SeqIO.write(seqs, handle, 'fasta')
-    handle.seek(0)
-    LOGGER.debug(f'Wrote {num_seq} seq records into {handle.name}')
-
-    # Run the subprocess command
-    cmd = f'{mafft} --anysymbol --thread {thread} --inputorder {handle.name}'
-    LOGGER.debug(f'Will run the command {cmd}')
-    res = run_sp(cmd)
-
-    # Wrap the results from stdout into a list of `SeqRec` objects
-    alignment = list(SeqIO.parse(StringIO(res.stdout), 'fasta'))
-    LOGGER.debug(f'Obtained {len(alignment)} sequences')
-
-    # Check and return the seqs
-    if not alignment:
-        raise ValueError('Resulted in empty seqs')
-    handle.close()
-    return alignment
+    if isinstance(seqs, Path):
+        filename = seqs
+    else:
+        handle = NamedTemporaryFile('w')
+        write_fasta(seqs, handle)
+        handle.seek(0)
+        filename = handle.name
+    cmd = f'{mafft} --anysymbol --thread {thread} --inputorder {filename}'
+    return read_fasta(StringIO(run_sp(cmd).stdout))
 
 
 def hmmer_align(
@@ -147,44 +150,34 @@ def hmmer_align(
 
 
 def remove_gap_columns(
-        seqs: t.Sequence[SeqRec],
-        max_fraction_of_gaps: float = 1.0
-) -> t.Tuple[t.List[SeqRec], np.ndarray]:
+        seqs: abc.Iterable[str],
+        max_gaps: float = 1.0
+) -> tuple[abc.Iterator[str], np.ndarray]:
     """
     Remove gap columns from a collection of sequences.
 
-    :param seqs: a collection of equal length sequences.
-    :param max_fraction_of_gaps: columns with a fraction of gaps below this value
-        will be excluded. Default "1.0" value is equivalent to removing columns
-        comprised of gaps only.
-    :return: A tuple of (1) a list of sequences,
-        and (2) indices of the selected columns in the provided seqs
+    :param seqs: A collection of equal length sequences.
+    :param max_gaps: Max fraction of gaps allowed per column.
+    :return: Initial seqs with gap columns removed and removed columns' indices.
     """
     # Convert sequences into a matrix
-    arrays = np.vstack([np.array(list(s.seq)) for s in seqs])
+    arrays = np.vstack(list(map(list, seqs)))
 
     # Calculate fraction of gaps for each column
-    fraction_of_gaps = (arrays == '-').sum(axis=0) / arrays.shape[0]
+    fraction_of_gaps = (np.isin(arrays, GAP_CHARS)).sum(axis=0) / arrays.shape[0]
 
     # Create a boolean mask of such columns
-    mask = fraction_of_gaps < max_fraction_of_gaps
-    LOGGER.debug(f'Detected {np.sum(~mask)} gap columns, {np.sum(mask)} to be retained')
+    mask = fraction_of_gaps < max_gaps
 
     # Use the boolean mask to filter columns in each of the arrays
-    # Then wrap the filtered sequences into `Seq`,
-    # and, subsequently, `SeqRec` objects
-    new_seqs = (Seq(''.join(a)) for a in arrays.T[mask].T)
-    new_seqs = [
-        SeqRec(new_seq, id=s.id, name=s.id, description=s.description)
-        for new_seq, s in zip(new_seqs, seqs)]
-    return new_seqs, np.where(mask)[0]
+    new_seqs = (''.join(a) for a in arrays.T[mask].T)
+    return new_seqs, np.where(~mask)[0]
 
 
-def remove_gap_sequences(
-        seqs: t.Iterable[SeqRec],
-        max_fraction_of_gaps: float = 0.9,
-        gap: str = '-'
-) -> t.Tuple[t.List[SeqRec], t.List[SeqRec]]:
+def partition_gap_sequences(
+        seqs: abc.Iterable[tuple[str, str]],
+        max_fraction_of_gaps: float = 1.0,
+) -> tuple[abc.Iterator[str], abc.Iterator[str]]:
     """
     Removes sequences having fraction of gaps above the given threshold.
 
@@ -195,20 +188,16 @@ def remove_gap_sequences(
     :return: a filtered list of sequences.
     """
 
-    def fraction_of_gaps(seq): return sum(1 for c in seq if c == gap) / len(seq)
+    def fraction_of_gaps(seq):
+        return sum(1 for c in seq if c == '-') / len(seq)
 
-    # Partition seqs based on predicate "fraction of gaps < threshold"
     above_threshold, below_threshold = map(
-        list, partition(
-            lambda s: fraction_of_gaps(s) < max_fraction_of_gaps,
-            seqs))
-    above_ids = [s.id for s in above_threshold]
-    above_ids = '' if len(above_ids) > 100 else above_ids
-    LOGGER.debug(
-        f'Detected {len(above_threshold)} sequences with the number of gaps '
-        f'>= {max_fraction_of_gaps}: {above_ids}')
+        lambda seqs: map(op.itemgetter(0), seqs),
+        partition(
+            lambda s: fraction_of_gaps(s[1]) < max_fraction_of_gaps,
+            seqs)
+    )
 
-    # Return sequences passing the threshold
     return below_threshold, above_threshold
 
 
@@ -270,73 +259,69 @@ def cluster_cdhit(
     return [[seqs_map[x] for x in c] for c in clusters]
 
 
-def seq_identity(
-        seq1: SeqRec, seq2: SeqRec, align: bool = True,
-        align_method: _Align_method = mafft_align
-) -> float:
-    """
-    Calculate sequence identity between a pair of sequences.
-
-    :param seq1: Protein seq.
-    :param seq2: Protein seq.
-    :param align: Align before calculating.
-        If ``False``, sequences are assumed to be aligned.
-    :param align_method: Align method to use.
-        Must be a callable accepting and returning a list of sequences.
-    :return: A number of matching characters divided by a smaller sequence's length.
-    """
-    if align:
-        seq1, seq2 = align_method([seq1, seq2])
-    if len(seq1) != len(seq2):
-        raise ValueError('Seq lengths must match')
-    min_length = min(map(
-        lambda s: len(str(s.seq).replace('-', '')),
-        [seq1, seq2]))
-    matches = sum(1 for c1, c2 in zip(seq1, seq2)
-                  if c1 == c2 and c1 != '-' and c2 != '-')
-    return matches / min_length
-
-
-def seq_coverage(
-        seq: SeqRec, cover: SeqRec, align: bool = True,
-        align_method: _Align_method = mafft_align
-) -> float:
-    """
-    Calculate which fraction of ``seq`` is covered by ``cover``.
-    The latter is assumed to be a subsequence of the former
-    (otherwise, 100% coverage is guaranteed).
-
-    :param seq: A protein sequence.
-    :param cover: A protein sequence to check against ``seq``.
-    :param align: Align before calculating.
-        If ``False``, sequences are assumed to be aligned.
-    :param align_method: Align method to use.
-        Must be a callable accepting and returning a list of sequences.
-    :return: A number of non-gap characters divided by the ``seq``'s length.
-    """
-    if align:
-        seq, cover = align_method([seq, cover])
-    if len(seq) != len(cover):
-        raise ValueError('Seq lengths must match')
-    seq_len = len(str(seq.seq).replace('-', ''))
-    num_cov = sum(1 for c1, c2 in zip(seq, cover)
-                  if c1 != '-' and c2 != '-')
-    return num_cov / seq_len
+# def seq_identity(
+#         seq1: SeqRec, seq2: SeqRec, align: bool = True,
+#         align_method: _Align_method = mafft_align
+# ) -> float:
+#     """
+#     Calculate sequence identity between a pair of sequences.
+#
+#     :param seq1: Protein seq.
+#     :param seq2: Protein seq.
+#     :param align: Align before calculating.
+#         If ``False``, sequences are assumed to be aligned.
+#     :param align_method: Align method to use.
+#         Must be a callable accepting and returning a list of sequences.
+#     :return: A number of matching characters divided by a smaller sequence's length.
+#     """
+#     if align:
+#         seq1, seq2 = align_method([seq1, seq2])
+#     if len(seq1) != len(seq2):
+#         raise ValueError('Seq lengths must match')
+#     min_length = min(map(
+#         lambda s: len(str(s.seq).replace('-', '')),
+#         [seq1, seq2]))
+#     matches = sum(1 for c1, c2 in zip(seq1, seq2)
+#                   if c1 == c2 and c1 != '-' and c2 != '-')
+#     return matches / min_length
+#
+#
+# def seq_coverage(
+#         seq: SeqRec, cover: SeqRec, align: bool = True,
+#         align_method: _Align_method = mafft_align
+# ) -> float:
+#     """
+#     Calculate which fraction of ``seq`` is covered by ``cover``.
+#     The latter is assumed to be a subsequence of the former
+#     (otherwise, 100% coverage is guaranteed).
+#
+#     :param seq: A protein sequence.
+#     :param cover: A protein sequence to check against ``seq``.
+#     :param align: Align before calculating.
+#         If ``False``, sequences are assumed to be aligned.
+#     :param align_method: Align method to use.
+#         Must be a callable accepting and returning a list of sequences.
+#     :return: A number of non-gap characters divided by the ``seq``'s length.
+#     """
+#     if align:
+#         seq, cover = align_method([seq, cover])
+#     if len(seq) != len(cover):
+#         raise ValueError('Seq lengths must match')
+#     seq_len = len(str(seq.seq).replace('-', ''))
+#     num_cov = sum(1 for c1, c2 in zip(seq, cover)
+#                   if c1 != '-' and c2 != '-')
+#     return num_cov / seq_len
 
 
 def map_pairs_numbering(
-        s1: SeqRec, s1_numbering: t.Iterable[int],
-        s2: SeqRec, s2_numbering: t.Iterable[int],
-        align: bool = True, align_method: _Align_method = mafft_align
+        s1: str, s1_numbering: t.Iterable[int],
+        s2: str, s2_numbering: t.Iterable[int],
+        align: bool = True, align_method: AlignMethod = mafft_align,
+        empty: t.Any = None, **kwargs
 ) -> t.Iterator[t.Tuple[t.Optional[int], t.Optional[int]]]:
     """
     Map numbering between a pair of sequences.
 
-    >>> from Bio.SeqRecord import SeqRecord as SeqRec
-    >>> from Bio.Seq import Seq
-    >>> s1, s2 = SeqRec(Seq('-AAA')), SeqRec(Seq('B-AA'))
-    >>> mapping = map_pairs_numbering(s1, [1, 2, 3], s2, [4, 5, 6], align=False)
-    >>> assert list(mapping) == [(None, 4), (1, None), (2, 5), (3, 6)]
 
     :param s1: The first protein sequence.
     :param s1_numbering: The first sequence's numbering.
@@ -346,45 +331,47 @@ def map_pairs_numbering(
         If ``False``, sequences are assumed to be aligned.
     :param align_method: Align method to use.
         Must be a callable accepting and returning a list of sequences.
+    :param empty: Empty numeration element in place of a gap.
+    :param kwargs: Passed to `align_method`.
     :return: Iterator over character pairs (`a`, `b`),
         where `a` and `b` are the original sequences' numberings.
-        One of `a` or `b` in a pair can be ``None`` to represent a gap.
+        One of `a` or `b` in a pair can be `empty` to represent a gap.
     """
 
     s1_numbering, s2_numbering = map(list, [s1_numbering, s2_numbering])
 
     if align:
-        s1_aln, s2_aln = align_method([s1, s2])
+        s1_aln, s2_aln = map(
+            op.itemgetter(1),
+            align_method([('s1', s1), ('s2', s2)], **kwargs))
     else:
         s1_aln, s2_aln = s1, s2
 
     s1_raw, s2_raw = map(
-        lambda s: str(s.seq).replace('-', ''),
-        [s1_aln, s2_aln])
+        lambda s: s.replace('-', ''), [s1_aln, s2_aln])
 
     if len(s1_raw) > len(s1_numbering):
         raise LengthMismatch(
-            f'{s1.id} is larger than a corresponding numbering')
+            f's1 is larger than a corresponding numbering')
     if len(s2_raw) > len(s2_numbering):
         raise LengthMismatch(
-            f'{s2.id} is larger than a corresponding numbering')
-
+            f's2 is larger than a corresponding numbering')
     if len(s1_aln) != len(s2_aln):
         raise LengthMismatch(
-            f'Lengths for both sequences do not match '
-            f'(len({s1.id})={len(s1)} != len({s2.id})={len(s2)})')
+            f'Lengths of aligned seqs must match; '
+            f'(len(s1)={len(s1)} != len(s2)={len(s2)})')
 
     s1_pool, s2_pool = map(iter, [s1_numbering, s2_numbering])
 
     for c1, c2 in zip(s1_aln, s2_aln):
         try:
-            n1 = next(s1_pool) if c1 != '-' else None
+            n1 = next(s1_pool) if c1 != '-' else empty
         except StopIteration:
-            raise ValueError(f'Numbering pool for {s1.id} is exhausted')
+            raise RuntimeError(f'Numbering pool for s1 is exhausted')
         try:
-            n2 = next(s2_pool) if c2 != '-' else None
+            n2 = next(s2_pool) if c2 != '-' else empty
         except StopIteration:
-            raise ValueError(f'Numbering pool for {s2.id} is exhausted')
+            raise RuntimeError(f'Numbering pool for s2 is exhausted')
         yield n1, n2
 
 
@@ -409,7 +396,7 @@ def cut(
         A suffix "/{start}-{end]" is appended to ``rec``'s id, name and  description.
     """
 
-    overlap = segment.overlap(Segment(1, len(rec)))
+    overlap = segment.overlap_with(Segment(1, len(rec)))
 
     if segment.end != overlap.end:
         LOGGER.warning(

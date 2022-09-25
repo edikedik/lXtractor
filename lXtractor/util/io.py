@@ -1,13 +1,17 @@
+from __future__ import annotations
+
 import logging
 import subprocess as sp
 import sys
 import typing as t
 import urllib
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from os import PathLike
 from pathlib import Path
 from shutil import copyfileobj
 from time import sleep
 
+import pandas as pd
 import ray
 import requests
 from more_itertools import divide
@@ -184,6 +188,37 @@ def run_sp(cmd: str, split: bool = True):
         raise ValueError(f'Command {cmd} failed with an error {e}, '
                          f'stdout {res.stdout}, stderr {res.stderr}')
     return res
+
+
+# ================================= File system ==========================================
+
+
+def is_open_compatible(file):
+    return isinstance(file, (str, bytes, PathLike))
+
+
+def get_files(path: Path) -> dict[str, Path]:
+    return {p.name: p for p in path.iterdir() if p.is_file()}
+
+
+def get_dirs(path: Path) -> dict[str, Path]:
+    return {p.name: p for p in path.iterdir() if p.is_dir()}
+
+
+# =================================== Parsing ============================================
+
+
+def read_n_col_table(path: Path, n: int, sep='\t') -> t.Optional[pd.DataFrame]:
+    """
+    Read table from file and ensure it has exactly `n` columns.
+    """
+    df = pd.read_csv(path, sep=sep, header=None)
+    if len(df.columns) != n:
+        LOGGER.error(
+            f'Expected two columns in the table {path}, '
+            f'but found {len(df.columns)}')
+        return None
+    return df
 
 
 if __name__ == '__main__':

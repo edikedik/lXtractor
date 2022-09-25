@@ -18,17 +18,17 @@ from toolz.curried import filter, map, groupby
 from tqdm.auto import tqdm
 
 from lXtractor.core.alignment import Alignment
-from lXtractor.core.base import (
-    FormatError, MissingData, FailedCalculation, Seq, AminoAcidDict, Sep, _Align_method)
-from lXtractor.core.pdb import PDB, _wrap_raw_pdb
-from lXtractor.core.protein import Protein, Domain
-from lXtractor.core.sifts import SIFTS
-from lXtractor.core.uniprot import UniProt
+from lXtractor.core.base import AminoAcidDict
+from lXtractor.core.exceptions import MissingData, FormatError, FailedCalculation
+from lXtractor.core.config import Sep
+from lXtractor.ext.pdb import PDB, _wrap_raw_pdb
+from lXtractor.core.protein import Protein
+from lXtractor.ext.sifts import SIFTS
+from lXtractor.ext.uniprot import UniProt
 from lXtractor.input_parser import init
 from lXtractor.util.io import run_handles
 from lXtractor.util.seq import map_pairs_numbering, mafft_align
-from lXtractor.util.structure import get_sequence
-from lXtractor.core.variables import parse_var, _VarT, _ParsedVariables
+from lXtractor.variables.parser import parse_var
 
 _KeyT = t.Union[int, str, slice, t.Sequence[bool], np.ndarray]
 _AlnT = t.Union[t.List[SeqRec], t.List[str], Alignment]
@@ -188,8 +188,8 @@ class lXtractor:
         return iter(self.proteins)
 
     @property
-    def domains(self) -> t.List[Domain]:
-        return list(chain.from_iterable(p.domains.values() for p in self))
+    def domains(self) -> t.List:
+        return list(chain.from_iterable(p.children.values() for p in self))
 
     @property
     def variables(self) -> pd.DataFrame:
@@ -216,7 +216,7 @@ class lXtractor:
             self,
             protein_specs: t.Optional[t.Sequence[str]],
             domain_specs: t.Optional[t.Sequence[str]]
-    ) -> t.Union[t.List[Protein], t.List[Domain]]:
+    ) -> t.Union[t.List[Protein], t.List]:
         objs = self.proteins
         if protein_specs:
             objs = pipe(
@@ -227,7 +227,7 @@ class lXtractor:
         if domain_specs:
             objs = pipe(
                 objs,
-                map(lambda p: (p.domains.get(x, None) for x in domain_specs)),
+                map(lambda p: (p.children.get_item(x, None) for x in domain_specs)),
                 chain.from_iterable,
                 filter(bool),
                 list
@@ -247,7 +247,7 @@ class lXtractor:
             uniprot = self.uniprot
         proteins = list(filter(
             lambda p: p.uniprot_id is not None and (
-                    not missing or p.uniprot_seq is None or not p.domains),
+                    not missing or p.uniprot_seq is None or not p.children),
             self.proteins))
 
         LOGGER.info(f'Found {len(proteins)} to fetch UniProt data')
@@ -332,7 +332,7 @@ class lXtractor:
     def align(self, domain: t.Optional[t.Union[str, t.Container[str]]] = None,
               pdb: bool = True, method: _Align_method = mafft_align) -> Alignment:
 
-        def accept(obj: t.Union[Protein, Domain]):
+        def accept(obj: t.Union[Protein]):
             return ((domain and isinstance(obj, Domain) and obj.name in domain)
                     or not domain)
 
@@ -377,20 +377,20 @@ class lXtractor:
             except Exception as e:
                 return seq, num, e
 
-        def get_seq(obj: t.Union[Protein, Domain]) -> str:
+        def get_seq(obj: t.Union[Protein]) -> str:
             if pdb_seq:
                 if obj.pdb_seq1 is None:
                     return get_sequence(obj.structure)
                 return str(obj.pdb_seq1.seq)
             return str(obj.uniprot_seq.seq)
 
-        def get_num(obj: t.Union[Protein, Domain]) -> t.Tuple[int, ...]:
+        def get_num(obj: t.Union[Protein]) -> t.Tuple[int, ...]:
             if pdb_seq:
-                return get_sequence(obj.structure, numbering=True)
+                return get_sequence(obj.structure)
             start = obj.start if isinstance(obj, Domain) else 1
             return tuple(i for i, x in enumerate(obj.uniprot_seq, start=start))
 
-        def accept(obj: t.Union[Protein, Domain]):
+        def accept(obj: t.Union[Protein]):
 
             acc_exist = (missing and obj.aln_mapping is None) or not missing
             acc_dom = (domains is not None and obj.name in domains) or domains is None
@@ -462,7 +462,7 @@ class lXtractor:
 
         proteins = {
             p.id: p for p in self.proteins if
-            (p.structure and p.domains and p.uni_pdb_map)}
+            (p.structure and p.children and p.uni_pdb_map)}
 
         LOGGER.info(f'Found {len(proteins)} proteins for '
                     f'structure domains extraction.')
@@ -483,7 +483,7 @@ class lXtractor:
                 p_id, exc = r
                 LOGGER.exception(f'Failed to extract domains from {p_id} due to {exc}')
             else:
-                proteins[r.id].domains = r.domains
+                proteins[r.id].children = r.children
 
     def compute_seq_meta(self, exclude_mod: t.Tuple[str, ...] = ('HOH',)):
         # TODO: rm when range variable implemented
@@ -505,7 +505,7 @@ class lXtractor:
                 proteins_map[obj_id].uni_pdb_aln = aln
 
         domains = dict(chain.from_iterable(
-            ((f'{p.id}_{name}', dom) for name, dom in p.domains.items()
+            ((f'{p.id}_{name}', dom) for name, dom in p.children.items()
              if (dom.structure and dom.pdb_seq and dom.uniprot_seq))
             for p in self.proteins))
         if domains:
@@ -582,21 +582,21 @@ class lXtractor:
             rs = []
             for v in variables:
                 try:
-                    rs.append((protein_id, domain_id, v, v.calculate(target, mapping)))
+                    rs.append((protein_id, domain_id, v, v.calculate(target)))
                 except (MissingData, FailedCalculation) as e:
                     LOGGER.exception(
                         f'Failed calculating {v} on {protein_id}::{domain_id} due to: {e}')
                     rs.append((protein_id, domain_id, v, e))
             return rs
 
-        def accept_obj(obj: t.Union[Protein, Domain]):
+        def accept_obj(obj: t.Union[Protein]):
             if obj.aln_mapping is None:
                 return False
             if str:
                 return obj.structure is not None
             return obj.uniprot_seq is not None
 
-        def get_ids(obj: t.Union[Protein, Domain]):
+        def get_ids(obj: t.Union[Protein]):
             if isinstance(obj, Domain):
                 return obj.parent_name, obj.name
             else:
@@ -604,7 +604,7 @@ class lXtractor:
 
         @curry
         def get_vars(
-                obj: t.Union[Protein, Domain], str_var: bool = True
+                obj: t.Union[Protein], str_var: bool = True
         ) -> t.Optional[t.Tuple[str, t.Optional[str], Structure, t.List[_VarT], t.Dict[int, int]]]:
             vs = list(filter(
                 lambda v: missing and obj.variables[v] is None or not missing,
@@ -724,7 +724,7 @@ def map_by_alignment_remote(
             pdb_seq = SeqRec(
                 # Do not filter out anything so that the numbering's length
                 # always matches the sequence's length
-                Seq(get_sequence(structure, convert=True, filter_out=())),
+                Seq(get_sequence(structure, exclude=())),
                 id=structure.id, name=structure.id,
                 description=structure.id)
         uni_pdb_aln = mafft_align([uni_seq, pdb_seq])

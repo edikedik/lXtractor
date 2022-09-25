@@ -16,8 +16,9 @@ from Bio.Seq import Seq
 from more_itertools import flatten
 from toolz import groupby, curry
 
-from lXtractor.core.base import SeqRec, MissingData, _Fetcher, _Getter
-from lXtractor.core.protein import Protein, Domain
+from lXtractor.core.base import SeqRec, _Fetcher, _Getter
+from lXtractor.core.exceptions import MissingData
+from lXtractor.core.protein import Protein
 from lXtractor.util.io import try_fetching_until, download_text, fetch_iterable
 from lXtractor.util.seq import subset_by_idx
 
@@ -148,14 +149,12 @@ class UniProt:
         def populate_dom(p: Protein, dom_info: t.Tuple[int, int, str]) -> None:
             # Populate, but don't extract any data yet.
             start, end, name = dom_info
-            dom = p.spawn_domain(
-                start, end, name, extract_seq=True, extract_pdb=False,
-                save=overwrite or name not in p.domains)
-            if not overwrite and complement and name in p.domains:
-                p.domains[name].start = start
-                p.domains[name].end = end
+            dom = p.spawn_child(start, end, name, keep=overwrite or name not in p.children)
+            if not overwrite and complement and name in p.children:
+                p.children[name].start = start
+                p.children[name].end = end
                 if dom.uniprot_seq is not None:
-                    p.domains[name].uniprot_seq = dom.uniprot_seq
+                    p.children[name].uniprot_seq = dom.uniprot_seq
             return
 
         fields = base_fields

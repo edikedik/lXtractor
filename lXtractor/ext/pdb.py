@@ -13,7 +13,8 @@ from more_itertools import flatten, unzip, partition
 from toolz import groupby, curry
 from toolz.curried import map, filter
 
-from lXtractor.core.base import MissingData, AmbiguousData, SeqRec, Seq
+from lXtractor.core.base import SeqRec, Seq
+from lXtractor.core.exceptions import MissingData, AmbiguousData
 from lXtractor.core.protein import Protein
 from lXtractor.util.io import try_fetching_until, download_text, fetch_iterable
 from lXtractor.util.structure import extract_sub_structure, get_sequence
@@ -244,8 +245,8 @@ class PDB:
             structure, meta = results[pdb_id]
             sub_structure = extract_sub_structure(
                 structure, chain_id, None, None)
-            seq_3_letter = get_sequence(sub_structure, convert=False)
-            seq_1_letter = get_sequence(sub_structure, convert=True)
+            seq_3_letter = get_sequence(sub_structure)
+            seq_1_letter = get_sequence(sub_structure)
             for p in group:
                 p.metadata += meta
                 p.structure = sub_structure
@@ -276,7 +277,7 @@ def _wrap_raw_pdb(
         structure.id = header['idcode'].upper()
 
     # Extract metadata fields from a `header` dictionary
-    meta = [(x, header.get(x)) for x in meta_fields] if meta_fields else None
+    meta = [(x, header.get_item(x, )) for x in meta_fields] if meta_fields else None
 
     return res, structure, meta
 

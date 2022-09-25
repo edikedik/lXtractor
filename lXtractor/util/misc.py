@@ -6,7 +6,8 @@ from pathlib import Path
 import pandas as pd
 from more_itertools import take
 
-from lXtractor.core.base import FormatError, Sep
+from lXtractor.core.exceptions import FormatError
+from lXtractor.core.config import Sep
 
 
 class SizedDict(UserDict):

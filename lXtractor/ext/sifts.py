@@ -20,8 +20,10 @@ import joblib
 import pandas as pd
 from more_itertools import unzip
 
-from lXtractor import resources as local
-from lXtractor.core.base import AbstractResource, Segment, OverlapError, LengthMismatch, MissingData
+from lXtractor.ext import resources as local
+from lXtractor.core.base import AbstractResource
+from lXtractor.core.segment import Segment
+from lXtractor.core.exceptions import MissingData, LengthMismatch, OverlapError
 from lXtractor.util.io import download_to_file
 from lXtractor.util.misc import col2col
 

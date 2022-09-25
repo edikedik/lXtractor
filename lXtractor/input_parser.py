@@ -12,9 +12,12 @@ from Bio.PDB import PDBParser
 from Bio.PDB.Structure import Structure
 from more_itertools import flatten
 
-from lXtractor.core.base import SeqRec, FormatError, MissingData, Sep, Separators, Variables
+from lXtractor.core.base import SeqRec
+from lXtractor.variables.base import Variables
+from lXtractor.core.exceptions import MissingData, FormatError
+from lXtractor.core.config import Separators, Sep
 from lXtractor.core.protein import Protein
-from lXtractor.core.sifts import SIFTS
+from lXtractor.ext.sifts import SIFTS
 
 LOGGER = logging.getLogger(__name__)
 ProteinAttributes = t.NamedTuple(
@@ -117,7 +120,7 @@ def convert_to_attributes(inp: str, sep: Separators = Sep) -> t.Iterator[Protein
     >>> conv = list(convert_to_attributes(f'PDB1{Sep.list}UniProt2{Sep.chain}A{Sep.dom}DomName'))
     >>> assert len(conv) == 2
     >>> att1, att2  = conv
-    >>> assert att1.domains == att2.domains == ['DomName']
+    >>> assert att1.children == att2.children == ['DomName']
     >>> assert att1.chain_id == att2.chain_id == 'A'
     >>> assert att1.pdb_id == 'PDB1'
     >>> assert att2.pdb_id is None

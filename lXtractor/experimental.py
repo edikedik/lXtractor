@@ -37,8 +37,8 @@ def identity_and_coverage(
     id2p = {p.id: p for p in proteins}
 
     inputs = [
-        (p.domains[domain_name].uniprot_seq,
-         id2p[seed_map[p.id]].domains[domain_name].uniprot_seq)
+        (p.children[domain_name].uniprot_seq,
+         id2p[seed_map[p.id]].children[domain_name].uniprot_seq)
         for p in proteins if
         p.id not in seed_map.values() and
         p.id in seed_map and
@@ -50,9 +50,9 @@ def identity_and_coverage(
     results = run_handles(handles, bar)
 
     for id_ortholog, id_seed, ident, coverage in results:
-        id2p[id_ortholog].domains[domain_name].data['Seed'] = id_seed
-        id2p[id_ortholog].domains[domain_name].data['Ident'] = ident
-        id2p[id_ortholog].domains[domain_name].data['Coverage'] = coverage
+        id2p[id_ortholog].children[domain_name].meta['Seed'] = id_seed
+        id2p[id_ortholog].children[domain_name].meta['Ident'] = ident
+        id2p[id_ortholog].children[domain_name].meta['Coverage'] = coverage
 
 
 def find_domain_orthologs(
@@ -97,7 +97,7 @@ def find_domain_orthologs(
     if uniprot is None:
         uniprot = UniProt()
 
-    ps = [Protein(uniprot_id=x, _id=x) for x in seeds]
+    ps = [Protein() for x in seeds]
     df = uniprot.fetch_orthologs(
         ps, output_columns=['id', 'existence', 'reviewed', 'organism'])
     LOGGER.debug(f'Fetched {len(df)} candidates')
@@ -108,17 +108,17 @@ def find_domain_orthologs(
         df = df[~df['id'].isin(exclude_from_results)]
         LOGGER.debug(f'Excluded by {len(exclude_from_results)} '
                      f'provided ids to {len(df)} records')
-    ps += [Protein(uniprot_id=x, _id=x) for x in df['id']]
+    ps += [Protein() for x in df['id']]
     uniprot.fetch_fasta(ps)
     uniprot.fetch_domains(ps)
     LOGGER.debug(f'Obtained {len(ps)} total proteins')
 
     ps = list(filter(
-        lambda _p: domain_name in _p.domains,
+        lambda _p: domain_name in _p.children,
         ps))
     LOGGER.debug(f'Filtered to {len(ps)} proteins with {domain_name} domain')
     for p in ps:
-        p.domains = {domain_name: p.domains[domain_name]}
+        p.children = {domain_name: p.children[domain_name]}
     for p in ps:
         extract_uniprot_domains(p)
     ps = list(unduplicate(ps, domain_name, seeds))
@@ -130,13 +130,13 @@ def find_domain_orthologs(
 
     ps = filter(
         lambda _p: {'Seed', 'Ident', 'Coverage'}.issubset(
-            _p.domains[domain_name].data),
+            _p.children[domain_name].meta),
         ps
     )
 
     @curry
     def get_data_field(prot, field_name):
-        return prot.domains[domain_name].data[field_name]
+        return prot.children[domain_name].meta[field_name]
 
     lower, upper = identity_bounds
     ps = filter(
@@ -167,7 +167,7 @@ def domain_scan(
     if uniprot is None:
         uniprot = UniProt()
     proteins = uniprot.fetch_domains(list(proteins))
-    return (p for p in proteins if p.domains)
+    return (p for p in proteins if p.children)
 
 
 if __name__ == '__main__':
