@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import typing as t
+from abc import abstractmethod
+from collections import abc
 from itertools import starmap
 
 import biotite.structure as bst
@@ -10,16 +12,14 @@ from more_itertools import unique_justseen
 from toolz import curry, pipe
 
 from lXtractor.core.exceptions import FailedCalculation, InitError
-from lXtractor.core.structure import Structure
 from lXtractor.util.structure import calculate_dihedral
 from lXtractor.variables.base import StructureVariable, AggFns, MappingT
-from lXtractor.variables.variables import agg_dist
 
 LOGGER = logging.getLogger(__name__)
 
 
 @curry
-def _map(pos: int, mapping: t.Optional[MappingT] = None) -> int:
+def _map_pos(pos: int, mapping: t.Optional[MappingT] = None) -> int:
     if mapping is None:
         return pos
     try:
@@ -32,7 +32,7 @@ def _map(pos: int, mapping: t.Optional[MappingT] = None) -> int:
 def _get_residue(
         pos: int, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
 ) -> bst.AtomArray:
-    pos = _map(pos, mapping)
+    pos = _map_pos(pos, mapping)
 
     residue_atoms = array[array.res_id == pos]
     if not residue_atoms.array_length():
@@ -71,6 +71,31 @@ def _get_coord(
         return fn(residue.coord, axis=0)
 
     return _get_atom(residue, atom_name).coord
+
+
+def _agg_dist(
+        r1: bst.AtomArray, r2: bst.AtomArray,
+        agg_fn: t.Callable[[np.ndarray], float]) -> float:
+    """
+    Calculate the aggregated distance between two residues
+    """
+    return agg_fn(np.linalg.norm(r1.coord[:, np.newaxis] - r2.coord, axis=2))
+
+
+def _verify_consecutive(positions: abc.Iterable[int]) -> None:
+    """
+    Verify whether positions in a given iterable are consecutive.
+    """
+    # Unduplicate consecutively duplicated elements
+    positions = list(unique_justseen(positions))
+
+    # Check consecutive positions
+    for i in range(1, len(positions)):
+        current, previous = positions[i], positions[i - 1]
+        if current != previous + 1:
+            raise FailedCalculation(
+                f'Positions {previous} and {current} are not consecutive '
+                f'in a given list {positions}')
 
 
 class Dist(StructureVariable):
@@ -119,19 +144,16 @@ class AggDist(StructureVariable):
         self.pos2 = pos2
 
     @property
-    def rtype(self) -> str:
-        return 'float'
+    def rtype(self) -> t.Type[float]:
+        return float
 
     def calculate(
             self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
     ) -> float:
-        pos1, pos2 = map(
-            lambda p: _map(p, mapping),
-            [self.pos1, self.pos2])
         res1, res2 = map(
-            lambda p: _get_residue(p, array),
-            [pos1, pos2])
-        return agg_dist(res1, res2, AggFns[self.key])
+            lambda p: _get_residue(p, array, mapping),
+            [self.pos1, self.pos2])
+        return _agg_dist(res1, res2, AggFns[self.key])
 
 
 class AllDist(StructureVariable):
@@ -142,8 +164,9 @@ class AllDist(StructureVariable):
                 f'Available aggregators: {list(AggFns)}')
         self.key = key
 
-    def rtype(self) -> str:
-        return 'float'
+    @property
+    def rtype(self) -> t.Type[float]:
+        return float
 
     def calculate(
             self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
@@ -176,32 +199,14 @@ class Dihedral(StructureVariable):
             self,
             p1: int, p2: int, p3: int, p4: int,
             a1: str, a2: str, a3: str, a4: str,
-            name: str = 'Dihedral',
-            verify_consecutive: bool = True):
+            name: str = 'Dihedral'):
         self.name = name
         self.p1, self.p2, self.p3, self.p4 = p1, p2, p3, p4
         self.a1, self.a2, self.a3, self.a4 = a1, a2, a3, a4
-        self.verify_consecutive = verify_consecutive
-
-    @staticmethod
-    def _verify_consecutive(positions: t.Iterable[int]) -> None:
-        """
-        Verify whether positions in a given iterable are consecutive.
-        """
-        # Unduplicate consecutively duplicated elements
-        positions = list(unique_justseen(positions))
-
-        # Check consecutive positions
-        for i in range(1, len(positions)):
-            current, previous = positions[i], positions[i - 1]
-            if current != previous + 1:
-                raise FailedCalculation(
-                    f'Positions {previous} and {current} are not consecutive '
-                    f'in a given list {positions}')
 
     @property
-    def rtype(self) -> str:
-        return 'float'
+    def rtype(self) -> t.Type[float]:
+        return float
 
     @property
     def positions(self) -> list[int]:
@@ -258,35 +263,40 @@ class Omega(Dihedral):
 
 
 class CompositeDihedral(StructureVariable):
-    def __init__(self, dihedrals: t.Sequence[Dihedral]):
-        self.dihedrals = dihedrals
+    def __init__(self, pos: int):
+        self.pos = pos
 
     @property
-    def rtype(self) -> str:
-        return 'float'
+    def rtype(self) -> t.Type[float]:
+        return float
 
-    def calculate(self, array: Structure = None, mapping: t.Optional[MappingT] = None) -> float:
+    @staticmethod
+    @abstractmethod
+    def get_dihedrals(pos: int) -> abc.Iterable[Dihedral]:
+        raise NotImplementedError('Must be implemented by the subclass')
+
+    def calculate(
+            self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+    ) -> float:
         res = None
-        for dihedral in self.dihedrals:
+        dihedrals = self.get_dihedrals(self.pos)
+        for d in dihedrals:
             try:
-                res = dihedral.calculate(array)
+                res = d.calculate(array)
                 break
             except FailedCalculation:
                 pass
         if res is None:
             raise FailedCalculation(
                 f"Couldn't calculate any of dihedrals "
-                f"{[d.id for d in self.dihedrals]}")
+                f"{[d.id for d in dihedrals]}")
         return res
 
 
 class Chi1(CompositeDihedral):
-    def __init__(self, pos: int):
-        self.pos = pos
-        super().__init__(self.get_dihedrals(pos))
 
     @staticmethod
-    def get_dihedrals(pos):
+    def get_dihedrals(pos) -> list[Dihedral]:
         return [
             Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'CG', 'Chi1_CG'),
             Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'CG1', 'Chi1_CG1'),
@@ -297,12 +307,9 @@ class Chi1(CompositeDihedral):
 
 
 class Chi2(CompositeDihedral):
-    def __init__(self, pos: int):
-        self.pos = pos
-        super().__init__(self.get_dihedrals(pos))
 
     @staticmethod
-    def get_dihedrals(pos):
+    def get_dihedrals(pos) -> list[Dihedral]:
         return [
             Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG', 'CD', 'Chi2_CG-CD'),
             Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG', 'OD1', 'Chi2_CG-OD1'),

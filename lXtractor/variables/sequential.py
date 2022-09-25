@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import typing as t
-from collections import abc
 
 from lXtractor import AminoAcidDict
-from lXtractor.variables.base import SequenceVariable
-from lXtractor.variables.variables import _try_map, _try_find_residue
+from lXtractor.variables.base import SequenceVariable, MappingT
 
 
 class SeqEl(SequenceVariable):
@@ -24,8 +22,9 @@ class SeqEl(SequenceVariable):
     def rtype(self) -> str:
         return 'str'
 
-    def calculate(self, array: Structure = None, mapping: t.Optional[abc.Mapping[int, int]]) -> str:
-        pos = _try_map(self.aln_pos, mapping)
-        res = _try_find_residue(pos, array)
-        resname = res.get_resname()
-        return f'{pos}_{resname}_{self.amino_acid_dict[resname]}'
+    def calculate(self, seq: str = None, mapping: t.Optional[MappingT] = None) -> str:
+        pass
+        # pos = _try_map(self.aln_pos, mapping)
+        # res = _try_find_residue(pos, array)
+        # resname = res.get_resname()
+        # return f'{pos}_{resname}_{self.amino_acid_dict[resname]}'

@@ -1,17 +1,19 @@
 from __future__ import annotations
 
+import logging
 import typing as t
 
 from lXtractor.core.config import Sep
 from lXtractor.core.exceptions import FormatError
 from lXtractor.util.misc import split_validate
-from lXtractor.variables.base import _ParsedVariables, AggFns
-from lXtractor.variables.variables import (LOGGER, _VarT)
-from lXtractor.variables.structural import Dist, AggDist, AllDist, Dihedral, PseudoDihedral, Phi, Psi, Omega
+from lXtractor.variables.base import AggFns
 from lXtractor.variables.sequential import SeqEl
+from lXtractor.variables.structural import Dist, AggDist, AllDist, Dihedral, PseudoDihedral, Phi, Psi, Omega
+
+LOGGER = logging.getLogger(__name__)
 
 
-def parse_var(inp: str) -> _ParsedVariables:
+def parse_var(inp: str):
     # TODO: link a complete description of variables syntax
     """
     Parse raw input into a collection of variables, structures, and levels
@@ -51,7 +53,7 @@ def parse_var(inp: str) -> _ParsedVariables:
     return variables, proteins, domains
 
 
-def init_var(var: str) -> _VarT:
+def init_var(var: str):
     """
     Convert a textual representation of a single variable
     into a concrete and initialized variable.
@@ -165,3 +167,7 @@ def init_var(var: str) -> _VarT:
 
     LOGGER.debug(f'Initialized {variable.id} variable')
     return variable
+
+
+if __name__ == '__main__':
+    raise RuntimeError
