@@ -2,15 +2,15 @@ import pytest
 
 from lXtractor.core.config import Sep, ProteinSeqNames
 from lXtractor.core.exceptions import NoOverlap
-from lXtractor.core.protein import Protein, ProteinStructure
+from lXtractor.core.chain import Chain, ChainStructure
 
 
 def test_basic(four_chain_structure_seq_path, four_chain_structure):
-    p = Protein.from_seq(four_chain_structure_seq_path)[0]
+    p = Chain.from_seq(four_chain_structure_seq_path)[0]
     assert len(p.seq) == 1657
     assert p.id == p.seq.id
     chains = list(four_chain_structure.split_chains())
-    chain_a = ProteinStructure.from_structure(chains[0], pdb_id='3i6x')
+    chain_a = ChainStructure.from_structure(chains[0], pdb_id='3i6x')
     p.add_structure(chain_a)
     assert len(p.structures) == 1
     start, end = chain_a.seq.start, chain_a.seq.end
@@ -24,9 +24,9 @@ def test_basic(four_chain_structure_seq_path, four_chain_structure):
 
 
 def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
-    p = Protein.from_seq(chicken_src_seq)
+    p = Chain.from_seq(chicken_src_seq)
     chains = chicken_src_str.split_chains()
-    chain_a = ProteinStructure.from_structure(next(chains))
+    chain_a = ChainStructure.from_structure(next(chains))
     p.add_structure(chain_a, map_name=ProteinSeqNames.map_canonical)
 
     # should work on any full protein chain
@@ -52,7 +52,7 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     assert child_of_child.seq.end == 260
 
     # Use a human sequence and chicken structure so their numberings don't match
-    p = Protein.from_seq(human_src_seq)
+    p = Chain.from_seq(human_src_seq)
     p.add_structure(chain_a, map_name=ProteinSeqNames.map_canonical)
     child = p.spawn_child(
         256, 260, 'child', map_name=ProteinSeqNames.map_canonical)

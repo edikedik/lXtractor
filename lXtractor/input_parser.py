@@ -16,7 +16,7 @@ from lXtractor.core.base import SeqRec
 from lXtractor.variables.base import Variables
 from lXtractor.core.exceptions import MissingData, FormatError
 from lXtractor.core.config import Separators, Sep
-from lXtractor.core.protein import Protein
+from lXtractor.core.chain import Chain
 from lXtractor.ext.sifts import SIFTS
 
 LOGGER = logging.getLogger(__name__)
@@ -228,7 +228,7 @@ def infer_and_explode_attributes(
                 var.uniprot_seq, var.domains)
 
 
-def init(inp: str, sifts: t.Optional[SIFTS]) -> t.Iterator[Protein]:
+def init(inp: str, sifts: t.Optional[SIFTS]) -> t.Iterator[Chain]:
     """
     Given a "raw" input string specifying a protein in the following form:
 
@@ -268,7 +268,7 @@ def init(inp: str, sifts: t.Optional[SIFTS]) -> t.Iterator[Protein]:
     # for each variable set -- initialize `Protein` object
     for att in attributes:
         LOGGER.debug(f'Initializing protein by attributes {att}')
-        yield Protein(
+        yield Chain(
             pdb=att.pdb_id, chain=att.chain_id,
             uniprot_id=att.uniprot_id, uniprot_seq=att.uniprot_seq,
             expected_domains=att.domains, structure=att.structure,

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from lXtractor.core.structure import Structure
+from lXtractor.core.structure import GenericStructure
 from lXtractor.util.seq import read_fasta
 
 DATA = Path(__file__).parent / 'data'
@@ -53,18 +53,18 @@ def human_src_seq_path() -> Path:
 
 
 @pytest.fixture(scope='module')
-def simple_structure(simple_structure_path) -> Structure:
-    return Structure.read(simple_structure_path)
+def simple_structure(simple_structure_path) -> GenericStructure:
+    return GenericStructure.read(simple_structure_path)
 
 
 @pytest.fixture(scope='module')
-def four_chain_structure(four_chain_structure_path) -> Structure:
-    return Structure.read(four_chain_structure_path)
+def four_chain_structure(four_chain_structure_path) -> GenericStructure:
+    return GenericStructure.read(four_chain_structure_path)
 
 
 @pytest.fixture(scope='module')
-def chicken_src_str(chicken_src_str_path) -> Structure:
-    return Structure.read(chicken_src_str_path)
+def chicken_src_str(chicken_src_str_path) -> GenericStructure:
+    return GenericStructure.read(chicken_src_str_path)
 
 
 @pytest.fixture(scope='module')

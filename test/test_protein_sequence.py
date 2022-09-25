@@ -5,20 +5,20 @@ import pytest
 from lXtractor import Alignment
 from lXtractor.core.config import ProteinSeqNames
 from lXtractor.core.exceptions import MissingData
-from lXtractor.core.protein import ProteinSequence
+from lXtractor.core.chain import ChainSequence
 from lXtractor.util.seq import read_fasta
 
 
 @pytest.fixture
-def seq() -> tuple[ProteinSeqNames, ProteinSequence]:
-    fields = ProteinSequence.field_names()
-    s = ProteinSequence(1, 5, 'S', {fields.seq1: 'ABCDE'})
+def seq() -> tuple[ProteinSeqNames, ChainSequence]:
+    fields = ChainSequence.field_names()
+    s = ChainSequence(1, 5, 'S', {fields.seq1: 'ABCDE'})
     return fields, s
 
 
 def test_init(seq):
     with pytest.raises(MissingData):
-        ProteinSequence(1, 2)
+        ChainSequence(1, 2)
     fields, s = seq
     assert fields.seq3 in s
     assert fields.enum in s
@@ -47,8 +47,8 @@ def test_convertage(seq):
 
 
 def test_closest(seq):
-    fields = ProteinSequence.field_names()
-    s = ProteinSequence(1, 5, 'S', {fields.seq1: 'ABCDE', 'N': [1, 3, 5, 10, 20]})
+    fields = ChainSequence.field_names()
+    s = ChainSequence(1, 5, 'S', {fields.seq1: 'ABCDE', 'N': [1, 3, 5, 10, 20]})
     assert s.get_closest('N', 2).N == 3
     assert s.get_closest('N', 0).N == 1
     assert s.get_closest('N', 12, reverse=True).N == 10
@@ -59,8 +59,8 @@ def test_map(simple_fasta_path):
     s1, s2 = read_fasta(simple_fasta_path)
     aln = Alignment.make([s1, s2])
 
-    s1 = ProteinSequence.from_string(s1[1])
-    s2 = ProteinSequence.from_string(s2[1])
+    s1 = ChainSequence.from_string(s1[1])
+    s2 = ChainSequence.from_string(s2[1])
     mapping = s1.map_numbering(s2, save=True, name='map_smaller')
     assert 'map_smaller' in s1
     assert mapping == [None, None, 1, 2, 3, 4, 5, None, None]

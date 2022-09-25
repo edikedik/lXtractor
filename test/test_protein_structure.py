@@ -1,31 +1,31 @@
 import pytest
 
 from lXtractor.core.exceptions import InitError, NoOverlap
-from lXtractor.core.protein import ProteinStructure
+from lXtractor.core.chain import ChainStructure
 
 
 def test_init(simple_structure, four_chain_structure):
     pdb_id = 'xxxx'
     # no structure init
-    s = ProteinStructure(pdb_id, 'A')
+    s = ChainStructure(pdb_id, 'A')
     assert s.seq is None
     assert s.pdb.structure is None
 
     # chain must match
     with pytest.raises(InitError):
-        ProteinStructure(pdb_id, 'B', simple_structure)
+        ChainStructure(pdb_id, 'B', simple_structure)
 
     # must be a single chain
     with pytest.raises(InitError):
-        ProteinStructure(pdb_id, 'ABCD', four_chain_structure)
+        ChainStructure(pdb_id, 'ABCD', four_chain_structure)
 
     # init from structure or atom array work exactly the same
-    s = ProteinStructure.from_structure(simple_structure.array)
+    s = ChainStructure.from_structure(simple_structure.array)
     assert s.pdb.chain == 'A'
     assert s.pdb.structure is not None
     assert s.seq is not None
 
-    s = ProteinStructure.from_structure(simple_structure)
+    s = ChainStructure.from_structure(simple_structure)
     assert s.pdb.chain == 'A'
     assert s.pdb.structure is not None
     assert s.seq is not None
@@ -38,7 +38,7 @@ def test_init(simple_structure, four_chain_structure):
 
 
 def test_spawn(simple_structure):
-    s = ProteinStructure.from_structure(simple_structure)
+    s = ChainStructure.from_structure(simple_structure)
 
     # invalid boundaries
     with pytest.raises(ValueError):

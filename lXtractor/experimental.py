@@ -12,7 +12,7 @@ from tqdm.auto import tqdm
 
 from lXtractor import Protein, UniProt
 from lXtractor.util.seq import seq_identity, seq_coverage, mafft_align
-from lXtractor.core.protein import unduplicate
+from lXtractor.core.chain import unduplicate
 from lXtractor.util.io import run_handles
 
 LOGGER = logging.getLogger(__name__)

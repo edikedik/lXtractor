@@ -18,7 +18,7 @@ from toolz import groupby, curry
 
 from lXtractor.core.base import SeqRec, _Fetcher, _Getter
 from lXtractor.core.exceptions import MissingData
-from lXtractor.core.protein import Protein
+from lXtractor.core.chain import Chain
 from lXtractor.util.io import try_fetching_until, download_text, fetch_iterable
 from lXtractor.util.seq import subset_by_idx
 
@@ -72,20 +72,20 @@ class UniProt:
         return list(map(parse_one, filter(bool, s.split('DOMAIN'))))
 
     @staticmethod
-    def _check_input(proteins: t.Iterable[Protein]) -> None:
+    def _check_input(proteins: t.Iterable[Chain]) -> None:
         for p in proteins:
             if p.uniprot_id is None:
                 raise MissingData(f'Protein {p.id} misses UniProt ID')
 
     def fetch_proteins_data(
-            self, proteins: t.Sequence[Protein],
+            self, proteins: t.Sequence[Chain],
             overwrite: bool = False,
             complement: bool = True,
             keep_expected_if_any: bool = True,
             base_fields: str = 'accession,id,sequence,ft_domain',
             meta_fields: t.Optional[str] = None,
             **kwargs
-    ) -> t.Tuple[t.List[Protein], pd.DataFrame]:
+    ) -> t.Tuple[t.List[Chain], pd.DataFrame]:
         """
         Fetches data from UniProt and populates `Protein` instances.
 
@@ -126,7 +126,7 @@ class UniProt:
                     f'Excluding these from metadata to avoid ambiguity')
             return fetched[~idx]
 
-        def populate_meta(p: Protein, m: pd.Series) -> None:
+        def populate_meta(p: Chain, m: pd.Series) -> None:
             meta = [(k, m[k]) for k in meta_fields.split(',')]
             if p.metadata is not None:
                 if complement:
@@ -138,7 +138,7 @@ class UniProt:
                 p.metadata = meta
             return
 
-        def populate_seq(p: Protein, m: pd.Series) -> None:
+        def populate_seq(p: Chain, m: pd.Series) -> None:
             if p.uniprot_seq is not None and not overwrite:
                 return
             seq_id = f"{m['id']}|{m['accession']}"
@@ -146,7 +146,7 @@ class UniProt:
             p.uniprot_seq = seq_rec
             return
 
-        def populate_dom(p: Protein, dom_info: t.Tuple[int, int, str]) -> None:
+        def populate_dom(p: Chain, dom_info: t.Tuple[int, int, str]) -> None:
             # Populate, but don't extract any data yet.
             start, end, name = dom_info
             dom = p.spawn_child(start, end, name, keep=overwrite or name not in p.children)
@@ -226,7 +226,7 @@ class UniProt:
 
         return wrap_into_df(res)
 
-    def fetch_fasta(self, proteins: t.Collection[Protein]) -> t.List[Protein]:
+    def fetch_fasta(self, proteins: t.Collection[Chain]) -> t.List[Chain]:
         """
         Fetch fasta sequences for each of the given collection of proteins.
         Write the fetched sequences in terms of ``SeqRecord`` objects
@@ -269,7 +269,7 @@ class UniProt:
         return list(flatten(groups.values()))
 
     def _fetch(
-            self, proteins: t.Collection[Protein],
+            self, proteins: t.Collection[Chain],
             fetcher: _Fetcher, getter: _Getter,
             desc: t.Optional[str],
             alt_ids: t.Optional[t.Sequence[str]] = None
@@ -295,7 +295,7 @@ class UniProt:
             LOGGER.warning(f'Failed to fetch {len(remaining)}: {remaining}')
         return results
 
-    def fetch_gff(self, proteins: t.Collection[Protein]) -> str:
+    def fetch_gff(self, proteins: t.Collection[Chain]) -> str:
         """
         Fetch GFF entries. Joins the fetched results in a single GFF file.
         Returns the latter as a string.
@@ -329,7 +329,7 @@ class UniProt:
 
     def fetch_orthologs(
             self,
-            proteins: t.Sequence[Protein],
+            proteins: t.Sequence[Chain],
             output_columns: t.Sequence[str] = (
                     'id', 'reviewed', 'existence', 'organism')
     ) -> pd.DataFrame:

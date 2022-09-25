@@ -32,7 +32,7 @@ class _ProteinDumpNames:
 class _ProteinSeqNames:
     """
     Container holding names used within
-    :attr:`lXtractor.core.Protein.ProteinSequence._seqs`
+    :attr:`lXtractor.core.Protein.ChainSequence._seqs`
     """
     id: str = 'id'
     seq1: str = 'seq1'

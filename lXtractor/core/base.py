@@ -152,7 +152,7 @@ class AbstractStructure(metaclass=ABCMeta):
     def get_sequence(self) -> abc.Iterable[tuple[str, str, int]]: pass
 
 
-class AbstractProtein(metaclass=ABCMeta):
+class AbstractChain(metaclass=ABCMeta):
     """
     Protein basic interface definition.
     """

@@ -1,8 +1,8 @@
-from lXtractor.core.structure import Structure
+from lXtractor.core.structure import GenericStructure
 
 
 def test_init(simple_structure_path):
-    s = Structure.read(simple_structure_path)
+    s = GenericStructure.read(simple_structure_path)
     assert len(s.array) > 0
 
 
@@ -11,7 +11,7 @@ def test_split(simple_structure):
     chains = list(s.split_chains())
     assert len(chains) == 1
     assert len(chains[0].array) == len(s.array)
-    assert isinstance(chains.pop(), Structure)
+    assert isinstance(chains.pop(), GenericStructure)
 
 
 def test_sequence(simple_structure):

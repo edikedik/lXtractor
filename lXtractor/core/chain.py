@@ -13,11 +13,11 @@ import pandas as pd
 from more_itertools import unzip, first_true
 
 from lXtractor.core.alignment import Alignment
-from lXtractor.core.base import AminoAcidDict, AbstractProtein, Ord, AlignMethod, SeqReader
+from lXtractor.core.base import AminoAcidDict, AbstractChain, Ord, AlignMethod, SeqReader
 from lXtractor.core.config import Sep, ProteinDumpNames, ProteinSeqNames
 from lXtractor.core.exceptions import MissingData, AmbiguousMapping, InitError
 from lXtractor.core.segment import Segment
-from lXtractor.core.structure import Structure, PDB_Chain, validate_chain
+from lXtractor.core.structure import GenericStructure, PDB_Chain, validate_chain
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.seq import mafft_align, map_pairs_numbering, read_fasta
 from lXtractor.variables.base import Variables
@@ -29,7 +29,7 @@ LOGGER = logging.getLogger(__name__)
 # -> find the closest parent with the structure having ID matching such of the assigned variable
 
 
-class ProteinSequence(Segment):
+class ChainSequence(Segment):
 
     @property
     def fields(self) -> tuple[str, ...]:
@@ -69,17 +69,18 @@ class ProteinSequence(Segment):
             self[ProteinSeqNames.enum] = list(range(self.start, self.end + 1))
 
     def map_numbering(
-            self, other: str | tuple[str, str] | ProteinSequence | Alignment,
+            self, other: str | tuple[str, str] | ChainSequence | Alignment,
             align_method: AlignMethod = mafft_align,
             save: bool = True, name: t.Optional[str] = None, **kwargs
     ) -> list[None | int]:
+
         if isinstance(other, str):
-            other = ProteinSequence.from_string(other)
+            other = ChainSequence.from_string(other)
         elif isinstance(other, tuple):
             name = other[0]
-            other = ProteinSequence.from_string(other[1], name=name)
+            other = ChainSequence.from_string(other[1], name=name)
 
-        if isinstance(other, ProteinSequence):
+        if isinstance(other, ChainSequence):
             mapping = filter(
                 lambda x: x[0] is not None,
                 map_pairs_numbering(
@@ -150,7 +151,7 @@ class ProteinSequence(Segment):
     def spawn_child(
             self, start: int, end: int, *,
             deep_copy: bool = False, keep: bool = True
-    ) -> ProteinSequence:
+    ) -> ChainSequence:
         child = self.sub(start, end, deep_copy=deep_copy, handle_mode='self')
         if keep:
             self.children[child.id] = child
@@ -188,7 +189,7 @@ class ProteinSequence(Segment):
             end: t.Optional[int] = None,
             name: t.Optional[str] = None,
             **kwargs
-    ) -> ProteinSequence:
+    ) -> ChainSequence:
         start = start or 1
         end = end or start + len(s) - 1
 
@@ -209,7 +210,7 @@ class ProteinSequence(Segment):
             dump_names: ProteinDumpNames = ProteinDumpNames,
             *,
             search_children: bool = False
-    ) -> ProteinSequence:
+    ) -> ChainSequence:
         files = get_files(base_dir)
         dirs = get_dirs(base_dir)
 
@@ -230,7 +231,7 @@ class ProteinSequence(Segment):
 
         if search_children and dump_names.segments_dir in dirs:
             for path in (base_dir / dump_names.segments_dir).iterdir():
-                child = ProteinSequence.read(path, dump_names, search_children=True)
+                child = ChainSequence.read(path, dump_names, search_children=True)
                 child.parent = seq
                 seq.children[path.name] = child
 
@@ -257,12 +258,12 @@ class ProteinSequence(Segment):
         raise NotImplementedError
 
 
-class ProteinStructure:
+class ChainStructure:
     def __init__(
             self, pdb_id: str, pdb_chain: str,
-            pdb_structure: t.Optional[Structure] = None,
-            seq: t.Optional[ProteinSequence] = None,
-            parent: t.Optional[ProteinStructure] = None,
+            pdb_structure: t.Optional[GenericStructure] = None,
+            seq: t.Optional[ChainSequence] = None,
+            parent: t.Optional[ChainStructure] = None,
             variables: t.Optional[Variables] = None,
     ):
         self.pdb = PDB_Chain(pdb_id, pdb_chain, pdb_structure)
@@ -270,7 +271,7 @@ class ProteinStructure:
         if seq is None and self.pdb.structure is not None:
             seq1, seq3, num = map(list, unzip(self.pdb.structure.get_sequence()))
             seqs = {ProteinSeqNames.seq3: seq3, ProteinSeqNames.enum: num}
-            self.seq = ProteinSequence.from_string(
+            self.seq = ChainSequence.from_string(
                 ''.join(seq1), name=f'{pdb_id}{Sep.chain}{pdb_chain}', **seqs)
         else:
             self.seq = seq
@@ -283,10 +284,10 @@ class ProteinStructure:
 
     @classmethod
     def from_structure(
-            cls, structure: bst.AtomArray | Structure, pdb_id: t.Optional[str] = None,
-    ) -> ProteinStructure:
+            cls, structure: bst.AtomArray | GenericStructure, pdb_id: t.Optional[str] = None,
+    ) -> ChainStructure:
         if isinstance(structure, bst.AtomArray):
-            structure = Structure(structure)
+            structure = GenericStructure(structure)
 
         chain_id = structure.array.chain_id[0]
 
@@ -298,7 +299,7 @@ class ProteinStructure:
     def spawn_child(
             self, start: int, end: int, *,
             map_name: t.Optional[str] = None, deep_copy: bool = False
-    ) -> ProteinStructure:
+    ) -> ChainStructure:
 
         if start > end:
             raise ValueError(f'Invalid boundaries {start, end}')
@@ -325,13 +326,13 @@ class ProteinStructure:
         if self.seq:
             seq = self.seq.sub(_start, _end, deep_copy=deep_copy)
 
-        return ProteinStructure(self.pdb.id, self.pdb.chain, structure, seq, self, None)
+        return ChainStructure(self.pdb.id, self.pdb.chain, structure, seq, self, None)
 
     @classmethod
     def read(
             cls, base_dir: Path,
             dump_names: ProteinDumpNames = ProteinDumpNames,
-    ) -> ProteinStructure:
+    ) -> ChainStructure:
         pdb_id, chain_id = base_dir.name.split(Sep.chain)
         files = get_files(base_dir)
         filenames = {p.name: p for p in files.values()}
@@ -341,14 +342,14 @@ class ProteinStructure:
         if bname not in filenames:
             raise InitError(f'{base_dir} must contain {bname}.fmt '
                             f'where "fmt" is supported structure format')
-        structure = Structure.read(base_dir / filenames[bname])
+        structure = GenericStructure.read(base_dir / filenames[bname])
 
-        seq = ProteinSequence.read(base_dir, dump_names, search_children=False)
+        seq = ChainSequence.read(base_dir, dump_names, search_children=False)
 
         if dump_names.variables in files:
             variables = Variables.read(files[dump_names.variables]).structure
 
-        return ProteinStructure(pdb_id, chain_id, structure, seq, variables=variables)
+        return ChainStructure(pdb_id, chain_id, structure, seq, variables=variables)
 
     def write(
             self, base_dir: Path, fmt: str = 'pdb',
@@ -365,15 +366,15 @@ class ProteinStructure:
             self.variables.write(base_dir / dump_names.variables)
 
 
-class Protein(AbstractProtein):
+class Chain(AbstractChain):
     """
     A mutable container, holding data associated with a singe (full) protein chain.
     """
 
     def __init__(
-            self, seq: ProteinSequence,
-            structures: t.Optional[t.List[ProteinStructure]] = None,
-            children: t.Optional[t.Dict[str, Protein]] = None,
+            self, seq: ChainSequence,
+            structures: t.Optional[t.List[ChainStructure]] = None,
+            children: t.Optional[t.Dict[str, Chain]] = None,
     ):
         self.seq = seq
         self.structures = structures or []
@@ -389,7 +390,7 @@ class Protein(AbstractProtein):
     def __str__(self) -> str:
         return self.id
 
-    def __getitem__(self, key) -> Protein:
+    def __getitem__(self, key) -> Chain:
         if isinstance(key, str):
             return self.children[key]
         if isinstance(key, int):
@@ -400,26 +401,26 @@ class Protein(AbstractProtein):
     def __contains__(self, item) -> bool:
         return item in self.children
 
-    def __iter__(self) -> abc.Iterator[Protein]:
+    def __iter__(self) -> abc.Iterator[Chain]:
         yield from self.children.values()
 
     @classmethod
     def from_seq(
             cls, inp: str | tuple[str, str] | Path | TextIOBase | abc.Iterable[str],
             read_method: SeqReader = read_fasta
-    ) -> Protein | list[Protein]:
+    ) -> Chain | list[Chain]:
         if isinstance(inp, str):
-            return cls(ProteinSequence.from_string(inp))
+            return cls(ChainSequence.from_string(inp))
         elif isinstance(inp, tuple):
             name, s = inp
-            return cls(ProteinSequence.from_string(s, name=name))
-        return [cls(ProteinSequence.from_string(seq, name=name)) for name, seq in read_method(inp)]
+            return cls(ChainSequence.from_string(s, name=name))
+        return [cls(ChainSequence.from_string(seq, name=name)) for name, seq in read_method(inp)]
 
     @classmethod
     def read(
             cls, path: Path, dump_names: ProteinDumpNames = ProteinDumpNames,
             *, search_children: bool = False
-    ) -> Protein:
+    ) -> Chain:
         """
         Initialize a :class:`Protein` instance from the existing dump.
 
@@ -429,14 +430,14 @@ class Protein(AbstractProtein):
             them as :attr:`children`
         :return: Initialized `Protein` instance.
         """
-        seq = ProteinSequence.read(path, dump_names, search_children=False)
+        seq = ChainSequence.read(path, dump_names, search_children=False)
 
-        structures = [ProteinStructure.read(p, dump_names)
+        structures = [ChainStructure.read(p, dump_names)
                       for p in (path / dump_names.structures_dir)]
-        protein = Protein(seq, structures)
+        protein = Chain(seq, structures)
         if search_children:
             for child_path in (path / dump_names.segments_dir).glob('*'):
-                protein.children[child_path.name] = Protein.read(
+                protein.children[child_path.name] = Chain.read(
                     child_path, dump_names, search_children=True)
         return protein
 
@@ -459,7 +460,7 @@ class Protein(AbstractProtein):
             prot.write(path / dump_names.segments_dir)
 
     def add_structure(
-            self, structure: ProteinStructure, *, check_ids: bool = True,
+            self, structure: ChainStructure, *, check_ids: bool = True,
             map_to_seq: bool = True, map_name: str = ProteinSeqNames.map_canonical,
             **kwargs
     ):
@@ -478,9 +479,9 @@ class Protein(AbstractProtein):
             str_deep_copy: bool = False,
             subset_structures: bool = True,
             map_name: t.Optional[str] = None,
-    ) -> Protein:
+    ) -> Chain:
 
-        def subset_structure(structure: ProteinStructure) -> t.Optional[ProteinStructure]:
+        def subset_structure(structure: ChainStructure) -> t.Optional[ChainStructure]:
             try:
                 return structure.spawn_child(
                     start, end, map_name=map_name, deep_copy=str_deep_copy)
@@ -495,7 +496,7 @@ class Protein(AbstractProtein):
 
         structures = (list(filter(bool, map(subset_structure, self.structures)))
                       if subset_structures else None)
-        child = Protein(seq, structures)
+        child = Chain(seq, structures)
         if keep:
             self.children[name] = child
         return child

@@ -15,7 +15,7 @@ from toolz.curried import map, filter
 
 from lXtractor.core.base import SeqRec, Seq
 from lXtractor.core.exceptions import MissingData, AmbiguousData
-from lXtractor.core.protein import Protein
+from lXtractor.core.chain import Chain
 from lXtractor.util.io import try_fetching_until, download_text, fetch_iterable
 from lXtractor.util.structure import extract_sub_structure, get_sequence
 
@@ -78,7 +78,7 @@ class PDB:
         self.verbose = verbose
 
     @staticmethod
-    def _check_input(proteins: t.Iterable[Protein]):
+    def _check_input(proteins: t.Iterable[Chain]):
         """
         Check whether each ``Protein`` has a valid PDB code.
         """
@@ -89,8 +89,8 @@ class PDB:
                 raise AmbiguousData(f'Not a valid PDB ID {p.pdb} for {p}')
 
     def fetch(
-            self, proteins: t.Collection[Protein],
-    ) -> t.List[Protein]:
+            self, proteins: t.Collection[Chain],
+    ) -> t.List[Chain]:
         """
         Obtains a list of unique PDB IDs from a given collection of
         :class:`lXtractor.protein.Protein` objects, and downloads
