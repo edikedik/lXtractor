@@ -7,7 +7,7 @@ from io import TextIOBase
 from pathlib import Path
 from typing import runtime_checkable
 
-from lXtractor.core.config import ProteinDumpNames
+from lXtractor.core.config import DumpNames
 
 T = t.TypeVar('T')
 _Fetcher = t.Callable[[t.Iterable[str]], T]
@@ -159,10 +159,10 @@ class AbstractChain(metaclass=ABCMeta):
 
     @classmethod
     @abstractmethod
-    def read(cls, path: Path, dump_names: ProteinDumpNames = ProteinDumpNames): pass
+    def read(cls, path: Path, dump_names: DumpNames = DumpNames): pass
 
     @abstractmethod
-    def write(self, path: Path, dump_names: ProteinDumpNames = ProteinDumpNames): pass
+    def write(self, path: Path, dump_names: DumpNames = DumpNames): pass
 
     @property
     @abstractmethod

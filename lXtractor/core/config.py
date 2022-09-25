@@ -6,7 +6,7 @@ Sep = Separators(',', ':', '::', '_', '--', '|')
 
 
 @dataclass
-class _ProteinDumpNames:
+class _DumpNames:
     """
     Dataclass encapsulating names of files
     used for dumping data.
@@ -29,7 +29,7 @@ class _ProteinDumpNames:
 
 
 @dataclass
-class _ProteinSeqNames:
+class _SeqNames:
     """
     Container holding names used within
     :attr:`lXtractor.core.Protein.ChainSequence._seqs`
@@ -46,8 +46,8 @@ class _ProteinSeqNames:
     map_ref: str = 'map_ref'
 
 
-ProteinDumpNames = _ProteinDumpNames()
-ProteinSeqNames = _ProteinSeqNames()
+DumpNames = _DumpNames()
+SeqNames = _SeqNames()
 
 MetaColumns = (
     # Taken from https://bioservices.readthedocs.io/en/main/_modules/bioservices/uniprot.html#UniProt

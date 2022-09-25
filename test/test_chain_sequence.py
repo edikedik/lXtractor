@@ -3,14 +3,14 @@ from __future__ import annotations
 import pytest
 
 from lXtractor import Alignment
-from lXtractor.core.config import ProteinSeqNames
+from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData
 from lXtractor.core.chain import ChainSequence
 from lXtractor.util.seq import read_fasta
 
 
 @pytest.fixture
-def seq() -> tuple[ProteinSeqNames, ChainSequence]:
+def seq() -> tuple[SeqNames, ChainSequence]:
     fields = ChainSequence.field_names()
     s = ChainSequence(1, 5, 'S', {fields.seq1: 'ABCDE'})
     return fields, s

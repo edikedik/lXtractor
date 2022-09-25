@@ -1,6 +1,6 @@
 import pytest
 
-from lXtractor.core.config import Sep, ProteinSeqNames
+from lXtractor.core.config import Sep, SeqNames
 from lXtractor.core.exceptions import NoOverlap
 from lXtractor.core.chain import Chain, ChainStructure
 
@@ -27,7 +27,7 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     p = Chain.from_seq(chicken_src_seq)
     chains = chicken_src_str.split_chains()
     chain_a = ChainStructure.from_structure(next(chains))
-    p.add_structure(chain_a, map_name=ProteinSeqNames.map_canonical)
+    p.add_structure(chain_a, map_name=SeqNames.map_canonical)
 
     # should work on any full protein chain
     child = p.spawn_child(1, 2, keep=False, subset_structures=False)
@@ -40,22 +40,22 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
 
     # The structure starts from 256 -> five residues must be extracted
     child = p.spawn_child(
-        1, 260, 'child', map_name=ProteinSeqNames.map_canonical)
+        1, 260, 'child', map_name=SeqNames.map_canonical)
     assert len(child.seq) == 260
     assert len(child.structures) == 1
     assert len(child.structures[0].seq) == 5
 
     child_of_child = child.spawn_child(
-        256, 260, 'sub_child', map_name=ProteinSeqNames.map_canonical)
+        256, 260, 'sub_child', map_name=SeqNames.map_canonical)
     assert len(child_of_child.seq) == 5
     assert child_of_child.seq.start == 256
     assert child_of_child.seq.end == 260
 
     # Use a human sequence and chicken structure so their numberings don't match
     p = Chain.from_seq(human_src_seq)
-    p.add_structure(chain_a, map_name=ProteinSeqNames.map_canonical)
+    p.add_structure(chain_a, map_name=SeqNames.map_canonical)
     child = p.spawn_child(
-        256, 260, 'child', map_name=ProteinSeqNames.map_canonical)
+        256, 260, 'child', map_name=SeqNames.map_canonical)
     assert len(child.seq) == 5
     assert len(child.structures) == 1
     assert len(child.structures[0].seq) == 5

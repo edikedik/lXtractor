@@ -14,7 +14,7 @@ from more_itertools import unzip, first_true
 
 from lXtractor.core.alignment import Alignment
 from lXtractor.core.base import AminoAcidDict, AbstractChain, Ord, AlignMethod, SeqReader
-from lXtractor.core.config import Sep, ProteinDumpNames, ProteinSeqNames
+from lXtractor.core.config import Sep, DumpNames, SeqNames
 from lXtractor.core.exceptions import MissingData, AmbiguousMapping, InitError
 from lXtractor.core.segment import Segment
 from lXtractor.core.structure import GenericStructure, PDB_Chain, validate_chain
@@ -37,36 +37,36 @@ class ChainSequence(Segment):
 
     @classmethod
     def field_names(cls):
-        return ProteinSeqNames
+        return SeqNames
 
     @property
     def numbering(self) -> t.Sequence[int]:
-        return self[ProteinSeqNames.enum]
+        return self[SeqNames.enum]
 
     @property
     def seq1(self) -> str:
-        return self[ProteinSeqNames.seq1]
+        return self[SeqNames.seq1]
 
     @property
     def seq3(self) -> t.Sequence[str]:
-        return self[ProteinSeqNames.seq3]
+        return self[SeqNames.seq3]
 
     @property
     def variables(self) -> Variables:
-        return self.meta[ProteinSeqNames.variables]
+        return self.meta[SeqNames.variables]
 
     def _setup_and_validate(self):
         super()._setup_and_validate()
 
-        if ProteinSeqNames.seq1 not in self:
-            raise MissingData(f'Requires {ProteinSeqNames.seq1} in `seqs`')
-        if ProteinSeqNames.seq3 not in self:
+        if SeqNames.seq1 not in self:
+            raise MissingData(f'Requires {SeqNames.seq1} in `seqs`')
+        if SeqNames.seq3 not in self:
             d = AminoAcidDict()
-            self[ProteinSeqNames.seq3] = [d[c] for c in self[ProteinSeqNames.seq1]]
-        if ProteinSeqNames.variables not in self.meta:
-            self.meta[ProteinSeqNames.variables] = {}
-        if ProteinSeqNames.enum not in self._seqs:
-            self[ProteinSeqNames.enum] = list(range(self.start, self.end + 1))
+            self[SeqNames.seq3] = [d[c] for c in self[SeqNames.seq1]]
+        if SeqNames.variables not in self.meta:
+            self.meta[SeqNames.variables] = {}
+        if SeqNames.enum not in self._seqs:
+            self[SeqNames.enum] = list(range(self.start, self.end + 1))
 
     def map_numbering(
             self, other: str | tuple[str, str] | ChainSequence | Alignment,
@@ -100,7 +100,7 @@ class ChainSequence(Segment):
                 align=True, align_method=align_method, **kwargs
             )
             if not name:
-                name = ProteinSeqNames.map_aln
+                name = SeqNames.map_aln
         else:
             raise TypeError(f'Unsupported type {type(other)}')
 
@@ -180,7 +180,7 @@ class ChainSequence(Segment):
         if name is None:
             name = seq[0]
 
-        return cls(start, end, name, seqs={ProteinSeqNames.seq1: seq[1], **kwargs})
+        return cls(start, end, name, seqs={SeqNames.seq1: seq[1], **kwargs})
 
     @classmethod
     def from_string(
@@ -193,7 +193,7 @@ class ChainSequence(Segment):
         start = start or 1
         end = end or start + len(s) - 1
 
-        return cls(start, end, name, seqs={ProteinSeqNames.seq1: s, **kwargs})
+        return cls(start, end, name, seqs={SeqNames.seq1: s, **kwargs})
 
     @classmethod
     def from_df(cls, df: pd.DataFrame, name: t.Optional[str] = None):
@@ -207,7 +207,7 @@ class ChainSequence(Segment):
     @classmethod
     def read(
             cls, base_dir: Path,
-            dump_names: ProteinDumpNames = ProteinDumpNames,
+            dump_names: DumpNames = DumpNames,
             *,
             search_children: bool = False
     ) -> ChainSequence:
@@ -247,7 +247,7 @@ class ChainSequence(Segment):
                  if isinstance(v, (str, int, float)))
         path.write_text('\n'.join(items))
 
-    def write(self, base_dir: Path, dump_names: ProteinDumpNames = ProteinDumpNames) -> None:
+    def write(self, base_dir: Path, dump_names: DumpNames = DumpNames) -> None:
         self.write_seq(base_dir / dump_names.sequence)
         if self.meta:
             self.write_meta(base_dir / dump_names.meta)
@@ -270,7 +270,7 @@ class ChainStructure:
         validate_chain(self.pdb)
         if seq is None and self.pdb.structure is not None:
             seq1, seq3, num = map(list, unzip(self.pdb.structure.get_sequence()))
-            seqs = {ProteinSeqNames.seq3: seq3, ProteinSeqNames.enum: num}
+            seqs = {SeqNames.seq3: seq3, SeqNames.enum: num}
             self.seq = ChainSequence.from_string(
                 ''.join(seq1), name=f'{pdb_id}{Sep.chain}{pdb_chain}', **seqs)
         else:
@@ -316,7 +316,7 @@ class ChainStructure:
                 raise AmbiguousMapping(
                     f"Couldn't map {(start, end)}->{(_start, _end)} from numbering {map_name} "
                     f"numbering to the current structure's numbering")
-            _start, _end = map(lambda x: x._asdict()[ProteinSeqNames.enum], [_start, _end])
+            _start, _end = map(lambda x: x._asdict()[SeqNames.enum], [_start, _end])
         else:
             _start, _end = start, end
 
@@ -331,7 +331,7 @@ class ChainStructure:
     @classmethod
     def read(
             cls, base_dir: Path,
-            dump_names: ProteinDumpNames = ProteinDumpNames,
+            dump_names: DumpNames = DumpNames,
     ) -> ChainStructure:
         pdb_id, chain_id = base_dir.name.split(Sep.chain)
         files = get_files(base_dir)
@@ -353,7 +353,7 @@ class ChainStructure:
 
     def write(
             self, base_dir: Path, fmt: str = 'pdb',
-            dump_names: ProteinDumpNames = ProteinDumpNames
+            dump_names: DumpNames = DumpNames
     ) -> None:
         if base_dir.name != dump_names.structures_dir:
             base_dir /= dump_names.structures_dir
@@ -418,7 +418,7 @@ class Chain(AbstractChain):
 
     @classmethod
     def read(
-            cls, path: Path, dump_names: ProteinDumpNames = ProteinDumpNames,
+            cls, path: Path, dump_names: DumpNames = DumpNames,
             *, search_children: bool = False
     ) -> Chain:
         """
@@ -442,7 +442,7 @@ class Chain(AbstractChain):
         return protein
 
     def write(
-            self, base_dir: Path, dump_names: ProteinDumpNames = ProteinDumpNames,
+            self, base_dir: Path, dump_names: DumpNames = DumpNames,
             *, write_children: bool = True,
     ) -> None:
         """
@@ -461,7 +461,7 @@ class Chain(AbstractChain):
 
     def add_structure(
             self, structure: ChainStructure, *, check_ids: bool = True,
-            map_to_seq: bool = True, map_name: str = ProteinSeqNames.map_canonical,
+            map_to_seq: bool = True, map_name: str = SeqNames.map_canonical,
             **kwargs
     ):
         if check_ids:
