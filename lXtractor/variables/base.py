@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import inspect
 import logging
 import typing as t
-from abc import abstractmethod
+from abc import abstractmethod, ABCMeta
 from collections import UserDict, abc
 from pathlib import Path
 
@@ -10,34 +11,99 @@ import biotite.structure as bst
 import numpy as np
 import pandas as pd
 
-from lXtractor.core.base import AbstractVariable
 from lXtractor.util.io import read_n_col_table
-
 
 AggFns = {'min': np.min, 'max': np.max, 'mean': np.mean, 'median': np.median}
 LOGGER = logging.getLogger(__name__)
-
 MappingT: t.TypeAlias = abc.Mapping[int, t.Optional[int]]
+RT = t.TypeVar('RT')  # return type
+OT = t.TypeVar('OT', str, bst.AtomArray)  # object type
+T = t.TypeVar('T')
 
 
-class StructureVariable(AbstractVariable):
+class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
+    """
+    Abstract base class for variables.
+    """
+
+    __slots__ = ()
+
+    def __str__(self):
+        return self.id
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __eq__(self, other):
+        return (not isinstance(other, type(self)) or
+                self.id == other.id)
+
+    def __hash__(self):
+        return hash(self.id)
+
+    @property
+    def id(self) -> str:
+        """
+        Variable identifier such that eval(x.id) produces another instance.
+        """
+
+        def parse_value(v):
+            if isinstance(v, str):
+                return f"\'{v}\'"
+            return v
+
+        init_params = inspect.signature(self.__init__).parameters
+        args = ','.join(f'{k}={parse_value(v)}'
+                        for k, v in vars(self).items() if k in init_params)
+        return f'{self.__class__.__name__}({args})'
+
+    @property
+    @abstractmethod
+    def rtype(self) -> t.Type[RT]:
+        """
+        Variable's return type, such that `rtype("result")` converts to the relevant type.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def calculate(
+            self, obj: OT, mapping: t.Optional[MappingT] = None
+    ) -> RT:
+        """
+        Calculate variable. Each variable defines its own calculation strategy.
+
+        :param obj: An object used for variable's calculation.
+        :param mapping: Mapping from generalizable positions of MSA/reference/etc.
+            to the `obj`'s positions.
+        :return: Calculation result.
+        :raises: :class:`FailedCalculation` if the calculation fails.
+        """
+        raise NotImplementedError
+
+
+class StructureVariable(AbstractVariable[bst.AtomArray, RT]):
     """
     A type of variable whose :meth:`calculate` method requires protein structure.
     """
 
     @abstractmethod
-    def calculate(self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None):
+    def calculate(
+            self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+    ) -> RT:
         raise NotImplementedError
 
 
-class SequenceVariable(AbstractVariable):
+class SequenceVariable(AbstractVariable[str, RT]):
     """
     A type of variable whose :meth:`calculate` method requires protein sequence.
     """
 
     @abstractmethod
-    def calculate(self, seq: str, mapping: t.Optional[MappingT] = None):
+    def calculate(self, seq: str, mapping: t.Optional[MappingT] = None) -> RT:
         raise NotImplementedError
+
+
+VT = t.TypeVar('VT', bound=StructureVariable | SequenceVariable)  # variable type
 
 
 class Variables(UserDict):
@@ -120,6 +186,22 @@ class Variables(UserDict):
         items = (f'{v.id}\t{r}' for v, r in self.items()
                  if all(x not in v.id for x in skip_if_contains))
         path.write_text('\n'.join(items))
+
+
+class AbstractCalculator(t.Generic[OT, VT, RT], metaclass=ABCMeta):
+    """
+    Class defining variables' calculation strategy.
+    """
+
+    def __call__(self, o: OT, v: VT, m: MappingT | None) -> RT: ...
+
+    def map(
+            self, o: OT, v: abc.Iterable[VT], m: MappingT | None
+    ) -> abc.Iterator[RT]: ...
+
+    def vmap(
+            self, o: abc.Iterable[OT], v: VT, m: abc.Iterable[MappingT | None]
+    ) -> abc.Iterator[RT]: ...
 
 
 if __name__ == '__main__':

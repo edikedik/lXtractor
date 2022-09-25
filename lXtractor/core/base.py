@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import typing as t
 from abc import ABCMeta, abstractmethod
 from collections import abc
@@ -11,7 +10,6 @@ from typing import runtime_checkable
 from lXtractor.core.config import ProteinDumpNames
 
 T = t.TypeVar('T')
-V = t.TypeVar('V')
 _Fetcher = t.Callable[[t.Iterable[str]], T]
 _Getter = t.Callable[[T, t.Sequence[str]], t.Sequence[str]]
 
@@ -137,64 +135,6 @@ class AbstractResource(metaclass=ABCMeta):
     def fetch(self, url: str):
         """
         Download the resource.
-        """
-        raise NotImplementedError
-
-
-class AbstractVariable(t.Generic[V, T], metaclass=ABCMeta):
-    """
-    Abstract base class for variables.
-    """
-
-    __slots__ = ()
-
-    def __str__(self):
-        return self.id
-
-    def __repr__(self):
-        return self.__str__()
-
-    def __eq__(self, other):
-        return (not isinstance(other, type(self)) or
-                self.id == other.id)
-
-    def __hash__(self):
-        return hash(self.id)
-
-    @property
-    def id(self) -> str:
-        """
-        Variable identifier such that eval(x.id) produces another instance.
-        """
-
-        def parse_value(v):
-            if isinstance(v, str):
-                return f"\'{v}\'"
-            return v
-
-        init_params = inspect.signature(self.__init__).parameters
-        args = ','.join(f'{k}={parse_value(v)}'
-                        for k, v in vars(self).items() if k in init_params)
-        return f'{self.__class__.__name__}({args})'
-
-    @property
-    @abstractmethod
-    def rtype(self) -> t.Type[T]:
-        """
-        Variable's return type, such that `rtype("result")` converts to the relevant type.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def calculate(self, obj: t.Any, mapping: t.Optional[abc.Mapping[int, int]] = None) -> T:
-        """
-        Calculate variable. Each variable defines its own calculation strategy.
-
-        :param obj: An object used for variable's calculation.
-        :param mapping: Mapping from generalizable positions of MSA/reference/etc.
-            to the `obj`'s positions.
-        :return: Calculation result.
-        :raises: :class:`FailedCalculation` if the calculation fails.
         """
         raise NotImplementedError
 
