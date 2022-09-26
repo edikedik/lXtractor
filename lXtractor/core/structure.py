@@ -16,6 +16,8 @@ from lXtractor.util.structure import read_fast_pdb
 
 class GenericStructure(AbstractStructure):
 
+    __slots__ = ('array', 'pdb_id')
+
     def __init__(self, array: bst.AtomArray, pdb_id: t.Optional[str] = None):
         self.array = array
         self.pdb_id = pdb_id

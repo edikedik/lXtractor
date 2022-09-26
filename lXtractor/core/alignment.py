@@ -12,7 +12,7 @@ from toolz import identity
 
 from lXtractor.core.base import (
     AddMethod, AlignMethod, SeqReader, SeqWriter, SupportsWrite, SeqMapper, SeqFilter)
-from lXtractor.core.exceptions import AmbiguousData, InitError, MissingData
+from lXtractor.core.exceptions import InitError, MissingData
 from lXtractor.util.seq import (
     mafft_add, mafft_align, read_fasta, write_fasta, remove_gap_columns, partition_gap_sequences)
 
@@ -24,6 +24,8 @@ class Alignment:
     """
     An MSA resource: a list of proteins sequences with the same length.
     """
+
+    __slots__ = ('seqs', 'add_method', 'align_method', '_seqs_map')
 
     def __init__(
             self, seqs: abc.Iterable[tuple[str, str]],
@@ -200,7 +202,7 @@ class Alignment:
         write_method(self.seqs, out, **kwargs)
 
     def map_seq_numbering(
-            self, seq: SeqRec,
+            self, seq,
             seq_numbering: t.Sequence[int],
             seq_added: bool = False,
     ) -> t.Dict[int, int]:
@@ -216,38 +218,40 @@ class Alignment:
         :return: A dictionary mapping ``seq_numbering`` to alignment's columns indices.
         """
 
-        if not len(seq_numbering) == len(seq):
-            raise AmbiguousData(
-                f'Numbering length {len(seq_numbering)} does not match '
-                f'the sequence length {len(seq)}')
+        raise NotImplementedError
 
-        LOGGER.debug(
-            f'Mapping between sequence {seq.id} (size {len(seq)}) '
-            f'and the alignment columns numbering.')
-
-        if seq_added:
-            aligned_msa = seq
-        else:
-            # add a sequence to the _seqs and extract it right away
-            _, aligned_msa = self.add_sequences([seq], False)
-            aligned_msa = aligned_msa[-1]
-            LOGGER.debug(
-                f'Aligned and extracted sequence {len(aligned_msa.id)} '
-                f'with size {len(aligned_msa)}')
-
-        # align the extracted sequence and the original one
-        # extract the (second time) aligned sequence
-        aligned_ori = self.align_method([seq, aligned_msa])[-1]
-        LOGGER.debug(f'Aligned MSA-extracted and original sequence '
-                     f'to obtain a sequence {aligned_ori.id} '
-                     f'with size {len(aligned_ori)}')
-
-        # Obtain the filtered numbering with the sequence elements
-        # really present in the MSA-aligned sequence
-        ori2aligned = (i for i, c in zip(seq_numbering, aligned_ori) if c != '-')
-
-        return {i: next(ori2aligned) for i, c in
-                enumerate(aligned_msa, start=1) if c != '-'}
+        # if not len(seq_numbering) == len(seq):
+        #     raise AmbiguousData(
+        #         f'Numbering length {len(seq_numbering)} does not match '
+        #         f'the sequence length {len(seq)}')
+        #
+        # LOGGER.debug(
+        #     f'Mapping between sequence {seq.id} (size {len(seq)}) '
+        #     f'and the alignment columns numbering.')
+        #
+        # if seq_added:
+        #     aligned_msa = seq
+        # else:
+        #     # add a sequence to the _seqs and extract it right away
+        #     _, aligned_msa = self.add_sequences([seq], False)
+        #     aligned_msa = aligned_msa[-1]
+        #     LOGGER.debug(
+        #         f'Aligned and extracted sequence {len(aligned_msa.id)} '
+        #         f'with size {len(aligned_msa)}')
+        #
+        # # align the extracted sequence and the original one
+        # # extract the (second time) aligned sequence
+        # aligned_ori = self.align_method([seq, aligned_msa])[-1]
+        # LOGGER.debug(f'Aligned MSA-extracted and original sequence '
+        #              f'to obtain a sequence {aligned_ori.id} '
+        #              f'with size {len(aligned_ori)}')
+        #
+        # # Obtain the filtered numbering with the sequence elements
+        # # really present in the MSA-aligned sequence
+        # ori2aligned = (i for i, c in zip(seq_numbering, aligned_ori) if c != '-')
+        #
+        # return {i: next(ori2aligned) for i, c in
+        #         enumerate(aligned_msa, start=1) if c != '-'}
 
 
 if __name__ == '__main__':

@@ -99,18 +99,20 @@ def _verify_consecutive(positions: abc.Iterable[int]) -> None:
 
 
 class Dist(StructureVariable):
+    __slots__ = ('p1', 'p2', 'a1', 'a2', 'com')
+
     def __init__(
-            self, pos1: int, pos2: int,
-            atom1: t.Optional[str] = None,
-            atom2: t.Optional[str] = None,
+            self, p1: int, p2: int,
+            a1: t.Optional[str] = None,
+            a2: t.Optional[str] = None,
             com: bool = False):
-        self.pos1 = pos1
-        self.pos2 = pos2
-        self.atom1 = atom1
-        self.atom2 = atom2
+        self.p1 = p1
+        self.p2 = p2
+        self.a1 = a1
+        self.a2 = a2
         self.com = com
 
-        if any((not com and atom1 is None, not com and atom2 is None)):
+        if any((not com and a1 is None, not com and a2 is None)):
             raise ValueError(
                 'No atom name specified and "center of mass" flag is down. '
                 'Therefore, not possible to calculate distance.')
@@ -128,20 +130,22 @@ class Dist(StructureVariable):
                 _get_residue(p, array, mapping),
                 _get_coord(atom_name=a)
             ),
-            [(self.pos1, self.atom1), (self.pos2, self.atom2)]
+            [(self.p1, self.a1), (self.p2, self.a2)]
         )
         return np.linalg.norm(xyz2 - xyz1)
 
 
 class AggDist(StructureVariable):
-    def __init__(self, pos1: int, pos2: int, key: str = 'min'):
+    __slots__ = ('p1', 'p2', 'key')
+
+    def __init__(self, p1: int, p2: int, key: str = 'min'):
         if key not in AggFns:
             raise InitError(
                 f'Wrong key {key}. '
                 f'Available aggregators: {list(AggFns)}')
         self.key = key
-        self.pos1 = pos1
-        self.pos2 = pos2
+        self.p1 = p1
+        self.p2 = p2
 
     @property
     def rtype(self) -> t.Type[float]:
@@ -152,11 +156,13 @@ class AggDist(StructureVariable):
     ) -> float:
         res1, res2 = map(
             lambda p: _get_residue(p, array, mapping),
-            [self.pos1, self.pos2])
+            [self.p1, self.p2])
         return _agg_dist(res1, res2, AggFns[self.key])
 
 
 class AllDist(StructureVariable):
+    __slots__ = ('key',)
+
     def __init__(self, key: str = 'min'):
         if key not in AggFns:
             raise ValueError(
@@ -195,6 +201,8 @@ class AllDist(StructureVariable):
 
 
 class Dihedral(StructureVariable):
+    __slots__ = ('p1', 'p2', 'p3', 'p4', 'a1', 'a2', 'a3', 'a4', 'name')
+
     def __init__(
             self,
             p1: int, p2: int, p3: int, p4: int,
@@ -231,6 +239,8 @@ class Dihedral(StructureVariable):
 
 
 class PseudoDihedral(Dihedral):
+    __slots__ = ()
+
     def __init__(self, pos1: int, pos2: int, pos3: int, pos4: int):
         super().__init__(
             pos1, pos2, pos3, pos4,
@@ -239,6 +249,8 @@ class PseudoDihedral(Dihedral):
 
 
 class Phi(Dihedral):
+    __slots__ = ()
+
     def __init__(self, pos: int):
         super().__init__(
             pos - 1, pos, pos, pos,
@@ -247,6 +259,8 @@ class Phi(Dihedral):
 
 
 class Psi(Dihedral):
+    __slots__ = ()
+
     def __init__(self, pos: int):
         super().__init__(
             pos, pos, pos, pos + 1,
@@ -255,6 +269,8 @@ class Psi(Dihedral):
 
 
 class Omega(Dihedral):
+    __slots__ = ()
+
     def __init__(self, pos: int):
         super().__init__(
             pos, pos, pos + 1, pos + 1,
@@ -263,6 +279,8 @@ class Omega(Dihedral):
 
 
 class CompositeDihedral(StructureVariable):
+    __slots__ = ('pos',)
+
     def __init__(self, pos: int):
         self.pos = pos
 
@@ -294,6 +312,7 @@ class CompositeDihedral(StructureVariable):
 
 
 class Chi1(CompositeDihedral):
+    __slots__ = ()
 
     @staticmethod
     def get_dihedrals(pos) -> list[Dihedral]:
@@ -307,6 +326,7 @@ class Chi1(CompositeDihedral):
 
 
 class Chi2(CompositeDihedral):
+    __slots__ = ()
 
     @staticmethod
     def get_dihedrals(pos) -> list[Dihedral]:

@@ -86,6 +86,8 @@ class StructureVariable(AbstractVariable[bst.AtomArray, RT]):
     A type of variable whose :meth:`calculate` method requires protein structure.
     """
 
+    __slots__ = ()
+
     @abstractmethod
     def calculate(
             self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
@@ -98,12 +100,14 @@ class SequenceVariable(AbstractVariable[str, RT]):
     A type of variable whose :meth:`calculate` method requires protein sequence.
     """
 
+    __slots__ = ()
+
     @abstractmethod
     def calculate(self, seq: str, mapping: t.Optional[MappingT] = None) -> RT:
         raise NotImplementedError
 
 
-VT = t.TypeVar('VT', bound=StructureVariable | SequenceVariable)  # variable type
+VT = t.TypeVar('VT', bound=t.Union[StructureVariable, SequenceVariable])  # variable type
 
 
 class Variables(UserDict):
@@ -192,6 +196,8 @@ class AbstractCalculator(t.Generic[OT, VT, RT], metaclass=ABCMeta):
     """
     Class defining variables' calculation strategy.
     """
+
+    __slots__ = ()
 
     @abstractmethod
     def __call__(self, o: OT, v: VT, m: MappingT | None) -> RT: ...

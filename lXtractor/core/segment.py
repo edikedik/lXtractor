@@ -20,6 +20,8 @@ class Segment(abc.Sequence):
     An arbitrary segment with boundaries included.
     """
 
+    __slots__ = ('start', 'end', 'name', 'parent', 'children', 'meta', '_seqs')
+
     def __init__(
             self, start: int, end: int,
             name: t.Optional[str] = None,

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import typing as t
-from abc import abstractmethod
 from collections import namedtuple, abc
 from functools import lru_cache
 from io import TextIOBase
@@ -31,6 +30,8 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ChainSequence(Segment):
+
+    __slots__ = ()
 
     @property
     def fields(self) -> tuple[str, ...]:
@@ -260,6 +261,9 @@ class ChainSequence(Segment):
 
 
 class ChainStructure:
+
+    __slots__ = ('pdb', 'seq', 'parent', 'variables')
+
     def __init__(
             self, pdb_id: str, pdb_chain: str,
             pdb_structure: t.Optional[GenericStructure] = None,
@@ -371,6 +375,8 @@ class Chain(AbstractChain):
     """
     A mutable container, holding data associated with a singe (full) protein chain.
     """
+
+    __slots__ = ('seq', 'structures', 'children')
 
     def __init__(
             self, seq: ChainSequence,
@@ -501,6 +507,21 @@ class Chain(AbstractChain):
         if keep:
             self.children[name] = child
         return child
+
+
+CT = t.TypeVar('CT', bound=Chain)
+
+
+class ChainList(t.MutableSequence[CT]):
+
+    @t.overload
+    def __getitem__(self, index: int) -> CT: ...
+
+    @t.overload
+    def __getitem__(self, index: slice | str) -> ChainList[CT]: ...
+
+    def __getitem__(self, index: int | slice | str) -> CT | ChainList[CT]:
+        pass
 
 
 if __name__ == '__main__':

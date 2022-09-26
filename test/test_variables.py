@@ -20,12 +20,12 @@ def test_parse_variable():
     # one variable, two positions
     vs, _, _ = parse_var('1-2')
     assert isinstance(vs[0], Dist)
-    assert vs[0].pos1 == 1
-    assert vs[0].pos2 == 2
+    assert vs[0].p1 == 1
+    assert vs[0].p2 == 2
     assert vs[0].com is True
     vs, _, _ = parse_var('1:CB-2:CB')
-    assert vs[0].atom1 == 'CB'
-    assert vs[0].atom2 == 'CB'
+    assert vs[0].a1 == 'CB'
+    assert vs[0].a2 == 'CB'
 
     # one variable, four positions
     vs, _, _ = parse_var('1-2-3-4')

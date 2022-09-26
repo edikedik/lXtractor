@@ -21,7 +21,7 @@ def calculate_dihedral(
 ) -> float:
     """
     Calculate angle between planes formed by
-    [atom1, atom2, atom3] and [atom2, atom3, atom4].
+    [a1, a2, atom3] and [a2, atom3, atom4].
 
     Each atom is an array of shape (3, ) with XYZ coordinates.
 

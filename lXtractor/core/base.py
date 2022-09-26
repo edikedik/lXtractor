@@ -140,6 +140,7 @@ class AbstractResource(metaclass=ABCMeta):
 
 
 class AbstractStructure(metaclass=ABCMeta):
+    __slots__ = ()
 
     @classmethod
     @abstractmethod
@@ -156,6 +157,8 @@ class AbstractChain(metaclass=ABCMeta):
     """
     Protein basic interface definition.
     """
+
+    __slots__ = ()
 
     @classmethod
     @abstractmethod
