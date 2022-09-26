@@ -11,18 +11,12 @@ class _DumpNames:
     Dataclass encapsulating names of files
     used for dumping data.
     """
-    # uniprot_seq: str = 'sequence.fasta'
-    # pdb_seq1: str = 'structure.fasta'
-    # pdb_seq3: str = 'structure.txt'
 
     sequence: str = 'sequence.tsv'
     meta: str = 'meta.tsv'
     variables: str = 'variables.tsv'
-    # aln_mapping: str = 'aln_mapping.tsv'
-    # uni_pdb_map: str = 'uni_pdb_map.tsv'
     pdist_base_dir: str = 'PDIST'
     pdist_base_name: str = 'pdist'
-    # uni_pdb_aln: str = 'uni_pdb_aln.fasta'
     segments_dir: str = 'segments'
     structures_dir: str = 'structures'
     structure_base_name: str = 'structure'

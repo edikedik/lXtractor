@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import typing as t
+from abc import abstractmethod
 from collections import namedtuple, abc
 from functools import lru_cache
 from io import TextIOBase

@@ -193,12 +193,15 @@ class AbstractCalculator(t.Generic[OT, VT, RT], metaclass=ABCMeta):
     Class defining variables' calculation strategy.
     """
 
+    @abstractmethod
     def __call__(self, o: OT, v: VT, m: MappingT | None) -> RT: ...
 
+    @abstractmethod
     def map(
             self, o: OT, v: abc.Iterable[VT], m: MappingT | None
     ) -> abc.Iterator[RT]: ...
 
+    @abstractmethod
     def vmap(
             self, o: abc.Iterable[OT], v: VT, m: abc.Iterable[MappingT | None]
     ) -> abc.Iterator[RT]: ...
