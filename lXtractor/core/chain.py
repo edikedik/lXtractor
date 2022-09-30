@@ -11,7 +11,7 @@ from pathlib import Path
 
 import biotite.structure as bst
 import pandas as pd
-from more_itertools import unzip, first_true
+from more_itertools import unzip, first_true, interleave_longest
 
 from lXtractor.core.alignment import Alignment
 from lXtractor.core.base import AminoAcidDict, AbstractChain, Ord, AlignMethod, SeqReader

@@ -10,7 +10,7 @@ from lXtractor.core.exceptions import FailedCalculation
 from lXtractor.variables.base import AbstractCalculator, OT, RT, VT, MappingT
 
 
-ERT: t.TypeAlias = tuple[bool, RT | str]
+ERT: t.TypeAlias = tuple[bool, t.Union[RT, str]]
 
 
 def _try_calculate(
