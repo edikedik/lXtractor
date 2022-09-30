@@ -7,6 +7,7 @@ from itertools import islice
 
 from more_itertools import zip_equal, nth, always_reversible
 
+from lXtractor.core.base import Ord
 from lXtractor.core.config import Sep
 from lXtractor.core.exceptions import LengthMismatch, NoOverlap
 
@@ -88,8 +89,12 @@ class Segment(abc.Sequence):
     def __reversed__(self) -> abc.Iterator[tuple] | abc.Iterator[namedtuple]:
         return always_reversible(iter(self))
 
-    def __contains__(self, item) -> bool:
-        return item in self._seqs
+    def __contains__(self, item: str | Ord) -> bool:
+        match item:
+            case str():
+                return item in self._seqs
+            case _:
+                return self.start <= item <= self.end
 
     def __len__(self):
         return self.end - self.start + 1
@@ -126,7 +131,7 @@ class Segment(abc.Sequence):
             raise ValueError(f'Segment already contains {name}. '
                              f'To overwrite existing sequences, use [] syntax')
 
-    def bounds(self, other: 'Segment') -> bool:
+    def bounds(self, other: Segment) -> bool:
         """
         self: +-------+
 
@@ -136,7 +141,7 @@ class Segment(abc.Sequence):
         """
         return other.start >= self.start and self.end >= other.end
 
-    def bounded_by(self, other: 'Segment') -> bool:
+    def bounded_by(self, other: Segment) -> bool:
         """
         self:   +----+
 
@@ -146,7 +151,7 @@ class Segment(abc.Sequence):
         """
         return self.start >= other.start and other.end >= self.end
 
-    def do_overlap(self, other: 'Segment') -> bool:
+    def overlaps(self, other: Segment) -> bool:
         """
         Check whether a segment overlaps with the other segment.
         Use :meth:`overlap_with` to produce an overlapping child :class:`Segment`.
@@ -159,7 +164,7 @@ class Segment(abc.Sequence):
     def overlap_with(
             self, other: Segment, deep_copy: bool = True,
             handle_mode: str = 'merge', sep: str = '&'
-    ) -> t.Optional['Segment']:
+    ) -> t.Optional[Segment]:
         """
         self: +--------+
 
@@ -187,7 +192,7 @@ class Segment(abc.Sequence):
             _start, _end = ov_start - curr_start, ov_end - curr_start
             return {k: s[_start: _end + 1] for k, s in _seqs.items()}
 
-        if not self.do_overlap(other):
+        if not self.overlaps(other):
             raise NoOverlap
 
         start, end = max(self.start, other.start), min(self.end, other.end)
@@ -223,7 +228,7 @@ class Segment(abc.Sequence):
         """
         other = Segment(start, end)
 
-        if not self.do_overlap(other):
+        if not self.overlaps(other):
             raise NoOverlap
 
         return self.overlap_with(other, True, 'self')

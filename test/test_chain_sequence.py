@@ -41,18 +41,19 @@ def test_convertage(seq):
     assert fields.seq3 in df.columns
     assert fields.enum in df.columns
     assert len(df) == len(s)
-    rec = s.as_record()
-    assert rec.id == s.id
-    assert str(rec.seq) == s[fields.seq1]
 
 
 def test_closest(seq):
     fields = ChainSequence.field_names()
-    s = ChainSequence(1, 5, 'S', {fields.seq1: 'ABCDE', 'N': [1, 3, 5, 10, 20]})
+    s = ChainSequence(1, 5, 'S', seqs={
+        fields.seq1: 'ABCDE', 'N': [1, 3, 5, 10, 20], 'K': [None, 10, None, 20, None]})
     assert s.get_closest('N', 2).N == 3
     assert s.get_closest('N', 0).N == 1
     assert s.get_closest('N', 12, reverse=True).N == 10
     assert s.get_closest('N', 21) is None
+    assert s.get_closest('N', 0, reverse=True) is None
+    assert s.get_closest('K', 2).N == 3
+    assert s.get_closest('K', 21, reverse=True).N == 10
 
 
 def test_map(simple_fasta_path):

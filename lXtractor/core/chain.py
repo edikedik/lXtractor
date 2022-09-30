@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import logging
+import operator as op
 import typing as t
 from collections import namedtuple, abc
-from functools import lru_cache
+from functools import lru_cache, partial
 from io import TextIOBase
-from itertools import starmap
+from itertools import starmap, chain, zip_longest, tee
 from pathlib import Path
 
 import biotite.structure as bst
 import pandas as pd
-from more_itertools import unzip, first_true
+from more_itertools import unzip, first_true, interleave_longest
 
 from lXtractor.core.alignment import Alignment
 from lXtractor.core.base import AminoAcidDict, AbstractChain, Ord, AlignMethod, SeqReader
@@ -22,6 +23,8 @@ from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.seq import mafft_align, map_pairs_numbering, read_fasta
 from lXtractor.variables.base import Variables
 
+T = t.TypeVar('T')
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -30,7 +33,6 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ChainSequence(Segment):
-
     __slots__ = ()
 
     @property
@@ -131,7 +133,9 @@ class ChainSequence(Segment):
         :return: The first relevant item or `None` if no relevant items were found.
         """
 
-        def pred(kv):
+        def pred(kv: tuple[Ord | None, t.Any]) -> bool:
+            if kv[0] is None:
+                return False
             if reverse:
                 return kv[0] <= value
             return kv[0] >= value
@@ -261,7 +265,6 @@ class ChainSequence(Segment):
 
 
 class ChainStructure:
-
     __slots__ = ('pdb', 'seq', 'parent', 'variables')
 
     def __init__(
@@ -397,7 +400,7 @@ class Chain(AbstractChain):
     def __str__(self) -> str:
         return self.id
 
-    def __getitem__(self, key) -> Chain:
+    def __getitem__(self, key: str | int) -> Chain:
         if isinstance(key, str):
             return self.children[key]
         if isinstance(key, int):
@@ -405,11 +408,23 @@ class Chain(AbstractChain):
         else:
             raise TypeError('Wrong key type')
 
-    def __contains__(self, item) -> bool:
+    def __contains__(self, item: Chain) -> bool:
         return item in self.children
 
     def __iter__(self) -> abc.Iterator[Chain]:
         yield from self.children.values()
+
+    def iter_children(self) -> abc.Generator[list[CT]]:
+        def get_level(cs: abc.Iterable[T]) -> abc.Iterator[T]:
+            return chain.from_iterable(map(iter, cs))
+
+        curr_level = list(iter(self))
+
+        while True:
+            yield curr_level
+            curr_level = list(get_level(curr_level))
+            if not curr_level:
+                return
 
     @classmethod
     def from_seq(
@@ -428,15 +443,6 @@ class Chain(AbstractChain):
             cls, path: Path, dump_names: DumpNames = DumpNames,
             *, search_children: bool = False
     ) -> Chain:
-        """
-        Initialize a :class:`Protein` instance from the existing dump.
-
-        :param path: Path to a dumped protein data.
-        :param dump_names: Names of files (keep the default).
-        :param search_children: Recursively search child segments and record
-            them as :attr:`children`
-        :return: Initialized `Protein` instance.
-        """
         seq = ChainSequence.read(path, dump_names, search_children=False)
 
         structures = [ChainStructure.read(p, dump_names)
@@ -451,15 +457,8 @@ class Chain(AbstractChain):
     def write(
             self, base_dir: Path, dump_names: DumpNames = DumpNames,
             *, write_children: bool = True,
-    ) -> None:
-        """
-        Dump protein into directory.
+    ) -> t.NoReturn:
 
-        :param base_dir: Base directory where the directory for the current protein
-            shall be created.
-        :param dump_names: File and directory names.
-        :param write_children: Recursively write children.
-        """
         path = base_dir / self.id
         path.mkdir(parents=True, exist_ok=True)
 
@@ -470,7 +469,7 @@ class Chain(AbstractChain):
             self, structure: ChainStructure, *, check_ids: bool = True,
             map_to_seq: bool = True, map_name: str = SeqNames.map_canonical,
             **kwargs
-    ):
+    ) -> t.NoReturn:
         if check_ids:
             ids = [s.id for s in self.structures]
             if structure.id in ids:
@@ -510,18 +509,164 @@ class Chain(AbstractChain):
 
 
 CT = t.TypeVar('CT', bound=Chain)
+SS = t.TypeVar('SS', bound=ChainSequence | ChainStructure)
+ST = t.TypeVar('ST', bound=Segment)
+SeqT = t.TypeVar('SeqT', bound=ChainSequence)
+StrT = t.TypeVar('StrT', bound=ChainStructure)
 
 
-class ChainList(t.MutableSequence[CT]):
+class ChainList(abc.MutableSequence[CT]):
+    __slots__ = ('_chains',)
+
+    def __init__(self, chains: abc.Iterable[Chain]):
+        self._chains: list[Chain] = list(chains)
+
+    def __len__(self) -> int:
+        return len(self._chains)
 
     @t.overload
-    def __getitem__(self, index: int) -> CT: ...
+    def __getitem__(self, index: int) -> CT:
+        ...
 
     @t.overload
-    def __getitem__(self, index: slice | str) -> ChainList[CT]: ...
+    def __getitem__(self, index: slice) -> ChainList[CT]:
+        ...
 
-    def __getitem__(self, index: int | slice | str) -> CT | ChainList[CT]:
-        pass
+    def __getitem__(self, index: int | slice) -> CT | ChainList[CT]:
+        match index:
+            case int():
+                return self._chains[index]
+            case slice():
+                return ChainList(self._chains[index])
+            case _:
+                raise TypeError(f'Incorrect index type {type(index)}')
+
+    def __setitem__(self, index: int, value: CT) -> t.NoReturn:
+        self._chains.__setitem__(index, value)
+
+    def __delitem__(self, index: int) -> t.NoReturn:
+        self._chains.__delitem__(index)
+
+    def __contains__(self, item: str | CT) -> bool:
+        match item:
+            case str():
+                _id = item
+            case Chain():
+                _id = item.id
+            case _:
+                return False
+
+        return first_true(self._chains, default=False, pred=lambda c: c.id == _id)
+
+    def __iter__(self) -> abc.Iterator[CT]:
+        return iter(self._chains)
+
+    def index(self, value: CT, start: int = ..., stop: int = ...) -> int:
+        return self._chains.index(value, start, stop)
+
+    def insert(self, index: int, value: CT) -> t.NoReturn:
+        self._chains.insert(index, value)
+
+    def iter_children(self) -> abc.Generator[ChainList[CT], None, None]:
+        levels = zip_longest(*map(lambda c: c.iter_children(), self._chains))
+        for level in levels:
+            yield ChainList(list(chain.from_iterable(level)))
+
+    def collapse_children(self) -> ChainList[CT]:
+        return ChainList(list(chain.from_iterable(self.iter_children())))
+
+    def iter_sequences(self) -> abc.Iterator[SeqT]:
+        return (c.seq for c in self._chains)
+
+    def iter_structures(self) -> abc.Iterator[StrT]:
+        return chain.from_iterable(c.structures for c in self._chains)
+
+    @staticmethod
+    def _to_segment(s: abc.Sequence[int, int] | Segment) -> Segment:
+        match s:
+            case (start, end):
+                return Segment(start, end)
+            case Segment():
+                return s
+            case _:
+                raise TypeError(f'Unsupported type {type(s)}')
+
+    @staticmethod
+    def _get_seg_matcher(s: str) -> abc.Callable[[ChainSequence, Segment, t.Optional[str]], bool]:
+        def matcher(seq: ChainSequence, seg: Segment, map_name: t.Optional[str] = None) -> bool:
+            if map_name is not None:
+                # Get elements in the seq whose mapped sequence matches seg boundaries
+                start = seq.get_closest(map_name, seg.start)._asdict()[map_name]
+                end = seq.get_closest(map_name, seg.end, reverse=True)._asdict()[map_name]
+                # If not such elements -> no match
+                if start is None or end is None:
+                    return False
+                # Create a new temporary segment using the mapped boundaries
+                seq = Segment(start, end)
+            match s:
+                case 'overlap':
+                    return seq.overlaps(seg)
+                case 'bounded':
+                    return seq.bounded_by(seg)
+                case 'bounding':
+                    return seq.bounds(seg)
+                case _:
+                    raise ValueError(f'Invalid matching mode {s}')
+
+        return matcher
+
+    @staticmethod
+    def _get_pos_matcher(ps: abc.Iterable[Ord]) -> abc.Callable[[ChainSequence, t.Optional[str]], bool]:
+        def matcher(seq: ChainSequence, map_name: t.Optional[str] = None) -> bool:
+            obj = seq
+            if map_name:
+                obj = seq[map_name]
+            return all(p in obj for p in ps)
+
+        return matcher
+
+    def _filter_seqs(
+            self, seqs: abc.Iterable[SeqT], match_type: str,
+            s: Segment | abc.Collection[Ord],
+            map_name: t.Optional[str]
+    ) -> abc.Iterator[bool]:
+        match s:
+            case Segment():
+                match_fn = partial(
+                    self._get_seg_matcher(match_type),
+                    seg=self._to_segment(s), map_name=map_name)
+            case abc.Collection():
+                match_fn = partial(
+                    self._get_pos_matcher(s), map_name=map_name)
+            case _:
+                raise TypeError(f'Unsupported type to match {type(s)}')
+        return map(match_fn, seqs)
+
+    def _filter_str(
+            self, structures: abc.Iterable[StrT], match_type: str,
+            s: abc.Sequence[int, int] | Segment, map_name: t.Optional[str]
+    ) -> abc.Iterator[bool]:
+        return self._filter_seqs(
+            map(lambda x: x.seq, structures), match_type, s, map_name)
+
+    def filter(
+            self, s: Segment | abc.Collection[Ord], *,
+            obj_type: str = 'seq', match_type: str = 'overlap',
+            map_name: t.Optional[str] = None
+    ) -> abc.Iterator[SS]:
+        # Use cases:
+        # 1) search using Segment's start/end => good for matching canonical sequence
+        # 2) use map_name => overlapping with ref/aln/etc-based boundaries; esp. for structures
+        match obj_type[:3]:
+            case 'seq':
+                objs, fn = self.iter_sequences(), self._filter_seqs
+            case 'str':
+                objs, fn = self.iter_structures(), self._filter_str
+            case _:
+                raise ValueError(f'Unsupported object type {obj_type}')
+        objs1, objs2 = tee(objs)
+        mask = fn(objs1, match_type, s, map_name)
+        return map(op.itemgetter(1), filter(lambda x: x[0], zip(mask, objs2)))
 
 
 if __name__ == '__main__':

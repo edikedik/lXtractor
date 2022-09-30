@@ -13,11 +13,10 @@ from more_itertools import flatten, unzip, partition
 from toolz import groupby, curry
 from toolz.curried import map, filter
 
-from lXtractor.core.base import SeqRec, Seq
 from lXtractor.core.exceptions import MissingData, AmbiguousData
 from lXtractor.core.chain import Chain
 from lXtractor.util.io import try_fetching_until, download_text, fetch_iterable
-from lXtractor.util.structure import extract_sub_structure, get_sequence
+
 
 WrappedResult = t.Tuple[str, Structure, t.Optional[t.List[t.Tuple[str, t.Any]]]]
 META_FIELDS = (

@@ -16,7 +16,7 @@ from Bio.Seq import Seq
 from more_itertools import flatten
 from toolz import groupby, curry
 
-from lXtractor.core.base import SeqRec, _Fetcher, _Getter
+from lXtractor.core.base import _Fetcher, _Getter
 from lXtractor.core.exceptions import MissingData
 from lXtractor.core.chain import Chain
 from lXtractor.util.io import try_fetching_until, download_text, fetch_iterable
@@ -238,14 +238,14 @@ class UniProt:
         def get_id(seq: SeqRec) -> str:
             return seq.id.split('|')[1]
 
-        def fetcher(acc: t.Iterable[str]) -> t.List[SeqRec]:
+        def fetcher(acc: t.Iterable[str]) -> t.List:
             res = fetch_uniprot(acc, num_threads=self.num_threads, chunk_size=self.chunk_size)
             res = list(SeqIO.parse(StringIO(res), 'fasta'))
             LOGGER.debug(f'Fasta fetcher fetched {len(res)} sequences')
             return res
 
         def get_remaining(
-                fetched: t.List[SeqRec],
+                fetched: t.List,
                 remaining: t.Sequence[str]
         ) -> t.List[str]:
             current_ids = set(map(get_id, fetched))

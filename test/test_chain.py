@@ -1,8 +1,9 @@
 import pytest
 
+from lXtractor.core.chain import Chain, ChainStructure
 from lXtractor.core.config import Sep, SeqNames
 from lXtractor.core.exceptions import NoOverlap
-from lXtractor.core.chain import Chain, ChainStructure
+from test.common import sample_chain
 
 
 def test_basic(four_chain_structure_seq_path, four_chain_structure):
@@ -59,3 +60,16 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     assert len(child.seq) == 5
     assert len(child.structures) == 1
     assert len(child.structures[0].seq) == 5
+
+
+def test_iter(chicken_src_str):
+    def get_name(_c):
+        return _c.seq.name
+
+    c = sample_chain()
+
+    levels = list(c.iter_children())
+    assert len(levels) == 3
+    assert list(map(get_name, levels[0])) == ['c1', 'c2']
+    assert list(map(get_name, levels[1])) == ['c1_1', 'c1_2', 'c2_1', 'c2_2']
+    assert list(map(get_name, levels[2])) == ['c1_2_1']

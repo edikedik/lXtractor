@@ -330,7 +330,7 @@ class lXtractor:
             proteins[p_id].uni_pdb_map = mapping
 
     def align(self, domain: t.Optional[t.Union[str, t.Container[str]]] = None,
-              pdb: bool = True, method: _Align_method = mafft_align) -> Alignment:
+              pdb: bool = True, method=mafft_align) -> Alignment:
 
         def accept(obj: t.Union[Chain]):
             return ((domain and isinstance(obj, Domain) and obj.name in domain)
@@ -528,7 +528,7 @@ class lXtractor:
             self, variables: t.Union[str, t.Sequence[str]],
             overwrite: bool = False
     ) -> None:
-        def try_parse(v: str) -> t.Optional[_ParsedVariables]:
+        def try_parse(v: str):
             try:
                 parsed_var = parse_var(v)
                 LOGGER.debug(f'Successfully parsed input {v}')
@@ -576,9 +576,9 @@ class lXtractor:
         def calculate(
                 protein_id: str, domain_id: t.Optional[str],
                 target: t.Union[Structure, SeqRec],
-                variables: t.Iterable[_VarT],
+                variables,
                 mapping: t.Dict[int, int]
-        ) -> t.List[t.Tuple[str, str, _VarT, t.Union[str, float, Exception]]]:
+        ) -> t.List[t.Tuple[str, str, T, t.Union[str, float, Exception]]]:
             rs = []
             for v in variables:
                 try:
@@ -605,7 +605,7 @@ class lXtractor:
         @curry
         def get_vars(
                 obj: t.Union[Chain], str_var: bool = True
-        ) -> t.Optional[t.Tuple[str, t.Optional[str], Structure, t.List[_VarT], t.Dict[int, int]]]:
+        ) -> t.Optional[t.Tuple[str, t.Optional[str], Structure, t.List[T], t.Dict[int, int]]]:
             vs = list(filter(
                 lambda v: missing and obj.variables[v] is None or not missing,
                 obj.variables.structure if str_var else obj.variables.sequence

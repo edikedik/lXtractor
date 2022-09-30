@@ -64,12 +64,13 @@ class Alignment:
         return iter(self.seqs)
 
     def __getitem__(self, item: str | int | slice) -> tuple[str, str] | str:
-        if isinstance(item, str):
-            return self._seqs_map[item]
-        if isinstance(item, (int, slice)):
-            return self.seqs[item]
-        else:
-            raise TypeError(f'Unsupported item type {type(item)}')
+        match item:
+            case str():
+                return self._seqs_map[item]
+            case int() | slice():
+                return self.seqs[item]
+            case _:
+                raise TypeError(f'Unsupported item type {type(item)}')
 
     def __eq__(self, other: Alignment):
         return self.seqs == other.seqs
