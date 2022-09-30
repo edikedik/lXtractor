@@ -140,6 +140,7 @@ class AbstractResource(metaclass=ABCMeta):
 
 
 class AbstractStructure(metaclass=ABCMeta):
+    __slots__ = ()
 
     @classmethod
     @abstractmethod
@@ -157,16 +158,18 @@ class AbstractChain(metaclass=ABCMeta):
     Protein basic interface definition.
     """
 
+    __slots__ = ()
+
     @classmethod
     @abstractmethod
-    def read(cls, path: Path, dump_names: DumpNames = DumpNames): pass
+    def read(cls, path: Path, dump_names: DumpNames = DumpNames): ...
 
     @abstractmethod
-    def write(self, path: Path, dump_names: DumpNames = DumpNames): pass
+    def write(self, path: Path, dump_names: DumpNames = DumpNames): ...
 
     @property
     @abstractmethod
-    def id(self) -> str: pass
+    def id(self) -> str: ...
 
 
 class Ord(t.Protocol[T]):

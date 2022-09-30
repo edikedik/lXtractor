@@ -1,6 +1,11 @@
+import pytest
+
+from lXtractor.core.exceptions import FailedCalculation
 from lXtractor.variables.structural import Dist, Dihedral, PseudoDihedral, Phi, Psi, Omega
 from lXtractor.variables.sequential import SeqEl
 from lXtractor.variables.parser import parse_var
+
+EPS = 1e-3
 
 
 def test_parse_variable():
@@ -20,12 +25,12 @@ def test_parse_variable():
     # one variable, two positions
     vs, _, _ = parse_var('1-2')
     assert isinstance(vs[0], Dist)
-    assert vs[0].pos1 == 1
-    assert vs[0].pos2 == 2
+    assert vs[0].p1 == 1
+    assert vs[0].p2 == 2
     assert vs[0].com is True
     vs, _, _ = parse_var('1:CB-2:CB')
-    assert vs[0].atom1 == 'CB'
-    assert vs[0].atom2 == 'CB'
+    assert vs[0].a1 == 'CB'
+    assert vs[0].a2 == 'CB'
 
     # one variable, four positions
     vs, _, _ = parse_var('1-2-3-4')
@@ -49,3 +54,14 @@ def test_parse_variable():
     vs, ss, ds = parse_var('1,2--ABCD:A,BLABLA23::SH2,SH3')
     assert ss == ['ABCD:A', 'BLABLA23']
     assert ds == ['SH2', 'SH3']
+
+
+def test_dist(simple_structure):
+    v = Dist(1, 40, 'CB', 'CB')
+    r = v.calculate(simple_structure.array)
+    assert abs(round(r, 2) - 4.56) < EPS
+    v = Dist(-10, 1000, 'CB', 'CB')
+    with pytest.raises(FailedCalculation):
+        v.calculate(simple_structure.array)
+    r = v.calculate(simple_structure.array, mapping={-10: 1, 1000: 40})
+    assert abs(round(r, 2) - 4.56) < EPS

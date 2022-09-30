@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import typing as t
 from collections import abc
 from itertools import starmap
@@ -30,6 +32,8 @@ class SimpleCalculator(AbstractCalculator):
 
     The calculation has gracefully failed iff class:`lXtractor.core.exceptions.FailedCalculation` is raised.
     """
+
+    __slots__ = ()
 
     def __call__(self, o: OT, v: VT, m: MappingT | None) -> ERT:
         return _try_calculate(o, v, m)

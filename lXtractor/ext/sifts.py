@@ -350,10 +350,10 @@ def map_segment_numbering(
             raise LengthMismatch(f'Lengths of segments must match. '
                                  f'Got len({s1})={len(s1)}, len({s2})={len(s2)}')
     for s1, s2 in zip(segments_from, segments_from[1:]):
-        if s2.do_overlap(s1):
+        if s2.overlaps(s1):
             raise OverlapError(f'Segments {s1},{s2} in `segments_from` overlap')
     for s1, s2 in zip(segments_to, segments_to[1:]):
-        if s2.do_overlap(s1):
+        if s2.overlaps(s1):
             raise OverlapError(f'Segments {s1},{s2} in `segments_to` overlap')
 
     hole_sizes = chain(

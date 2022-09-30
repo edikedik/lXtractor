@@ -4,8 +4,10 @@ from pathlib import Path
 
 import pytest
 
+from lXtractor.core.chain import ChainList, ChainStructure
 from lXtractor.core.structure import GenericStructure
 from lXtractor.util.seq import read_fasta
+from test.common import sample_chain
 
 DATA = Path(__file__).parent / 'data'
 
@@ -82,3 +84,12 @@ def simple_fasta_path() -> Path:
     path = DATA / 'simple.fasta'
     assert path.exists()
     return path
+
+
+@pytest.fixture(scope='module')
+def sample_chain_list(simple_structure) -> ChainList:
+    chain_str = ChainStructure.from_structure(simple_structure)
+    return ChainList([
+        sample_chain(prefix='c', structure=chain_str),
+        sample_chain(prefix='k', structure=chain_str)
+    ])

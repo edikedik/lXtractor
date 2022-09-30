@@ -12,7 +12,6 @@ from Bio.PDB import PDBParser
 from Bio.PDB.Structure import Structure
 from more_itertools import flatten
 
-from lXtractor.core.base import SeqRec
 from lXtractor.variables.base import Variables
 from lXtractor.core.exceptions import MissingData, FormatError
 from lXtractor.core.config import Separators, Sep
@@ -26,7 +25,7 @@ ProteinAttributes = t.NamedTuple(
         ('chain_id', t.Optional[str]),
         ('structure', t.Optional[Structure]),
         ('uniprot_id', t.Optional[str]),
-        ('uniprot_seq', t.Optional[SeqRec]),
+        # ('uniprot_seq', t.Optional[SeqRec]),
         ('domains', t.Optional[t.Sequence[str]])
     ])
 
@@ -56,7 +55,7 @@ def parse_pdb_input(inp: str) -> t.Tuple[str, t.Optional[Structure]]:
     return pdb_code.upper(), structure
 
 
-def parse_uniprot_input(inp: str) -> t.Tuple[str, SeqRec]:
+def parse_uniprot_input(inp: str):
     """
 
     >>> assert parse_uniprot_input('anything') == ('anything', None)
@@ -88,7 +87,7 @@ def parse_uniprot_input(inp: str) -> t.Tuple[str, SeqRec]:
 
 def parse_protein(
         inp: str, sep: Separators = Sep
-) -> t.Tuple[t.Optional[str], t.Optional[SeqRec], t.Optional[str], t.Optional[Structure]]:
+):
     """
     Separate input into UniProt and PDB ID, then call
     :func:`parse_uniprot_input` and :func:`parse_pdb_input` on both parts.

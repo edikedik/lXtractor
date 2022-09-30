@@ -86,6 +86,8 @@ class StructureVariable(AbstractVariable[bst.AtomArray, RT]):
     A type of variable whose :meth:`calculate` method requires protein structure.
     """
 
+    __slots__ = ()
+
     @abstractmethod
     def calculate(
             self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
@@ -98,12 +100,14 @@ class SequenceVariable(AbstractVariable[str, RT]):
     A type of variable whose :meth:`calculate` method requires protein sequence.
     """
 
+    __slots__ = ()
+
     @abstractmethod
     def calculate(self, seq: str, mapping: t.Optional[MappingT] = None) -> RT:
         raise NotImplementedError
 
 
-VT = t.TypeVar('VT', bound=StructureVariable | SequenceVariable)  # variable type
+VT = t.TypeVar('VT', bound=t.Union[StructureVariable, SequenceVariable])  # variable type
 
 
 class Variables(UserDict):
@@ -193,6 +197,8 @@ class AbstractCalculator(t.Generic[OT, VT, RT], metaclass=ABCMeta):
     Class defining variables' calculation strategy.
     """
 
+    __slots__ = ()
+
     @abstractmethod
     def __call__(self, o: OT, v: VT, m: MappingT | None) -> RT: ...
 
@@ -205,6 +211,46 @@ class AbstractCalculator(t.Generic[OT, VT, RT], metaclass=ABCMeta):
     def vmap(
             self, o: abc.Iterable[OT], v: VT, m: abc.Iterable[MappingT | None]
     ) -> abc.Iterator[RT]: ...
+
+
+CalcT = t.TypeVar('CalcT', bound=AbstractCalculator)
+
+
+class AbstractManager(t.Generic[VT, OT, T, CalcT], metaclass=ABCMeta):
+
+    __slots__ = ()
+
+    @abstractmethod
+    def assign(
+            self, vs: abc.Sequence[VT], chains: T | abc.MutableSequence[T], *,
+            level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
+    ) -> t.NoReturn: ...
+
+    @abstractmethod
+    def reset(
+            self, chains: T | abc.MutableSequence[T], vs: abc.Sequence[VT] | None, *,
+            level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
+    ) -> t.NoReturn: ...
+
+    @abstractmethod
+    def remove(
+            self, chains: T | abc.MutableSequence[T], vs: abc.Sequence[VT] | None, *,
+            level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
+    ) -> t.NoReturn: ...
+
+    @abstractmethod
+    def calculate(
+            self, chains: T | abc.MutableSequence[T], calculator: CalcT, *,
+            missing: bool, seq_name: str, map_name: t.Optional[str],
+            level: int, id_contains: str | None,
+            obj_type: abc.Sequence[str] | str | None
+    ) -> t.NoReturn: ...
+
+    @abstractmethod
+    def aggregate(
+            self, chains: T | abc.MutableSequence[T], *,
+            level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
+    ) -> pd.DataFrame: ...
 
 
 if __name__ == '__main__':
