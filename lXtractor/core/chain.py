@@ -286,9 +286,15 @@ class ChainStructure:
         self.parent = parent
         self.variables = variables or Variables()
 
+    def __str__(self) -> str:
+        return self.id
+
+    def __repr__(self) -> str:
+        return self.id
+
     @property
-    def id(self):
-        return self.seq.id
+    def id(self) -> str:
+        return f'{self.__class__.__name__}({self.seq})'
 
     @classmethod
     def from_structure(

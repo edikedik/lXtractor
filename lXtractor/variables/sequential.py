@@ -3,6 +3,7 @@ from __future__ import annotations
 import typing as t
 
 from lXtractor import AminoAcidDict
+from lXtractor.core.exceptions import FailedCalculation
 from lXtractor.variables.base import SequenceVariable, MappingT
 
 
@@ -11,20 +12,26 @@ class SeqEl(SequenceVariable):
     Sequence element. A residue at some alignment position.
     """
 
-    def __init__(self, aln_pos: int):
+    __slots__ = ('p', )
+
+    def __init__(self, p: int):
         """
         :param aln_pos: Position at the MSA.
         """
-        self.aln_pos = aln_pos
-        self.amino_acid_dict = AminoAcidDict()
+        self.p = p
 
     @property
     def rtype(self) -> str:
         return 'str'
 
     def calculate(self, seq: str = None, mapping: t.Optional[MappingT] = None) -> str:
-        pass
-        # pos = _try_map(self.aln_pos, mapping)
-        # res = _try_find_residue(pos, array)
-        # resname = res.get_resname()
-        # return f'{pos}_{resname}_{self.amino_acid_dict[resname]}'
+        try:
+            p = self.p
+            if mapping is not None:
+                p = mapping[self.p]
+        except KeyError:
+            raise FailedCalculation(f'Missing {self.p} in mapping')
+        try:
+            return seq[p - 1]
+        except IndexError:
+            raise FailedCalculation(f'Missing index {p - 1} in sequence')

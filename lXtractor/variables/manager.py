@@ -6,7 +6,7 @@ import biotite.structure as bst
 import pandas as pd
 from more_itertools import nth, partition
 
-from lXtractor.core.chain import ChainList, Chain, SS, ChainSequence, ChainStructure
+from lXtractor.core.chain import ChainList, Chain, SS, ChainSequence, ChainStructure, CT
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData
 from lXtractor.variables.base import AbstractManager, CalcT, VT, SequenceVariable, StructureVariable
@@ -41,12 +41,14 @@ class Manager(AbstractManager):
             self, chains: Chain | ChainList, level: int | None,
             id_contains: str | None, obj_type: str | abc.Sequence[str] | None,
     ) -> abc.Iterator[SS]:
-        self._validate_obj_type(obj_type)
+
         match obj_type:
             case str():
                 obj_type = [obj_type]
             case None:
                 obj_type = list(self.valid_types)
+        self._validate_obj_type(obj_type)
+
         if isinstance(chains, Chain):
             chains = ChainList([chains])
         if level is None:
@@ -54,9 +56,10 @@ class Manager(AbstractManager):
         elif level == 0:
             chains = chains
         else:
-            chains = nth(chains.iter_children(), level, default=None)
+            chains = nth(chains.iter_children(), level - 1, default=None)
             if chains is None:
                 raise MissingData(f'Level {level} is absent')
+
         objs = iter([])
         if 'seq' in obj_type:
             objs = chain(objs, chains.iter_sequences())
@@ -91,7 +94,7 @@ class Manager(AbstractManager):
         while structure is None and parent is not None:
             structure = parent.pdb.structure
             parent = parent.parent
-        return structure
+        return None or structure.array
 
     def assign(
             self, vs: abc.Sequence[VT], chains: Chain | ChainList, *,
@@ -116,41 +119,42 @@ class Manager(AbstractManager):
             level: int | None = None, id_contains: str | None = None,
             obj_type: abc.Sequence[str] | str | None = None
     ) -> t.NoReturn:
+        def _take_key(v):
+            return vs is not None and v in vs or vs is None
+
         objs = self._filter_objs(chains, level, id_contains, obj_type)
         for obj in objs:
-            for v in obj.variables:
-                if vs is not None:
-                    if v in vs:
-                        del obj.variables[v]
-                else:
-                    del obj.variables[v]
+            keys = list(filter(_take_key, obj.variables))
+            for k in keys:
+                obj.variables.pop(k)
 
     def reset(
-            self, chains: Chain | ChainList, vs: abc.Sequence[VT] | None, *, level: int | None,
-            id_contains: str | None, obj_type: abc.Sequence[str] | str | None
+            self, chains: Chain | ChainList, vs: abc.Sequence[VT] | None = None, *,
+            level: int | None = None, id_contains: str | None = None,
+            obj_type: abc.Sequence[str] | str | None = None
     ) -> t.NoReturn:
+        def _take_key(v):
+            return vs is not None and v in vs or vs is None
+
         objs = self._filter_objs(chains, level, id_contains, obj_type)
         for obj in objs:
-            for v in obj.variables:
-                if vs is not None:
-                    if v in vs:
-                        obj.variables[v] = None
-                else:
-                    obj.variables[v] = None
+            keys = list(filter(_take_key, obj.variables))
+            for k in keys:
+                obj.variables[k] = None
 
     def aggregate(
-            self, chains: Chain | ChainList, *, level: int | None,
-            id_contains: str | None, obj_type: abc.Sequence[str] | str | None
+            self, chains: Chain | ChainList, *, level: int | None = None,
+            id_contains: str | None = None, obj_type: abc.Sequence[str] | str | None = None
     ) -> pd.DataFrame:
         def _get_vs(obj: SS):
-            return ((obj.id, str(type(obj)), k.id, str(type(k)), v, k.rtype)
-                    for k, v in obj.variables)
+            return ((obj.id, obj.__class__.__name__, k.id, v, k.rtype)
+                    for k, v in obj.variables.items())
 
         objs = self._filter_objs(chains, level, id_contains, obj_type)
 
         return pd.DataFrame(
             chain.from_iterable(map(_get_vs, objs)),
-            columns=['ObjectID', 'ObjectType', 'VarID', 'VarType', 'VarResult', 'VarRType'])
+            columns=['ObjectID', 'ObjectType', 'VarID', 'VarResult', 'VarRType'])
 
     def stage_calculations(
             self, chains: Chain | ChainList, *, missing: bool = True,
@@ -165,10 +169,10 @@ class Manager(AbstractManager):
             map_from, map_to = obj[map_name], obj[SeqNames.enum]
             return dict(filter(lambda x: x[0] is not None, zip(map_from, map_to)))
 
-        def get_vs(obj: SS) -> t.Optional[abc.Iterator[VT]]:
+        def get_vs(obj: SS) -> list[VT]:
             if missing:
-                return (v for v, r in obj.variables.items() if r is None)
-            return iter(obj.variables)
+                return [v for v, r in obj.variables.items() if r is None]
+            return list(obj.variables)
 
         @t.overload
         def stage(obj: ChainStructure) -> t.Optional[StagedStr]:
@@ -182,7 +186,7 @@ class Manager(AbstractManager):
             vs = get_vs(obj)
             target = self._find_structure(obj) if isinstance(obj, ChainStructure) else obj[seq_name]
             mapping = get_mapping(obj)
-            if vs is None or obj is None:
+            if not vs or obj is None:
                 return None
             return obj, vs, target, mapping
 
@@ -196,8 +200,21 @@ class Manager(AbstractManager):
             self, chains: Chain | ChainList, calculator: CalcT, *, missing: bool = True,
             seq_name: str = SeqNames.seq1, map_name: t.Optional[str] = None, level: int | None = None,
             id_contains: str | None = None, obj_type: abc.Sequence[str] | str | None = None
-    ) -> t.NoReturn:
-        pass
+    ) -> tuple[list[tuple[CT, VT, t.Any]], list[tuple[CT, VT, str]]]:
+        staged_seqs, staged_strs = self.stage_calculations(
+            chains, missing=missing, seq_name=seq_name, map_name=map_name,
+            level=level, id_contains=id_contains, obj_type=obj_type)
+        # element = (object, variable, is_calculated, result)
+        calculated = chain.from_iterable(
+            ((obj, v, *calculator(target, v, mapping)) for v in vs)
+            for obj, vs, target, mapping in chain(staged_seqs, staged_strs))
+
+        failures, successes = map(lambda xs: [(x[0], x[1], x[3]) for x in xs],
+                                  partition(lambda x: x[2], calculated))
+        for obj, v, res in successes:
+            obj.variables[v] = res
+
+        return successes, failures
 
 
 if __name__ == '__main__':

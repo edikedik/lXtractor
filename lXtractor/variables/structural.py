@@ -241,15 +241,15 @@ class Dihedral(StructureVariable):
 class PseudoDihedral(Dihedral):
     __slots__ = ()
 
-    def __init__(self, pos1: int, pos2: int, pos3: int, pos4: int):
+    def __init__(self, p1: int, p2: int, p3: int, p4: int):
         super().__init__(
-            pos1, pos2, pos3, pos4,
+            p1, p2, p3, p4,
             'CA', 'CA', 'CA', 'CA',
             name='Pseudo Dihedral')
 
 
 class Phi(Dihedral):
-    __slots__ = ()
+    __slots__ = ('pos', )
 
     def __init__(self, pos: int):
         super().__init__(
@@ -259,7 +259,7 @@ class Phi(Dihedral):
 
 
 class Psi(Dihedral):
-    __slots__ = ()
+    __slots__ = ('pos', )
 
     def __init__(self, pos: int):
         super().__init__(
@@ -269,7 +269,7 @@ class Psi(Dihedral):
 
 
 class Omega(Dihedral):
-    __slots__ = ()
+    __slots__ = ('pos', )
 
     def __init__(self, pos: int):
         super().__init__(
@@ -279,7 +279,7 @@ class Omega(Dihedral):
 
 
 class CompositeDihedral(StructureVariable):
-    __slots__ = ('pos',)
+    __slots__ = ('pos', )
 
     def __init__(self, pos: int):
         self.pos = pos

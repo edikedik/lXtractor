@@ -53,8 +53,9 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
             return v
 
         init_params = inspect.signature(self.__init__).parameters
-        args = ','.join(f'{k}={parse_value(v)}'
-                        for k, v in vars(self).items() if k in init_params)
+        args = ','.join(map(lambda x: f'{x}={parse_value(getattr(self, x))}', init_params))
+        # args = ','.join(f'{k}={parse_value(v)}'
+        #                 for k, v in vars(self).items() if k in init_params)
         return f'{self.__class__.__name__}({args})'
 
     @property
@@ -95,6 +96,8 @@ class StructureVariable(AbstractVariable[bst.AtomArray, RT]):
         raise NotImplementedError
 
 
+# TODO: sequence variable should accept any sequence.
+# Manager should allow to pulling sequence annotations by map_name
 class SequenceVariable(AbstractVariable[str, RT]):
     """
     A type of variable whose :meth:`calculate` method requires protein sequence.

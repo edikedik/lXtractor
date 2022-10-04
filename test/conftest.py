@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,8 @@ import pytest
 from lXtractor.core.chain import ChainList, ChainStructure
 from lXtractor.core.structure import GenericStructure
 from lXtractor.util.seq import read_fasta
+from lXtractor.variables.sequential import SeqEl
+from lXtractor.variables.structural import Dist, PseudoDihedral
 from test.common import sample_chain
 
 DATA = Path(__file__).parent / 'data'
@@ -87,9 +90,19 @@ def simple_fasta_path() -> Path:
 
 
 @pytest.fixture(scope='module')
-def sample_chain_list(simple_structure) -> ChainList:
+def _sample_chain_list(simple_structure) -> ChainList:
     chain_str = ChainStructure.from_structure(simple_structure)
     return ChainList([
         sample_chain(prefix='c', structure=chain_str),
         sample_chain(prefix='k', structure=chain_str)
     ])
+
+
+@pytest.fixture(scope='function')
+def sample_chain_list(_sample_chain_list) -> ChainList:
+    return deepcopy(_sample_chain_list)
+
+
+@pytest.fixture(scope='module')
+def simple_chain_variables() -> tuple[PseudoDihedral, Dist, SeqEl]:
+    return PseudoDihedral(1, 2, 3, 4), Dist(1, 40, 'CB', 'CB'), SeqEl(1)
