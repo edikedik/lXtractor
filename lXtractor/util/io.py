@@ -5,6 +5,7 @@ import subprocess as sp
 import sys
 import typing as t
 import urllib
+from collections import abc
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from os import PathLike
 from pathlib import Path
@@ -20,6 +21,7 @@ from tqdm.auto import tqdm
 from lXtractor.core.base import _Fetcher, _Getter
 
 T = t.TypeVar('T')
+V = t.TypeVar('V')
 LOGGER = logging.getLogger(__name__)
 
 
@@ -50,21 +52,23 @@ def download_to_file(
         fname = fname or url.split('/')[-1]
         fpath = root_dir / fname
     if not fpath.parent.exists():
-        raise ValueError(
-            f'Directory {fpath.parent} must exist')
+        raise ValueError(f'Directory {fpath.parent} must exist')
     if url.startswith('ftp'):
         with urllib.request.urlopen(url) as r, fpath.open('wb') as f:
             copyfileobj(r, f)
     else:
-        with requests.get(url, stream=True) as r:
-            with fpath.open('wb') as f:
-                copyfileobj(r.raw, f)
+        text = download_text(url, decode=True)
+        with fpath.open('w') as f:
+            print(text, file=f)
+        # with requests.get(url, stream=True) as r:
+        #     with fpath.open('wb') as f:
+        #         copyfileobj(r.raw, f)
     return fpath
 
 
 def fetch_iterable(
-        it: t.Iterable[str],
-        fetcher: t.Callable[[t.Iterable[str]], T],
+        it: V,
+        fetcher: t.Callable[[V], T],
         chunk_size: int = 100,
         num_threads: t.Optional[int] = None,
         verbose: bool = False,
@@ -84,7 +88,7 @@ def fetch_iterable(
     with ThreadPoolExecutor(num_threads) as executor:
         futures = as_completed([executor.submit(fetcher, c) for c in chunks])
         if verbose:
-            futures = tqdm(futures, desc='Fetching chunks', total=num_chunks)
+            futures = tqdm(futures, desc=f'Fetching {chunk_size}-sized chunks', total=num_chunks)
         for i, future in enumerate(futures):
             try:
                 results.append(future.result())
@@ -97,20 +101,18 @@ def fetch_iterable(
 
 
 def try_fetching_until(
-        it: t.Iterable[str],
-        fetcher: _Fetcher,
-        get_remaining: _Getter,
+        it: V,
+        fetcher: abc.Callable[V, T],
+        get_remaining: abc.Callable[[T, V], V],
         max_trials: int,
-        desc: t.Optional[str] = None,
-) -> t.Tuple[t.List[t.List[T]], t.Sequence[str]]:
+        verbose: bool = False,
+) -> t.Tuple[list[T], V]:
     current_chunks = []
     remaining = list(it)
     trial = 1
-    bar = tqdm(desc=desc, total=max_trials, position=0, leave=True) if desc else None
+    bar = (tqdm(desc='Fetching trials', total=max_trials, position=0, leave=True)
+           if verbose else None)
     while remaining and trial <= max_trials:
-        if desc is not None:
-            chunk_sizes = [len(c) for c in current_chunks]
-            LOGGER.debug(f'{desc},trial={trial},chunk_sizes={chunk_sizes}')
         fetched = fetcher(remaining)
         if len(fetched):
             current_chunks.append(fetched)

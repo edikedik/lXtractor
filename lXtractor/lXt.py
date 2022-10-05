@@ -21,7 +21,7 @@ from lXtractor.core.alignment import Alignment
 from lXtractor.core.base import AminoAcidDict
 from lXtractor.core.exceptions import MissingData, FormatError, FailedCalculation
 from lXtractor.core.config import Sep
-from lXtractor.ext.pdb import PDB, _wrap_raw_pdb
+from lXtractor.ext.pdb import PDB
 from lXtractor.core.chain import Chain
 from lXtractor.ext.sifts import SIFTS
 from lXtractor.ext.uniprot import UniProt

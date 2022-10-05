@@ -6722,3 +6722,4 @@ _pdbx_entity_nonpoly.comp_id
 3 GLYCEROL                                                                                                 GOL 
 4 water                                                                                                    HOH 
 # 
+
