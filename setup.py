@@ -11,11 +11,11 @@ setup(
     version='0.1',
     author='Ivan Reveguk',
     author_email='ivan.reveguk@polytechnique.edu',
-    description="Alignment-based patterns' extraction",
+    description="Macromolecular feature extraction framework",
     long_description=README,
     long_description_content_type="text/markdown",
     classifiers=[
-        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.10",
     ],
     python_requires='>=3.8',
     # install_requires=[
@@ -32,7 +32,7 @@ setup(
     # ],
     install_requires=[
         'biopython',
-        'ray',
+        # 'ray',
         'numpy',
         'pandas',
         'more_itertools',

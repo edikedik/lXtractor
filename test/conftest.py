@@ -58,6 +58,13 @@ def human_src_seq_path() -> Path:
 
 
 @pytest.fixture(scope='module')
+def pkinase_hmm_path() -> Path:
+    path = DATA / 'Pkinase.hmm'
+    assert path.exists()
+    return path
+
+
+@pytest.fixture(scope='module')
 def simple_structure(simple_structure_path) -> GenericStructure:
     return GenericStructure.read(simple_structure_path)
 
