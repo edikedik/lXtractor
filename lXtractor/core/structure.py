@@ -38,7 +38,11 @@ class GenericStructure(AbstractStructure):
         mapping = AminoAcidDict()
         for r in bst.residue_iter(self.array):
             atom = r[0]
-            yield mapping[atom.res_name], atom.res_name, atom.res_id
+            try:
+                one_letter_code = mapping.three21[atom.res_name]
+            except KeyError:
+                one_letter_code = 'X'
+            yield one_letter_code, atom.res_name, atom.res_id
 
     def split_chains(self, *, copy: bool = True) -> abc.Iterator[GenericStructure]:
         chains = (self.__class__(a.copy() if copy else a, self.pdb_id)
