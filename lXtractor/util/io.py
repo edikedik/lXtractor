@@ -13,12 +13,10 @@ from shutil import copyfileobj
 from time import sleep
 
 import pandas as pd
-import ray
+# import ray
 import requests
 from more_itertools import divide
 from tqdm.auto import tqdm
-
-from lXtractor.core.base import _Fetcher, _Getter
 
 T = t.TypeVar('T')
 V = t.TypeVar('V')

@@ -25,10 +25,6 @@ LOGGER = logging.getLogger(__name__)
 
 
 class PDB:
-    """
-    An interface to fetch PDB structures (in PDB format) and process the results.
-    """
-
     def __init__(
             self, pdb_dir: Path, max_trials: int = 3, num_threads: t.Optional[int] = None,
             meta_fields: t.Optional[t.Tuple[str, ...]] = META_FIELDS,

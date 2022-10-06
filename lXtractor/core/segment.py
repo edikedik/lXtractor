@@ -112,17 +112,14 @@ class Segment(abc.Sequence):
         self.end -= idx
         return self
 
-    def _validate_seq(self, seq: t.Sequence[t.Any]):
-        if len(seq) != len(self):
-            raise LengthMismatch(
-                f"Len(seq)={len(seq)} doesn't match the segment's length {len(self)}")
-
     def _setup_and_validate(self):
         if self.start > self.end:
             raise ValueError(f'Invalid boundaries {self.start}, {self.end}')
 
-        for k, v in self._seqs.items():
-            self._validate_seq(v)
+        for k, seq in self._seqs.items():
+            if len(seq) != len(self):
+                raise LengthMismatch(
+                    f"Len({k})={len(seq)} doesn't match the segment's length {len(self)}")
 
     def add_seq(self, name: str, seq: t.Sequence[t.Any]):
         if name not in self:

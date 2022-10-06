@@ -10,6 +10,10 @@ from lXtractor.core.chain import ChainSequence
 
 
 class PyHMMer:
+    """
+    A basis pyhmmer interface aimed at domain extraction.
+    It works with a single hmm model and pipeline instance.
+    """
     def __init__(self, hmm: HMMFile | Path | str, **kwargs):
         match hmm:
             case HMMFile():
@@ -66,7 +70,6 @@ class PyHMMer:
             seq = seqs_by_id[hit.accession.decode('utf-8')]
             for dom in hit.domains:
                 aln = dom.alignment
-                print(aln)
                 sub = seq.spawn_child(aln.target_from, aln.target_to, **kwargs)
                 num = [hmm_i for seq_i, hmm_i in enumerate_numbering(aln) if seq_i]
                 sub.add_seq(map_name, num)
