@@ -32,8 +32,26 @@ LOGGER = logging.getLogger(__name__)
 # -> find the closest parent with the structure having ID matching such of the assigned variable
 
 
+def topo_iter(
+        start_obj: T, iterator: abc.Callable[[T], abc.Iterator[T]]
+) -> abc.Generator[list[T]]:
+    def get_level(cs: abc.Iterable[T]) -> abc.Iterator[T]:
+        return chain.from_iterable(map(iter, cs))
+
+    curr_level = list(iterator(start_obj))
+
+    while True:
+        yield curr_level
+        curr_level = list(get_level(curr_level))
+        if not curr_level:
+            return
+
+
 class ChainSequence(Segment):
     __slots__ = ()
+
+    def iter_children(self) -> abc.Generator[list[ChainSequence]]:
+        return topo_iter(self, lambda x: iter(x.children.values()))
 
     @property
     def fields(self) -> tuple[str, ...]:
@@ -114,6 +132,22 @@ class ChainSequence(Segment):
 
         return mapped_numbering
 
+    def map_boundaries(
+            self, start: Ord, end: Ord, map_name: str, closest: bool = False
+    ) -> tuple[namedtuple, namedtuple]:
+        if closest:
+            _start, _end = starmap(
+                lambda c, r: self.get_closest(map_name, c, reverse=r),
+                [(start, False), (end, True)]
+            )
+            if _start is None or _end is None:
+                raise AmbiguousMapping(
+                    f"Failed mapping {(start, end)}->{(_start, _end)} using map {map_name}")
+        else:
+            _start, _end = self.get_item(map_name, start), self.get_item(map_name, end)
+
+        return _start, _end
+
     @lru_cache()
     def get_map(self, key: str) -> dict[t.Any, namedtuple]:
         return {x: it for x, it in zip(self[key], iter(self))}
@@ -156,8 +190,15 @@ class ChainSequence(Segment):
 
     def spawn_child(
             self, start: int, end: int, *,
+            map_from: t.Optional[str] = None,
+            map_closest: bool = False,
             deep_copy: bool = False, keep: bool = True
     ) -> ChainSequence:
+        if map_from:
+            start, end = map(
+                lambda x: x._asdict()['i'],
+                self.map_boundaries(start, end, map_from, map_closest))
+
         child = self.sub(start, end, deep_copy=deep_copy, handle_mode='self')
         if keep:
             self.children[child.id] = child
@@ -260,18 +301,16 @@ class ChainSequence(Segment):
             if self.variables:
                 self.variables.write(base_dir / dump_names.variables)
 
-    def build_tree(self):
-        raise NotImplementedError
-
 
 class ChainStructure:
-    __slots__ = ('pdb', 'seq', 'parent', 'variables')
+    __slots__ = ('pdb', 'seq', 'parent', 'variables', 'children')
 
     def __init__(
             self, pdb_id: str, pdb_chain: str,
             pdb_structure: t.Optional[GenericStructure] = None,
             seq: t.Optional[ChainSequence] = None,
             parent: t.Optional[ChainStructure] = None,
+            children: t.Optional[dict[str, ChainStructure]] = None,
             variables: t.Optional[Variables] = None,
     ):
         self.pdb = PDB_Chain(pdb_id, pdb_chain, pdb_structure)
@@ -285,12 +324,16 @@ class ChainStructure:
             self.seq = seq
         self.parent = parent
         self.variables = variables or Variables()
+        self.children = children or {}
 
     def __str__(self) -> str:
         return self.id
 
     def __repr__(self) -> str:
         return self.id
+
+    def iter_children(self) -> abc.Generator[list[ChainStructure]]:
+        return topo_iter(self, lambda x: iter(x.children.values()))
 
     @property
     def id(self) -> str:
@@ -312,35 +355,30 @@ class ChainStructure:
 
     def spawn_child(
             self, start: int, end: int, *,
-            map_name: t.Optional[str] = None, deep_copy: bool = False
+            map_from: t.Optional[str] = None,
+            map_closest: bool = True,
+            keep_seq_child: bool = False,
+            keep: bool = True,
+            deep_copy: bool = False
     ) -> ChainStructure:
 
         if start > end:
             raise ValueError(f'Invalid boundaries {start, end}')
 
-        if map_name:
-            if map_name not in self.seq:
-                raise MissingData(f'Missing mapping {map_name} in {self.seq}')
-
-            _start, _end = starmap(
-                lambda c, r: self.seq.get_closest(map_name, c, reverse=r),
-                [(start, False), (end, True)]
-            )
-            if _start is None or _end is None:
-                raise AmbiguousMapping(
-                    f"Couldn't map {(start, end)}->{(_start, _end)} from numbering {map_name} "
-                    f"numbering to the current structure's numbering")
-            _start, _end = map(lambda x: x._asdict()[SeqNames.enum], [_start, _end])
-        else:
-            _start, _end = start, end
-
-        seq, structure = None, None
+        seq = self.seq.spawn_child(
+            start, end, map_from=map_from, map_closest=map_closest,
+            deep_copy=deep_copy, keep=keep_seq_child
+        )
+        structure = None
         if self.pdb.structure:
-            structure = self.pdb.structure.sub_structure(_start, _end)
-        if self.seq:
-            seq = self.seq.sub(_start, _end, deep_copy=deep_copy)
+            enum_field = seq.field_names().enum
+            start, end = seq[enum_field][0], seq[enum_field][-1]
+            structure = self.pdb.structure.sub_structure(start, end)
 
-        return ChainStructure(self.pdb.id, self.pdb.chain, structure, seq, self, None)
+        child = ChainStructure(self.pdb.id, self.pdb.chain, structure, seq, self)
+        if keep:
+            self.children[child.id] = child
+        return child
 
     @classmethod
     def read(
@@ -385,15 +423,17 @@ class Chain(AbstractChain):
     A mutable container, holding data associated with a singe (full) protein chain.
     """
 
-    __slots__ = ('seq', 'structures', 'children')
+    __slots__ = ('seq', 'structures', 'parent', 'children')
 
     def __init__(
             self, seq: ChainSequence,
             structures: t.Optional[t.List[ChainStructure]] = None,
+            parent: t.Optional[Chain] = None,
             children: t.Optional[t.Dict[str, Chain]] = None,
     ):
         self.seq = seq
         self.structures = structures or []
+        self.parent = parent
         self.children = children or {}
 
     @property
@@ -417,20 +457,8 @@ class Chain(AbstractChain):
     def __contains__(self, item: Chain) -> bool:
         return item in self.children
 
-    def __iter__(self) -> abc.Iterator[Chain]:
-        yield from self.children.values()
-
     def iter_children(self) -> abc.Generator[list[CT]]:
-        def get_level(cs: abc.Iterable[T]) -> abc.Iterator[T]:
-            return chain.from_iterable(map(iter, cs))
-
-        curr_level = list(iter(self))
-
-        while True:
-            yield curr_level
-            curr_level = list(get_level(curr_level))
-            if not curr_level:
-                return
+        return topo_iter(self, lambda x: iter(x.children.values()))
 
     @classmethod
     def from_seq(
@@ -487,28 +515,44 @@ class Chain(AbstractChain):
 
     def spawn_child(
             self, start: int, end: int, name: None | str = None, *,
-            keep: bool = True, seq_deep_copy: bool = False,
-            str_deep_copy: bool = False,
             subset_structures: bool = True,
-            map_name: t.Optional[str] = None,
+            tolerate_failure: bool = False,
+            keep: bool = True,
+            seq_deep_copy: bool = False,
+            seq_map_from: t.Optional[str] = None,
+            seq_map_closest: bool = True,
+            seq_keep_child: bool = False,
+            str_deep_copy: bool = False,
+            str_map_from: t.Optional[str] = None,
+            str_map_closest: bool = True,
+            str_keep_child: bool = False,
+            str_seq_keep_child: bool = False,
     ) -> Chain:
 
         def subset_structure(structure: ChainStructure) -> t.Optional[ChainStructure]:
             try:
                 return structure.spawn_child(
-                    start, end, map_name=map_name, deep_copy=str_deep_copy)
+                    start, end, map_from=str_map_from, map_closest=str_map_closest,
+                    deep_copy=str_deep_copy, keep=str_keep_child, keep_seq_child=str_seq_keep_child)
             except (AmbiguousMapping, MissingData) as e:
-                LOGGER.warning(
-                    f'Failed to spawn substructure using boundaries {start, end} due to {e}')
+                msg = f'Failed to spawn substructure using boundaries {start, end} due to {e}'
+                if not tolerate_failure:
+                    raise e
+                LOGGER.warning(msg)
                 return None
 
-        seq = self.seq.spawn_child(start, end, deep_copy=seq_deep_copy)
-        if name is None:
-            name = seq.name
+        seq = self.seq.spawn_child(
+            start, end, map_from=seq_map_from, map_closest=seq_map_closest,
+            deep_copy=seq_deep_copy, keep=seq_keep_child)
 
-        structures = (list(filter(bool, map(subset_structure, self.structures)))
-                      if subset_structures else None)
-        child = Chain(seq, structures)
+        if name is None:
+            name = seq.id
+
+        structures = None
+        if subset_structures:
+            structures = list(filter(bool, map(subset_structure, self.structures)))
+
+        child = Chain(seq, structures, self)
         if keep:
             self.children[name] = child
         return child

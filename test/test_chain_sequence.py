@@ -4,7 +4,7 @@ import pytest
 
 from lXtractor import Alignment
 from lXtractor.core.config import SeqNames
-from lXtractor.core.exceptions import MissingData
+from lXtractor.core.exceptions import MissingData, AmbiguousMapping
 from lXtractor.core.chain import ChainSequence
 from lXtractor.util.seq import read_fasta
 
@@ -71,3 +71,27 @@ def test_map(simple_fasta_path):
 
     mapping = s2.map_numbering(aln, save=True, name='map_aln')
     assert mapping == [3, 4, 5, 6, 7]
+
+
+def test_map_boundaries(seq):
+    fields, s = seq
+    s.add_seq('map_other', [10, 11, 12, 13, 14])
+    with pytest.raises(KeyError):
+        _, _ = s.map_boundaries(9, 10, 'map_other')
+    start, end = s.map_boundaries(9, 10, 'map_other', closest=True)
+    assert start.i == end.i == 1
+    start, end = s.map_boundaries(-100, 100, 'map_other', closest=True)
+    assert start.map_other == 10
+    assert end.map_other == 14
+
+
+def test_spawn(seq):
+    fields, s = seq
+    s.add_seq('map_other', [10, 11, 12, 13, 14])
+    child = s.spawn_child(1, 2)
+    assert child.id in s.children
+    assert len(child) == 2
+    assert child.seq1 == 'AB'
+    child = s.spawn_child(9, 10, map_from='map_other', map_closest=True)
+    assert len(child) == 1
+    assert child.seq1 == 'A'

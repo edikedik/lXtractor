@@ -47,15 +47,18 @@ def test_spawn(simple_structure):
     with pytest.raises(NoOverlap):
         s.spawn_child(200, 300)
 
-    # The spawned child may contain a single residue
-    sub = s.spawn_child(1, 1)
+    sub = s.spawn_child(1, 1, keep=True, keep_seq_child=False)
+    assert sub.id in s.children
+    assert not sub.seq.children
     assert len(sub.seq) == 1
 
     # Using the mapping
     s.seq.add_seq('map_something', [x.i + 1000 for x in s.seq])
-    sub = s.spawn_child(1000, 1100, map_name='map_something')
+    sub = s.spawn_child(1000, 1100, map_from='map_something')
     assert len(sub.seq) == 100
 
     # Should find the closest mapped boundary and give the same result
-    sub = s.spawn_child(1, 1100, map_name='map_something')
+    with pytest.raises(KeyError):
+        sub = s.spawn_child(1, 1100, map_from='map_something', map_closest=False)
+    sub = s.spawn_child(1, 1100, map_from='map_something', map_closest=True)
     assert len(sub.seq) == 100

@@ -83,7 +83,7 @@ class Segment(abc.Sequence):
             raise TypeError(f'Unsupported idx type {type(idx)}')
 
     def __setitem__(self, key: str, value: t.Sequence[t.Any]) -> None:
-        self._validate_seq(value)
+        self._validate_seq(key, value)
         self._seqs[key] = value
 
     def __reversed__(self) -> abc.Iterator[tuple] | abc.Iterator[namedtuple]:
@@ -112,14 +112,18 @@ class Segment(abc.Sequence):
         self.end -= idx
         return self
 
+    def _validate_seq(self, name: str, seq: t.Sequence):
+        if len(seq) != len(self):
+            raise LengthMismatch(
+                f"Len({name})={len(seq)} doesn't match the segment's length {len(self)}")
+
     def _setup_and_validate(self):
         if self.start > self.end:
             raise ValueError(f'Invalid boundaries {self.start}, {self.end}')
 
         for k, seq in self._seqs.items():
             if len(seq) != len(self):
-                raise LengthMismatch(
-                    f"Len({k})={len(seq)} doesn't match the segment's length {len(self)}")
+                self._validate_seq(k, seq)
 
     def add_seq(self, name: str, seq: t.Sequence[t.Any]):
         if name not in self:

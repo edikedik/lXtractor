@@ -2,7 +2,7 @@ import pytest
 
 from lXtractor.core.chain import Chain, ChainStructure
 from lXtractor.core.config import Sep, SeqNames
-from lXtractor.core.exceptions import NoOverlap
+from lXtractor.core.exceptions import NoOverlap, AmbiguousMapping
 from test.common import sample_chain
 
 
@@ -32,34 +32,49 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
 
     # should work on any full protein chain
     child = p.spawn_child(1, 2, keep=False, subset_structures=False)
+    assert not p.children
+    assert not p.seq.children
+    assert all(not s.children for s in p.structures)
     assert len(child.seq) == 2
     assert child.seq.seq1 == 'MG'
     assert len(child.structures) == 0
 
+    # Using segment's boundaries
     with pytest.raises(NoOverlap):
-        _ = p.spawn_child(1, 4, 'child', keep=False, subset_structures=True)
-
-    # The structure starts from 256 -> five residues must be extracted
-    child = p.spawn_child(
-        1, 260, 'child', map_name=SeqNames.map_canonical)
+        _ = p.spawn_child(1, 280, 'child', keep=True)
+    child = p.spawn_child(1, 260, 'child', keep=True)
     assert len(child.seq) == 260
     assert len(child.structures) == 1
-    assert len(child.structures[0].seq) == 5
+    assert len(child.structures[0].seq) == 260
+    assert 'child' in p.children
 
-    child_of_child = child.spawn_child(
-        256, 260, 'sub_child', map_name=SeqNames.map_canonical)
-    assert len(child_of_child.seq) == 5
-    assert child_of_child.seq.start == 256
-    assert child_of_child.seq.end == 260
-
-    # Use a human sequence and chicken structure so their numberings don't match
-    p = Chain.from_seq(human_src_seq)
-    p.add_structure(chain_a, map_name=SeqNames.map_canonical)
+    # Using canonical seq numbering
+    # +-----------------------|----|------------+
+    # 1                       256  260
+    #                         +----|------------+
+    #                         1    5
     child = p.spawn_child(
-        256, 260, 'child', map_name=SeqNames.map_canonical)
-    assert len(child.seq) == 5
-    assert len(child.structures) == 1
-    assert len(child.structures[0].seq) == 5
+        1, 260, str_map_from=SeqNames.map_canonical, str_map_closest=True)
+    assert len(child.seq) == 260
+    s = child.structures[0]
+    assert len(s.seq) == 5
+    assert s.seq.start == 1
+    assert s.seq.end == 5
+    assert child.seq.seq1[-5:] == s.seq.seq1
+    s_num = s.seq[SeqNames.map_canonical]
+    assert s_num[0] == 256
+    assert s_num[-1] == 260
+
+    child_of_child = child.spawn_child(256, 260, str_map_from=SeqNames.map_canonical)
+    assert child_of_child.id in p.children[child.id].children
+
+    with pytest.raises(KeyError):
+        _ = p.spawn_child(1, 4, 'child', keep=False, str_map_from=SeqNames.enum,
+                          str_map_closest=False)
+
+    with pytest.raises(AmbiguousMapping):
+        _ = p.spawn_child(1, 4, 'child', keep=False, str_map_from=SeqNames.enum,
+                          str_map_closest=True)
 
 
 def test_iter(chicken_src_str):

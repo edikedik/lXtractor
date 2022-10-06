@@ -6,7 +6,7 @@ from pathlib import Path
 from pyhmmer.easel import DigitalSequence, TextSequence
 from pyhmmer.plan7 import HMMFile, Pipeline, TopHits, Alignment
 
-from lXtractor.core.chain import ChainSequence
+from lXtractor.core.chain import ChainSequence, SS, ChainStructure
 
 
 class PyHMMer:
@@ -28,21 +28,23 @@ class PyHMMer:
         self.pipeline = Pipeline(self.hmm.alphabet, **kwargs)
         return self.pipeline
 
-    def convert_seq(self, seq: ChainSequence | str) -> DigitalSequence:
-        match seq:
+    def convert_seq(self, obj: SS | str) -> DigitalSequence:
+        match obj:
             case str():
-                accession, name, text = hash(seq), None, seq
+                accession, name, text = hash(obj), None, obj
             case ChainSequence():
-                accession, name, text = seq.id, seq.name, seq.seq1
+                accession, name, text = obj.id, obj.name, obj.seq1
+            case ChainStructure():
+                accession, name, text = obj.id, obj.id, obj.seq.seq1
             case _:
-                raise TypeError(f'Unsupported sequence type {type(seq)}')
+                raise TypeError(f'Unsupported sequence type {type(obj)}')
         return TextSequence(
             sequence=text, name=bytes(name, encoding='utf-8'),
             accession=bytes(accession, encoding='utf-8')
         ).digitize(self.hmm.alphabet)
 
     def search(
-            self, seqs: abc.Iterable[str | ChainSequence | DigitalSequence]
+            self, seqs: abc.Iterable[str | SS | DigitalSequence]
     ) -> TopHits:
         if self.pipeline is None:
             self.init_pipeline()
@@ -53,30 +55,34 @@ class PyHMMer:
         return self.hits
 
     def annotate(
-            self, seqs: abc.Iterable[ChainSequence] | ChainSequence,
-            map_name: t.Optional[str] = None, **kwargs
-    ) -> abc.Generator[ChainSequence, None, None]:
+            self, objs: abc.Iterable[SS] | SS,
+            new_map_name: t.Optional[str] = None, **kwargs
+    ) -> abc.Generator[SS, None, None]:
 
-        if isinstance(seqs, ChainSequence):
-            seqs = [seqs]
-        if map_name is None:
-            map_name = self.hmm.accession.decode('utf-8')
-        seqs_by_id: dict[str, ChainSequence] = {s.id: s for i, s in enumerate(seqs, start=1)}
+        if not isinstance(objs, abc.Iterable):
+            objs = [objs]
 
-        if self.hits is None:
-            self.search(seqs_by_id.values())
+        if new_map_name is None:
+            new_map_name = self.hmm.accession.decode('utf-8')
+
+        objs_by_id: dict[str, SS] = {s.id: s for s in objs}
+        print(objs_by_id)
+
+        # if self.hits is None:
+        self.search(objs_by_id.values())
 
         for hit in self.hits:
-            seq = seqs_by_id[hit.accession.decode('utf-8')]
+            obj = objs_by_id[hit.accession.decode('utf-8')]
             for dom in hit.domains:
                 aln = dom.alignment
-                sub = seq.spawn_child(aln.target_from, aln.target_to, **kwargs)
+                sub = obj.spawn_child(aln.target_from, aln.target_to, **kwargs)
                 num = [hmm_i for seq_i, hmm_i in enumerate_numbering(aln) if seq_i]
-                sub.add_seq(map_name, num)
-                sub.name = map_name
-                sub.meta[f'{map_name}_pvalue'] = dom.pvalue
-                sub.meta[f'{map_name}_score'] = dom.score
-                sub.meta[f'{map_name}_bias'] = dom.bias
+                seq = sub.seq if isinstance(obj, ChainStructure) else sub
+                seq.add_seq(new_map_name, num)
+                seq.name = new_map_name
+                seq.meta[f'{new_map_name}_pvalue'] = dom.pvalue
+                seq.meta[f'{new_map_name}_score'] = dom.score
+                seq.meta[f'{new_map_name}_bias'] = dom.bias
                 yield sub
 
 
