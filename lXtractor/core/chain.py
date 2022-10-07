@@ -568,26 +568,34 @@ class ChainList(abc.MutableSequence[CT]):
 
     def __init__(self, chains: abc.Iterable[CT]):
         self._chains: list[CT] = list(chains)
-        types = set(map(type, self._chains))
-        if len(types) > 1:
-            raise TypeError(f'ChainList elements must have single type; got {types}')
-
-        if len(self._chains) < 1:
-            raise ValueError('Must contain at least one element')
-
-        self._type = self._infer_type(self._chains[0])
+        self._type = None
+        self._check_match_and_set_type(self._infer_type(self._chains))
 
     @staticmethod
-    def _infer_type(x: t.Any) -> str:
-        match x:
-            case Chain():
-                return 'chain'
-            case ChainSequence():
-                return 'seq'
-            case ChainStructure():
-                return 'str'
-            case _:
-                raise TypeError(f'Unsupported type {x}')
+    def _infer_type(objs: abc.Sequence[T]) -> t.Optional[str]:
+        types = set(map(type, objs))
+        if len(types) > 1:
+            raise TypeError(f'ChainList elements must have single type; got {types}')
+        if objs:
+            match objs[0]:
+                case Chain():
+                    return 'chain'
+                case ChainSequence():
+                    return 'seq'
+                case ChainStructure():
+                    return 'str'
+                case _:
+                    raise TypeError(f'Unsupported type {objs[0]}')
+        else:
+            return None
+
+    def _check_match_and_set_type(self, x: str) -> t.NoReturn:
+        if self._type is not None:
+            if x != self._type:
+                raise TypeError(
+                    f"Supplied type doesn't match existing type {self._type}")
+        else:
+            self._type = x
 
     def __len__(self) -> int:
         return len(self._chains)
@@ -610,11 +618,17 @@ class ChainList(abc.MutableSequence[CT]):
                 raise TypeError(f'Incorrect index type {type(index)}')
 
     def __setitem__(self, index: int, value: CT) -> t.NoReturn:
-        _ = self._infer_type(value)
+        _type = self._infer_type([value])
+        if len(self) == 1 and index == 0:
+            self._type = _type
+        else:
+            self._check_match_and_set_type(_type)
         self._chains.__setitem__(index, value)
 
     def __delitem__(self, index: int) -> t.NoReturn:
         self._chains.__delitem__(index)
+        if len(self) == 0:
+            self._type = None
 
     def __contains__(self, item: str | CT) -> bool:
         match item:
@@ -626,8 +640,17 @@ class ChainList(abc.MutableSequence[CT]):
             case _:
                 return False
 
-    def __add__(self, other: ChainList):
-        return ChainList(self._chains + other._chains)
+    def __add__(self, other: ChainList | abc.Iterable):
+        match other:
+            case abc.Iterable():
+                return ChainList(self._chains + list(other))
+            case ChainList():
+                return ChainList(self._chains + other._chains)
+            case _:
+                raise TypeError(f'Unsupported type {type(other)}')
+
+    def __repr__(self) -> str:
+        return self._chains.__repr__()
 
     def __iter__(self) -> abc.Iterator[CT]:
         return iter(self._chains)
@@ -636,7 +659,7 @@ class ChainList(abc.MutableSequence[CT]):
         return self._chains.index(value, start, stop)
 
     def insert(self, index: int, value: CT) -> t.NoReturn:
-        self._infer_type(value)
+        self._check_match_and_set_type(self._infer_type([value]))
         self._chains.insert(index, value)
 
     def iter_children(self) -> abc.Generator[ChainList[CT]]:
@@ -644,8 +667,11 @@ class ChainList(abc.MutableSequence[CT]):
         for level in levels:
             yield ChainList(list(chain.from_iterable(level)))
 
-    def collapse_children(self) -> ChainList[CT]:
-        return ChainList(list(chain.from_iterable(self.iter_children())))
+    def collapse_children(self) -> ChainList[CT] | list:
+        children = list(chain.from_iterable(self.iter_children()))
+        if children:
+            return ChainList(children)
+        return children
 
     def iter_sequences(self) -> abc.Iterator[ChainSequence]:
         match self._type:

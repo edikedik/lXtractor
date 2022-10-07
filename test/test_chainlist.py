@@ -15,9 +15,19 @@ def sequence() -> ChainSequence:
 
 
 def test_init(simple_structure, structure, sequence):
-
-    with pytest.raises(ValueError):
-        ChainList([])
+    cl = ChainList([])
+    assert len(cl) == 0
+    assert cl._type is None
+    cl.insert(0, sequence)
+    assert len(cl) == 1
+    assert cl._type == 'seq'
+    with pytest.raises(TypeError):
+        cl.insert(1, structure)
+    cl[0] = structure
+    assert cl._type == 'str'
+    cl.pop()
+    assert len(cl) == 0
+    assert cl._type is None
     with pytest.raises(TypeError):
         ChainList([1])
     with pytest.raises(TypeError):
@@ -45,6 +55,11 @@ def test_basic(sample_chain_list, sequence, structure):
         cl.insert(1, 1)
     with pytest.raises(TypeError):
         cl[0] = 1
+
+    cl += [structure]
+    assert len(cl) == 3
+    with pytest.raises(TypeError):
+        cl += [sequence]
 
     cl = sample_chain_list
     assert len(cl) == 2
