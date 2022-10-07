@@ -303,7 +303,7 @@ class CompositeDihedral(StructureVariable):
         dihedrals = self.get_dihedrals(self.p)
         for d in dihedrals:
             try:
-                res = d.calculate(array)
+                res = d.calculate(array, mapping)
                 break
             except FailedCalculation:
                 pass
