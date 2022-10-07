@@ -85,8 +85,6 @@ class ChainSequence(Segment):
         if SeqNames.seq3 not in self:
             d = AminoAcidDict()
             self[SeqNames.seq3] = [d[c] for c in self[SeqNames.seq1]]
-        if SeqNames.variables not in self.meta:
-            self.meta[SeqNames.variables] = {}
         if SeqNames.enum not in self._seqs:
             self[SeqNames.enum] = list(range(self.start, self.end + 1))
 
