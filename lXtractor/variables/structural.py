@@ -249,40 +249,43 @@ class PseudoDihedral(Dihedral):
 
 
 class Phi(Dihedral):
-    __slots__ = ('pos', )
+    __slots__ = ('p', )
 
-    def __init__(self, pos: int):
+    def __init__(self, p: int):
+        self.p = p
         super().__init__(
-            pos - 1, pos, pos, pos,
+            p - 1, p, p, p,
             'C', 'N', 'CA', 'C',
             name='Phi')
 
 
 class Psi(Dihedral):
-    __slots__ = ('pos', )
+    __slots__ = ('p', )
 
-    def __init__(self, pos: int):
+    def __init__(self, p: int):
+        self.p = p
         super().__init__(
-            pos, pos, pos, pos + 1,
+            p, p, p, p + 1,
             'N', 'CA', 'C', 'N',
             name='Psi')
 
 
 class Omega(Dihedral):
-    __slots__ = ('pos', )
+    __slots__ = ('p', )
 
-    def __init__(self, pos: int):
+    def __init__(self, p: int):
+        self.p = p
         super().__init__(
-            pos, pos, pos + 1, pos + 1,
+            p, p, p + 1, p + 1,
             'CA', 'C', 'N', 'CA',
             name='Omega')
 
 
 class CompositeDihedral(StructureVariable):
-    __slots__ = ('pos', )
+    __slots__ = ('p', )
 
-    def __init__(self, pos: int):
-        self.pos = pos
+    def __init__(self, p: int):
+        self.p = p
 
     @property
     def rtype(self) -> t.Type[float]:
@@ -297,7 +300,7 @@ class CompositeDihedral(StructureVariable):
             self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
     ) -> float:
         res = None
-        dihedrals = self.get_dihedrals(self.pos)
+        dihedrals = self.get_dihedrals(self.p)
         for d in dihedrals:
             try:
                 res = d.calculate(array)

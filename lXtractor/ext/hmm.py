@@ -66,7 +66,6 @@ class PyHMMer:
             new_map_name = self.hmm.accession.decode('utf-8')
 
         objs_by_id: dict[str, SS] = {s.id: s for s in objs}
-        print(objs_by_id)
 
         # if self.hits is None:
         self.search(objs_by_id.values())
