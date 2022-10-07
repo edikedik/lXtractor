@@ -6,18 +6,16 @@ import biotite.structure as bst
 import pandas as pd
 from more_itertools import nth, partition
 
-from lXtractor.core.chain import ChainList, Chain, SS, ChainSequence, ChainStructure, CT
+from lXtractor.core.chain import ChainList, SS, ChainSequence, ChainStructure, CT
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData
 from lXtractor.variables.base import AbstractManager, CalcT, VT, SequenceVariable, StructureVariable
 
 T = t.TypeVar('T')
 StagedSeq: t.TypeAlias = tuple[
-    ChainSequence, abc.Iterator[SequenceVariable],
-    abc.Iterable[T], abc.Mapping[int, int] | None]
+    ChainSequence, list[SequenceVariable], abc.Iterable[T], abc.Mapping[int, int] | None]
 StagedStr: t.TypeAlias = tuple[
-    ChainStructure, abc.Iterator[StructureVariable],
-    bst.AtomArray, abc.Mapping[int, int] | None]
+    ChainStructure, list[StructureVariable], bst.AtomArray, abc.Mapping[int, int] | None]
 
 
 class Manager(AbstractManager):
@@ -38,7 +36,7 @@ class Manager(AbstractManager):
             raise ValueError(f'Invalid object type {obj_type}')
 
     def _filter_objs(
-            self, chains: Chain | ChainList, level: int | None,
+            self, chains: CT | ChainList, level: int | None,
             id_contains: str | None, obj_type: str | abc.Sequence[str] | None,
     ) -> abc.Iterator[SS]:
 
@@ -49,8 +47,12 @@ class Manager(AbstractManager):
                 obj_type = list(self.valid_types)
         self._validate_obj_type(obj_type)
 
-        if isinstance(chains, Chain):
-            chains = ChainList([chains])
+        if not isinstance(chains, ChainList):
+            if not isinstance(chains, abc.Iterable):
+                chains = [chains]
+            else:
+                chains = list(chains)
+            chains = ChainList(chains)
         if level is None:
             chains = chains + chains.collapse_children()
         elif level == 0:
@@ -97,7 +99,7 @@ class Manager(AbstractManager):
         return None or structure.array
 
     def assign(
-            self, vs: abc.Sequence[VT], chains: Chain | ChainList, *,
+            self, vs: abc.Sequence[VT], chains: CT | ChainList, *,
             level: int | None = None, id_contains: str | None = None,
             obj_type: abc.Sequence[str] | str | None = None
     ) -> t.NoReturn:
@@ -115,7 +117,7 @@ class Manager(AbstractManager):
                 _assign(obj, str_vs)
 
     def remove(
-            self, chains: Chain | ChainList, vs: abc.Sequence[VT] | None = None, *,
+            self, chains: CT | ChainList, vs: abc.Sequence[VT] | None = None, *,
             level: int | None = None, id_contains: str | None = None,
             obj_type: abc.Sequence[str] | str | None = None
     ) -> t.NoReturn:
@@ -129,7 +131,7 @@ class Manager(AbstractManager):
                 obj.variables.pop(k)
 
     def reset(
-            self, chains: Chain | ChainList, vs: abc.Sequence[VT] | None = None, *,
+            self, chains: CT | ChainList, vs: abc.Sequence[VT] | None = None, *,
             level: int | None = None, id_contains: str | None = None,
             obj_type: abc.Sequence[str] | str | None = None
     ) -> t.NoReturn:
@@ -143,7 +145,7 @@ class Manager(AbstractManager):
                 obj.variables[k] = None
 
     def aggregate(
-            self, chains: Chain | ChainList, *, level: int | None = None,
+            self, chains: CT | ChainList, *, level: int | None = None,
             id_contains: str | None = None, obj_type: abc.Sequence[str] | str | None = None
     ) -> pd.DataFrame:
         def _get_vs(obj: SS):
@@ -157,7 +159,7 @@ class Manager(AbstractManager):
             columns=['ObjectID', 'ObjectType', 'VarID', 'VarResult', 'VarRType'])
 
     def stage_calculations(
-            self, chains: Chain | ChainList, *, missing: bool = True,
+            self, chains: CT | ChainList, *, missing: bool = True,
             seq_name: str = SeqNames.seq1, map_name: t.Optional[str] = None, level: int | None = None,
             id_contains: str | None = None, obj_type: abc.Sequence[str] | str | None = None
     ) -> tuple[abc.Iterator[StagedSeq], abc.Iterator[StagedStr]]:
@@ -197,7 +199,7 @@ class Manager(AbstractManager):
         return staged_seqs, staged_strs
 
     def calculate(
-            self, chains: Chain | ChainList, calculator: CalcT, *, missing: bool = True,
+            self, chains: CT | ChainList, calculator: CalcT, *, missing: bool = True,
             seq_name: str = SeqNames.seq1, map_name: t.Optional[str] = None, level: int | None = None,
             id_contains: str | None = None, obj_type: abc.Sequence[str] | str | None = None
     ) -> tuple[list[tuple[CT, VT, t.Any]], list[tuple[CT, VT, str]]]:
