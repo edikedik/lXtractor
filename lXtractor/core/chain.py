@@ -11,7 +11,7 @@ from pathlib import Path
 
 import biotite.structure as bst
 import pandas as pd
-from more_itertools import unzip, first_true, interleave_longest
+from more_itertools import unzip, first_true
 
 from lXtractor.core.alignment import Alignment
 from lXtractor.core.base import AminoAcidDict, AbstractChain, Ord, AlignMethod, SeqReader
@@ -404,12 +404,12 @@ class ChainStructure:
         return ChainStructure(pdb_id, chain_id, structure, seq, variables=variables)
 
     def write(
-            self, base_dir: Path, fmt: str = 'pdb',
+            self, base_dir: Path, fmt: str = 'cif',
             dump_names: DumpNames = DumpNames
     ) -> None:
-        if base_dir.name != dump_names.structures_dir:
-            base_dir /= dump_names.structures_dir
-        base_dir /= f'{self.pdb.id}{Sep.chain}{self.pdb.chain}'
+        # if base_dir.name != dump_names.structures_dir:
+        #     base_dir /= dump_names.structures_dir
+        base_dir /= self.id
         base_dir.mkdir(exist_ok=True, parents=True)
 
         self.seq.write(base_dir / dump_names.sequence)
@@ -558,18 +558,36 @@ class Chain(AbstractChain):
         return child
 
 
-CT = t.TypeVar('CT', bound=Chain)
+CT = t.TypeVar('CT', bound=Chain | ChainSequence | ChainStructure)  # "Chain" type
 SS = t.TypeVar('SS', bound=ChainSequence | ChainStructure)
 ST = t.TypeVar('ST', bound=Segment)
-SeqT = t.TypeVar('SeqT', bound=ChainSequence)
-StrT = t.TypeVar('StrT', bound=ChainStructure)
 
 
 class ChainList(abc.MutableSequence[CT]):
-    __slots__ = ('_chains',)
+    __slots__ = ('_chains', '_type')
 
-    def __init__(self, chains: abc.Iterable[Chain]):
-        self._chains: list[Chain] = list(chains)
+    def __init__(self, chains: abc.Iterable[CT]):
+        self._chains: list[CT] = list(chains)
+        types = set(map(type, self._chains))
+        if len(types) > 1:
+            raise TypeError(f'ChainList elements must have single type; got {types}')
+
+        if len(self._chains) < 1:
+            raise ValueError('Must contain at least one element')
+
+        self._type = self._infer_type(self._chains[0])
+
+    @staticmethod
+    def _infer_type(x: t.Any) -> str:
+        match x:
+            case Chain():
+                return 'chain'
+            case ChainSequence():
+                return 'seq'
+            case ChainStructure():
+                return 'str'
+            case _:
+                raise TypeError(f'Unsupported type {x}')
 
     def __len__(self) -> int:
         return len(self._chains)
@@ -592,6 +610,7 @@ class ChainList(abc.MutableSequence[CT]):
                 raise TypeError(f'Incorrect index type {type(index)}')
 
     def __setitem__(self, index: int, value: CT) -> t.NoReturn:
+        _ = self._infer_type(value)
         self._chains.__setitem__(index, value)
 
     def __delitem__(self, index: int) -> t.NoReturn:
@@ -600,13 +619,12 @@ class ChainList(abc.MutableSequence[CT]):
     def __contains__(self, item: str | CT) -> bool:
         match item:
             case str():
-                _id = item
-            case Chain():
-                _id = item.id
+                return first_true(
+                    self._chains, default=False, pred=lambda c: c.id == item)
+            case Chain() | ChainStructure() | ChainSequence():
+                return item in self._chains
             case _:
                 return False
-
-        return first_true(self._chains, default=False, pred=lambda c: c.id == _id)
 
     def __add__(self, other: ChainList):
         return ChainList(self._chains + other._chains)
@@ -618,9 +636,10 @@ class ChainList(abc.MutableSequence[CT]):
         return self._chains.index(value, start, stop)
 
     def insert(self, index: int, value: CT) -> t.NoReturn:
+        self._infer_type(value)
         self._chains.insert(index, value)
 
-    def iter_children(self) -> abc.Generator[ChainList[CT], None, None]:
+    def iter_children(self) -> abc.Generator[ChainList[CT]]:
         levels = zip_longest(*map(lambda c: c.iter_children(), self._chains))
         for level in levels:
             yield ChainList(list(chain.from_iterable(level)))
@@ -628,11 +647,21 @@ class ChainList(abc.MutableSequence[CT]):
     def collapse_children(self) -> ChainList[CT]:
         return ChainList(list(chain.from_iterable(self.iter_children())))
 
-    def iter_sequences(self) -> abc.Iterator[SeqT]:
-        return (c.seq for c in self._chains)
+    def iter_sequences(self) -> abc.Iterator[ChainSequence]:
+        match self._type:
+            case 'chain' | 'str':
+                return (c.seq for c in self._chains)
+            case _:
+                return iter(self._chains)
 
-    def iter_structures(self) -> abc.Iterator[StrT]:
-        return chain.from_iterable(c.structures for c in self._chains)
+    def iter_structures(self) -> abc.Iterator[ChainStructure]:
+        match self._type:
+            case 'chain':
+                return chain.from_iterable(c.structures for c in self._chains)
+            case 'str':
+                return iter(self._chains)
+            case _:
+                return iter([])
 
     @staticmethod
     def _to_segment(s: abc.Sequence[int, int] | Segment) -> Segment:
@@ -679,7 +708,7 @@ class ChainList(abc.MutableSequence[CT]):
         return matcher
 
     def _filter_seqs(
-            self, seqs: abc.Iterable[SeqT], match_type: str,
+            self, seqs: abc.Iterable[ChainSequence], match_type: str,
             s: Segment | abc.Collection[Ord],
             map_name: t.Optional[str]
     ) -> abc.Iterator[bool]:
@@ -696,7 +725,7 @@ class ChainList(abc.MutableSequence[CT]):
         return map(match_fn, seqs)
 
     def _filter_str(
-            self, structures: abc.Iterable[StrT], match_type: str,
+            self, structures: abc.Iterable[ChainStructure], match_type: str,
             s: abc.Sequence[int, int] | Segment, map_name: t.Optional[str]
     ) -> abc.Iterator[bool]:
         return self._filter_seqs(
