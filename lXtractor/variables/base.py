@@ -194,6 +194,14 @@ class Variables(UserDict):
                  if all(x not in v.id for x in skip_if_contains))
         path.write_text('\n'.join(items))
 
+    def as_df(self) -> pd.DataFrame:
+        if not len(self):
+            return pd.DataFrame()
+        return pd.DataFrame({
+            'VariableID': list(self),
+            'VariableResult': list(self.values())
+        })
+
 
 class AbstractCalculator(t.Generic[OT, VT, RT], metaclass=ABCMeta):
     """

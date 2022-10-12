@@ -146,17 +146,17 @@ class Manager(AbstractManager):
 
     def aggregate(
             self, chains: CT | ChainList, *, level: int | None = None,
-            id_contains: str | None = None, obj_type: abc.Sequence[str] | str | None = None
+            id_contains: str | None = None, obj_type: abc.Sequence[str] | str | None = None,
     ) -> pd.DataFrame:
         def _get_vs(obj: SS):
-            return ((obj.id, obj.__class__.__name__, k.id, v, k.rtype)
-                    for k, v in obj.variables.items())
+            vs_df = obj.variables.as_df()
+            vs_df['ObjectID'] = obj.id
+            vs_df['ObjectType'] = obj.__class__.__name__
+            return vs_df
 
         objs = self._filter_objs(chains, level, id_contains, obj_type)
-
-        return pd.DataFrame(
-            chain.from_iterable(map(_get_vs, objs)),
-            columns=['ObjectID', 'ObjectType', 'VarID', 'VarResult', 'VarRType'])
+        vs = filter(lambda x: len(x) > 0, map(_get_vs, objs))
+        return pd.concat(vs, ignore_index=True)
 
     def stage_calculations(
             self, chains: CT | ChainList, *, missing: bool = True,
