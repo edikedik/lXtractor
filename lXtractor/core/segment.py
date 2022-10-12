@@ -10,6 +10,7 @@ from more_itertools import zip_equal, nth, always_reversible
 from lXtractor.core.base import Ord
 from lXtractor.core.config import Sep
 from lXtractor.core.exceptions import LengthMismatch, NoOverlap
+from lXtractor.variables.base import Variables
 
 _I = t.TypeVar('_I', bound=t.Union[int, slice])
 # _IterType = t.Union[abc.Iterator[tuple], abc.Iterator[namedtuple]]
@@ -21,7 +22,7 @@ class Segment(abc.Sequence):
     An arbitrary segment with boundaries included.
     """
 
-    __slots__ = ('start', 'end', 'name', 'parent', 'children', 'meta', '_seqs')
+    __slots__ = ('start', 'end', 'name', 'parent', 'children', 'meta', '_seqs', 'variables')
 
     def __init__(
             self, start: int, end: int,
@@ -30,6 +31,7 @@ class Segment(abc.Sequence):
             parent: t.Optional[Segment] = None,
             children: t.Optional[dict[str, Segment]] = None,
             meta: t.Optional[t.Dict[str, t.Any]] = None,
+            variables: t.Optional[Variables] = None
     ):
         self.start = start
         self.end = end
@@ -38,6 +40,7 @@ class Segment(abc.Sequence):
         self.children = children or {}
         self.meta = meta or {}
         self._seqs = seqs or {}
+        self.variables: Variables = variables or Variables()
 
         self._setup_and_validate()
 

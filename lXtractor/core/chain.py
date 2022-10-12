@@ -73,10 +73,6 @@ class ChainSequence(Segment):
     def seq3(self) -> t.Sequence[str]:
         return self[SeqNames.seq3]
 
-    @property
-    def variables(self) -> Variables:
-        return self.meta[SeqNames.variables]
-
     def _setup_and_validate(self):
         super()._setup_and_validate()
 
@@ -271,8 +267,7 @@ class ChainSequence(Segment):
             seq.meta = dict(zip(df['Title'], df['Value']))
 
         if dump_names.variables in files:
-            seq.meta[dump_names.variables] = Variables.read(
-                files[dump_names.variables]).sequence
+            seq.variables = Variables.read(files[dump_names.variables]).sequence
 
         if search_children and dump_names.segments_dir in dirs:
             for path in (base_dir / dump_names.segments_dir).iterdir():
