@@ -59,6 +59,15 @@ def test_spawn(simple_structure):
 
     # Should find the closest mapped boundary and give the same result
     with pytest.raises(KeyError):
-        sub = s.spawn_child(1, 1100, map_from='map_something', map_closest=False)
+        _ = s.spawn_child(1, 1100, map_from='map_something', map_closest=False)
     sub = s.spawn_child(1, 1100, map_from='map_something', map_closest=True)
     assert len(sub.seq) == 100
+
+
+def test_iterchildren(simple_structure):
+    s = ChainStructure.from_structure(simple_structure)
+    child1 = s.spawn_child(1, 10)
+    child2 = child1.spawn_child(5, 6)
+    levels = list(s.iter_children())
+    assert len(levels) == 2
+    assert levels == [[child1], [child2]]

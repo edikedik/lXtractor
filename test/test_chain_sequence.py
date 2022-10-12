@@ -95,3 +95,12 @@ def test_spawn(seq):
     child = s.spawn_child(9, 10, map_from='map_other', map_closest=True)
     assert len(child) == 1
     assert child.seq1 == 'A'
+
+
+def test_iterchildren(seq):
+    fields, s = seq
+    child1 = s.spawn_child(1, 4)
+    child2 = child1.spawn_child(1, 2)
+    levels = list(s.iter_children())
+    assert len(levels) == 2
+    assert levels == [[child1], [child2]]

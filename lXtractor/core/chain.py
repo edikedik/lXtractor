@@ -36,7 +36,7 @@ def topo_iter(
         start_obj: T, iterator: abc.Callable[[T], abc.Iterator[T]]
 ) -> abc.Generator[list[T]]:
     def get_level(cs: abc.Iterable[T]) -> abc.Iterator[T]:
-        return chain.from_iterable(map(iter, cs))
+        return chain.from_iterable(map(iterator, cs))
 
     curr_level = list(iterator(start_obj))
 
