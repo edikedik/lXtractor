@@ -198,7 +198,7 @@ class Variables(UserDict):
         if not len(self):
             return pd.DataFrame()
         return pd.DataFrame({
-            'VariableID': list(self),
+            'VariableID': [k.id for k in self],
             'VariableResult': list(self.values())
         })
 
