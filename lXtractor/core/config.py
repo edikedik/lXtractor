@@ -29,6 +29,7 @@ class _SeqNames:
     :attr:`lXtractor.core.Protein.ChainSequence._seqs`
     """
     id: str = 'id'
+    name: str = 'name'
     seq1: str = 'seq1'
     seq3: str = 'seq3'
     variables: str = 'variables'

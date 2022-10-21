@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 import pytest
 
 from lXtractor import Alignment
-from lXtractor.core.config import SeqNames
-from lXtractor.core.exceptions import MissingData, AmbiguousMapping
+from lXtractor.core.config import SeqNames, DumpNames
+from lXtractor.core.exceptions import MissingData
 from lXtractor.core.chain import ChainSequence
+from lXtractor.variables.sequential import SeqEl
+from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.seq import read_fasta
 
 
@@ -73,34 +78,25 @@ def test_map(simple_fasta_path):
     assert mapping == [3, 4, 5, 6, 7]
 
 
-def test_map_boundaries(seq):
-    fields, s = seq
-    s.add_seq('map_other', [10, 11, 12, 13, 14])
-    with pytest.raises(KeyError):
-        _, _ = s.map_boundaries(9, 10, 'map_other')
-    start, end = s.map_boundaries(9, 10, 'map_other', closest=True)
-    assert start.i == end.i == 1
-    start, end = s.map_boundaries(-100, 100, 'map_other', closest=True)
-    assert start.map_other == 10
-    assert end.map_other == 14
-
-
-def test_spawn(seq):
-    fields, s = seq
-    s.add_seq('map_other', [10, 11, 12, 13, 14])
+def test_io(seq):
+    _, s = seq
     child = s.spawn_child(1, 2)
-    assert child.id in s.children
-    assert len(child) == 2
-    assert child.seq1 == 'AB'
-    child = s.spawn_child(9, 10, map_from='map_other', map_closest=True)
-    assert len(child) == 1
-    assert child.seq1 == 'A'
 
+    with TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        s.write(tmp_path, write_children=True)
 
-def test_iterchildren(seq):
-    fields, s = seq
-    child1 = s.spawn_child(1, 4)
-    child2 = child1.spawn_child(1, 2)
-    levels = list(s.iter_children())
-    assert len(levels) == 2
-    assert levels == [[child1], [child2]]
+        files = get_files(tmp_path)
+        dirs = get_dirs(Path(tmp))
+
+        assert DumpNames.sequence in files
+        assert DumpNames.meta in files
+        assert DumpNames.segments_dir in dirs
+
+        s_r = ChainSequence.read(tmp_path, search_children=True)
+        assert s_r.seq1 == s.seq1
+        assert s_r.id == s.id
+
+        assert len(s_r.children) == 1
+        sr_child = s_r.children[child.name]
+        assert child.id == sr_child.id
