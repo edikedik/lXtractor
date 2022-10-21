@@ -15,7 +15,7 @@ from more_itertools import unzip, first_true
 
 from lXtractor.core.alignment import Alignment
 from lXtractor.core.base import AminoAcidDict, AbstractChain, Ord, AlignMethod, SeqReader
-from lXtractor.core.config import Sep, DumpNames, SeqNames
+from lXtractor.core.config import Sep, DumpNames, SeqNames, MetaNames
 from lXtractor.core.exceptions import MissingData, AmbiguousMapping, InitError
 from lXtractor.core.segment import Segment
 from lXtractor.core.structure import GenericStructure, PDB_Chain, validate_chain
@@ -61,6 +61,10 @@ class ChainSequence(Segment):
     def field_names(cls):
         return SeqNames
 
+    @classmethod
+    def meta_names(cls):
+        return MetaNames
+
     @property
     def numbering(self) -> t.Sequence[int]:
         return self[SeqNames.enum]
@@ -92,8 +96,8 @@ class ChainSequence(Segment):
                                 f'from type {type(self.seq1)} to str '
                                 f'due to: {e}')
 
-        self.meta[SeqNames.id] = self.id
-        self.meta[SeqNames.name] = self.name
+        self.meta[MetaNames.id] = self.id
+        self.meta[MetaNames.name] = self.name
 
     def map_numbering(
             self, other: str | tuple[str, str] | ChainSequence | Alignment,
@@ -273,8 +277,8 @@ class ChainSequence(Segment):
             df = pd.read_csv(
                 base_dir / dump_names.meta, sep=r'\s+', names=['Title', 'Value'])
             meta = dict(zip(df['Title'], df['Value']))
-            if SeqNames.name in meta:
-                name = meta[SeqNames.name]
+            if MetaNames.name in meta:
+                name = meta[MetaNames.name]
             else:
                 name = 'UnnamedSequence'
         else:
@@ -285,14 +289,13 @@ class ChainSequence(Segment):
         seq.meta = meta
 
         if dump_names.variables in files:
-            seq.meta[dump_names.variables] = Variables.read(
-                files[dump_names.variables]).sequence
+            seq.variables = Variables.read(files[dump_names.variables]).sequence
 
         if search_children and dump_names.segments_dir in dirs:
             for path in (base_dir / dump_names.segments_dir).iterdir():
                 child = ChainSequence.read(path, dump_names, search_children=True)
                 child.parent = seq
-                seq.children[path.name] = child
+                seq.children[child.name] = child
 
         return seq
 
@@ -325,7 +328,7 @@ class ChainStructure:
 
     def __init__(
             self, pdb_id: str, pdb_chain: str,
-            pdb_structure: t.Optional[GenericStructure] = None,
+            pdb_structure: GenericStructure,
             seq: t.Optional[ChainSequence] = None,
             parent: t.Optional[ChainStructure] = None,
             children: t.Optional[dict[str, ChainStructure]] = None,
@@ -333,16 +336,19 @@ class ChainStructure:
     ):
         self.pdb = PDB_Chain(pdb_id, pdb_chain, pdb_structure)
         validate_chain(self.pdb)
-        if seq is None and self.pdb.structure is not None:
+        self.seq = seq
+        self.parent = parent
+        self.variables = variables or Variables()
+        self.children = children or {}
+
+        if self.seq is None:
             seq1, seq3, num = map(list, unzip(self.pdb.structure.get_sequence()))
             seqs = {SeqNames.seq3: seq3, SeqNames.enum: num}
             self.seq = ChainSequence.from_string(
                 ''.join(seq1), name=f'{pdb_id}{Sep.chain}{pdb_chain}', **seqs)
-        else:
-            self.seq = seq
-        self.parent = parent
-        self.variables = variables or Variables()
-        self.children = children or {}
+
+        self.seq.meta[MetaNames.pdb_id] = pdb_id
+        self.seq.meta[MetaNames.pdb_chain] = pdb_chain
 
     def __str__(self) -> str:
         return self.id
@@ -359,7 +365,8 @@ class ChainStructure:
 
     @classmethod
     def from_structure(
-            cls, structure: bst.AtomArray | GenericStructure, pdb_id: t.Optional[str] = None,
+            cls, structure: bst.AtomArray | GenericStructure,
+            pdb_id: t.Optional[str] = None,
     ) -> ChainStructure:
         if isinstance(structure, bst.AtomArray):
             structure = GenericStructure(structure)
@@ -400,40 +407,56 @@ class ChainStructure:
 
     @classmethod
     def read(
-            cls, base_dir: Path,
-            dump_names: DumpNames = DumpNames,
+            cls, base_dir: Path, dump_names: DumpNames = DumpNames, *,
+            search_children: bool = False,
     ) -> ChainStructure:
-        pdb_id, chain_id = base_dir.name.split(Sep.chain)
+
         files = get_files(base_dir)
-        filenames = {p.name: p for p in files.values()}
+        dirs = get_dirs(base_dir)
         variables = None
 
         bname = dump_names.structure_base_name
-        if bname not in filenames:
+        stems = {p.stem: p for p in files.values()}
+        if bname not in stems:
             raise InitError(f'{base_dir} must contain {bname}.fmt '
                             f'where "fmt" is supported structure format')
-        structure = GenericStructure.read(base_dir / filenames[bname])
+        structure = GenericStructure.read(base_dir / stems[bname])
 
         seq = ChainSequence.read(base_dir, dump_names, search_children=False)
+        pdb_id = seq.meta.get(MetaNames.pdb_id, 'UnkPDB')
+        chain_id = seq.meta.get(MetaNames.pdb_chain, 'UnkChain')
 
         if dump_names.variables in files:
             variables = Variables.read(files[dump_names.variables]).structure
 
-        return ChainStructure(pdb_id, chain_id, structure, seq, variables=variables)
+        cs = ChainStructure(pdb_id, chain_id, structure, seq, variables=variables)
+
+        if search_children and dump_names.segments_dir in dirs:
+            for path in (base_dir / dump_names.segments_dir).iterdir():
+
+                child = ChainStructure.read(path, dump_names, search_children=True)
+                child.parent = cs
+                cs.children[path.name] = child
+
+        return cs
 
     def write(
-            self, base_dir: Path, fmt: str = 'cif',
-            dump_names: DumpNames = DumpNames
-    ) -> None:
+            self, base_dir: Path, fmt: str = 'cif', dump_names: DumpNames = DumpNames, *,
+            write_children: bool = False,
+    ) -> t.NoReturn:
         # if base_dir.name != dump_names.structures_dir:
         #     base_dir /= dump_names.structures_dir
-        base_dir /= self.id
         base_dir.mkdir(exist_ok=True, parents=True)
 
-        self.seq.write(base_dir / dump_names.sequence)
+        self.seq.write(base_dir)
         self.pdb.structure.write(base_dir / f'{dump_names.structure_base_name}.{fmt}')
         if self.variables:
             self.variables.write(base_dir / dump_names.variables)
+
+        if write_children:
+            for child in self.children.values():
+                child_dir = base_dir / DumpNames.segments_dir / child.seq.name
+                child.write(child_dir, fmt, dump_names, write_children=True)
 
 
 class Chain(AbstractChain):

@@ -1,7 +1,12 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 import pytest
 
+from lXtractor.core.config import DumpNames, MetaNames
 from lXtractor.core.exceptions import InitError, NoOverlap
 from lXtractor.core.chain import ChainStructure
+from lXtractor.util.io import get_files, get_dirs
 
 
 def test_init(simple_structure, four_chain_structure):
@@ -71,3 +76,32 @@ def test_iterchildren(simple_structure):
     levels = list(s.iter_children())
     assert len(levels) == 2
     assert levels == [[child1], [child2]]
+
+
+def test_io(simple_structure):
+    s = ChainStructure.from_structure(simple_structure)
+    child1 = s.spawn_child(1, 10)
+
+    with TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        s.write(tmp_path, write_children=True)
+
+        files = get_files(tmp_path)
+        dirs = get_dirs(Path(tmp))
+
+        assert f'{DumpNames.structure_base_name}.cif' in files
+        assert DumpNames.sequence in files
+        assert DumpNames.meta in files
+        assert DumpNames.segments_dir in dirs
+
+        s_r = ChainStructure.read(tmp_path, search_children=True)
+        assert s_r.seq is not None
+        assert s_r.pdb.structure is not None
+        assert s_r.pdb.id == s.pdb.id
+        assert s_r.pdb.chain == s.pdb.chain
+
+        assert len(s_r.children) == 1
+        s_r_child = s_r.children[child1.seq.name]
+        assert not s_r_child.seq.children
+        assert s_r_child.seq.meta[MetaNames.pdb_id] == child1.pdb.id
+        assert s_r_child.seq.meta[MetaNames.pdb_chain] == child1.pdb.chain

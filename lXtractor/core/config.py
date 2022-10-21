@@ -28,11 +28,8 @@ class _SeqNames:
     Container holding names used within
     :attr:`lXtractor.core.Protein.ChainSequence._seqs`
     """
-    id: str = 'id'
-    name: str = 'name'
     seq1: str = 'seq1'
     seq3: str = 'seq3'
-    variables: str = 'variables'
     enum: str = 'numbering'
     map_canonical: str = 'map_canonical'
     map_other: str = 'map_other'
@@ -41,8 +38,18 @@ class _SeqNames:
     map_ref: str = 'map_ref'
 
 
+@dataclass
+class _MetaNames:
+    id: str = 'id'
+    name: str = 'name'
+    variables: str = 'variables'
+    pdb_id: str = 'pdb_id'
+    pdb_chain: str = 'pdb_chain'
+
+
 DumpNames = _DumpNames()
 SeqNames = _SeqNames()
+MetaNames = _MetaNames()
 
 MetaColumns = (
     # Taken from https://bioservices.readthedocs.io/en/main/_modules/bioservices/uniprot.html#UniProt
