@@ -11,7 +11,7 @@ from pathlib import Path
 
 import biotite.structure as bst
 import pandas as pd
-from more_itertools import unzip, first_true, interleave_longest
+from more_itertools import unzip, first_true
 
 from lXtractor.core.alignment import Alignment
 from lXtractor.core.base import AminoAcidDict, AbstractChain, Ord, AlignMethod, SeqReader
@@ -71,6 +71,17 @@ class ChainSequence(Segment):
             self.meta[SeqNames.variables] = {}
         if SeqNames.enum not in self._seqs:
             self[SeqNames.enum] = list(range(self.start, self.end + 1))
+
+        if not isinstance(self.seq1, str):
+            try:
+                self[SeqNames.seq1] = ''.join(self.seq1)
+            except Exception as e:
+                raise InitError(f'Failed to convert {SeqNames.seq1} '
+                                f'from type {type(self.seq1)} to str '
+                                f'due to: {e}')
+
+        self.meta[SeqNames.id] = self.id
+        self.meta[SeqNames.name] = self.name
 
     def map_numbering(
             self, other: str | tuple[str, str] | ChainSequence | Alignment,
@@ -203,8 +214,13 @@ class ChainSequence(Segment):
 
     @classmethod
     def from_df(cls, df: pd.DataFrame, name: t.Optional[str] = None):
+
         if 'i' not in df.columns:
             raise InitError('Must contain the "i" column')
+
+        if SeqNames.seq1 not in df.columns:
+            raise InitError(f'Must contain teh {SeqNames.seq1} column')
+
         assert len(df) >= 1
         start, end = df['i'].iloc[0], df['i'].iloc[-1]
         seqs = {col: list(df[col]) for col in df.columns}
@@ -223,13 +239,20 @@ class ChainSequence(Segment):
         if dump_names.sequence not in files:
             raise InitError(f'{dump_names.sequence} must be present')
 
-        df = pd.read_csv(base_dir / files[dump_names.sequence], sep=r'\s+')
-        seq = cls.from_df(df, dump_names.sequence)
-
         if dump_names.meta in files:
             df = pd.read_csv(
                 base_dir / dump_names.meta, sep=r'\s+', names=['Title', 'Value'])
-            seq.meta = dict(zip(df['Title'], df['Value']))
+            meta = dict(zip(df['Title'], df['Value']))
+            if SeqNames.name in meta:
+                name = meta[SeqNames.name]
+            else:
+                name = 'UnnamedSequence'
+        else:
+            meta, name = {}, 'UnnamedSequence'
+
+        df = pd.read_csv(base_dir / files[dump_names.sequence], sep=r'\s+')
+        seq = cls.from_df(df, name)
+        seq.meta = meta
 
         if dump_names.variables in files:
             seq.meta[dump_names.variables] = Variables.read(
@@ -253,15 +276,18 @@ class ChainSequence(Segment):
                  if isinstance(v, (str, int, float)))
         path.write_text('\n'.join(items))
 
-    def write(self, base_dir: Path, dump_names: DumpNames = DumpNames) -> None:
+    def write(self, base_dir: Path, dump_names: DumpNames = DumpNames, *,
+              write_children: bool = False) -> None:
+        base_dir.mkdir(exist_ok=True, parents=True)
         self.write_seq(base_dir / dump_names.sequence)
         if self.meta:
             self.write_meta(base_dir / dump_names.meta)
             if self.variables:
                 self.variables.write(base_dir / dump_names.variables)
-
-    def build_tree(self):
-        raise NotImplementedError
+        if write_children:
+            for c in self.children.values():
+                child_dir = base_dir / dump_names.segments_dir / c.name
+                c.write(child_dir, dump_names, write_children=write_children)
 
 
 class ChainStructure:

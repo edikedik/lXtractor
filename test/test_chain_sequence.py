@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 import pytest
 
 from lXtractor import Alignment
-from lXtractor.core.config import SeqNames
+from lXtractor.core.config import SeqNames, DumpNames
 from lXtractor.core.exceptions import MissingData
 from lXtractor.core.chain import ChainSequence
+from lXtractor.variables.sequential import SeqEl
+from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.seq import read_fasta
 
 
@@ -71,3 +76,27 @@ def test_map(simple_fasta_path):
 
     mapping = s2.map_numbering(aln, save=True, name='map_aln')
     assert mapping == [3, 4, 5, 6, 7]
+
+
+def test_io(seq):
+    _, s = seq
+    child = s.spawn_child(1, 2)
+
+    with TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        s.write(tmp_path, write_children=True)
+
+        files = get_files(tmp_path)
+        dirs = get_dirs(Path(tmp))
+
+        assert DumpNames.sequence in files
+        assert DumpNames.meta in files
+        assert DumpNames.segments_dir in dirs
+
+        s_r = ChainSequence.read(tmp_path, search_children=True)
+        assert s_r.seq1 == s.seq1
+        assert s_r.id == s.id
+
+        assert len(s_r.children) == 1
+        sr_child = s_r.children[child.name]
+        assert child.id == sr_child.id
