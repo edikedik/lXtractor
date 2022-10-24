@@ -162,9 +162,20 @@ class ChainSequence(Segment):
 
         return _start, _end
 
+    def transfer_map(
+            self, other: ChainSequence, map_name: str,
+            link_name: str, link_name_points_to: str = 'i'
+    ):
+        mapping = self.get_map(link_name_points_to)
+        mapped = map(
+            lambda x: x if x is None else x._asdict()[map_name],
+            (mapping.get(x) for x in other[link_name]))
+        other.add_seq(map_name, list(mapped))
+        return other
+
     @lru_cache()
     def get_map(self, key: str) -> dict[t.Any, namedtuple]:
-        return {x: it for x, it in zip(self[key], iter(self))}
+        return dict(zip(self[key], iter(self)))
 
     def get_item(self, key: str, value: t.Any) -> namedtuple:
         return self.get_map(key)[value]
@@ -571,6 +582,13 @@ class Chain(AbstractChain):
         if map_to_seq:
             structure.seq.map_numbering(self.seq, name=map_name, **kwargs)
         self.structures.append(structure)
+
+    def transfer_seq_mapping(
+            self, map_name: str, link_map: str = SeqNames.map_canonical,
+            link_map_points_to: str = SeqNames.enum):
+        """Transfer sequence mapping to structure sequences"""
+        for s in self.structures:
+            self.seq.transfer_map(s.seq, map_name, link_map, link_map_points_to)
 
     def spawn_child(
             self, start: int, end: int, name: None | str = None, *,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -75,6 +76,17 @@ def test_map(simple_fasta_path):
 
     mapping = s2.map_numbering(aln, save=True, name='map_aln')
     assert mapping == [3, 4, 5, 6, 7]
+
+
+def test_map_transfer(simple_chain_seq):
+    _, s1 = simple_chain_seq
+    s2 = deepcopy(s1)
+    s1.add_seq('R', 'PUTIN')
+    s1.add_seq('V', 'MUDAK')
+    s2.add_seq('O', 'PUKIN')
+    s1.transfer_map(s2, 'V', 'O', 'R')
+    assert 'V' in s2
+    assert s2['V'] == ['M', 'U', None, 'A', 'K']
 
 
 def test_io(simple_chain_seq):
