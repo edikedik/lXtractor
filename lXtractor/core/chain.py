@@ -6,7 +6,7 @@ import typing as t
 from collections import namedtuple, abc
 from functools import lru_cache, partial
 from io import TextIOBase
-from itertools import starmap, chain, zip_longest, tee
+from itertools import starmap, chain, zip_longest, tee, filterfalse
 from pathlib import Path
 
 import biotite.structure as bst
@@ -17,7 +17,7 @@ from tqdm.auto import tqdm
 from lXtractor.core.alignment import Alignment
 from lXtractor.core.base import AminoAcidDict, AbstractChain, Ord, AlignMethod, SeqReader
 from lXtractor.core.config import Sep, DumpNames, SeqNames, MetaNames
-from lXtractor.core.exceptions import MissingData, AmbiguousMapping, InitError
+from lXtractor.core.exceptions import MissingData, AmbiguousMapping, InitError, NoOverlap
 from lXtractor.core.segment import Segment
 from lXtractor.core.structure import GenericStructure, PDB_Chain, validate_chain
 from lXtractor.util.io import get_files, get_dirs
@@ -146,9 +146,13 @@ class ChainSequence(Segment):
             self, start: Ord, end: Ord, map_name: str, closest: bool = False
     ) -> tuple[namedtuple, namedtuple]:
         if closest:
+            mapping = list(filterfalse(lambda x: x is None, self[map_name]))
+            map_min, map_max = min(mapping), max(mapping)
+            reverse_start = start > map_max
+            reverse_end = end > map_min
             _start, _end = starmap(
                 lambda c, r: self.get_closest(map_name, c, reverse=r),
-                [(start, False), (end, True)]
+                [(start, reverse_start), (end, reverse_end)]
             )
             if _start is None or _end is None:
                 raise AmbiguousMapping(
@@ -199,7 +203,7 @@ class ChainSequence(Segment):
         return pd.DataFrame(iter(self))
 
     def spawn_child(
-            self, start: int, end: int, *,
+            self, start: int, end: int, name: t.Optional[str] = None, *,
             map_from: t.Optional[str] = None,
             map_closest: bool = False,
             deep_copy: bool = False, keep: bool = True
@@ -209,9 +213,14 @@ class ChainSequence(Segment):
                 lambda x: x._asdict()['i'],
                 self.map_boundaries(start, end, map_from, map_closest))
 
+        name = name or self.name
+
         child = self.sub(start, end, deep_copy=deep_copy, handle_mode='self')
+        child.name = name
+
         if keep:
             self.children[child.id] = child
+
         return child
 
     @classmethod
@@ -380,7 +389,7 @@ class ChainStructure:
         return cls(pdb_id, chain_id, structure)
 
     def spawn_child(
-            self, start: int, end: int, *,
+            self, start: int, end: int, name: t.Optional[str] = None, *,
             map_from: t.Optional[str] = None,
             map_closest: bool = True,
             keep_seq_child: bool = False,
@@ -391,8 +400,10 @@ class ChainStructure:
         if start > end:
             raise ValueError(f'Invalid boundaries {start, end}')
 
+        name = name or self.seq.name
+
         seq = self.seq.spawn_child(
-            start, end, map_from=map_from, map_closest=map_closest,
+            start, end, name, map_from=map_from, map_closest=map_closest,
             deep_copy=deep_copy, keep=keep_seq_child
         )
         structure = None
@@ -580,21 +591,20 @@ class Chain(AbstractChain):
         def subset_structure(structure: ChainStructure) -> t.Optional[ChainStructure]:
             try:
                 return structure.spawn_child(
-                    start, end, map_from=str_map_from, map_closest=str_map_closest,
+                    start, end, name, map_from=str_map_from, map_closest=str_map_closest,
                     deep_copy=str_deep_copy, keep=str_keep_child, keep_seq_child=str_seq_keep_child)
-            except (AmbiguousMapping, MissingData) as e:
+            except (AmbiguousMapping, MissingData, NoOverlap) as e:
                 msg = f'Failed to spawn substructure using boundaries {start, end} due to {e}'
                 if not tolerate_failure:
                     raise e
                 LOGGER.warning(msg)
                 return None
 
-        seq = self.seq.spawn_child(
-            start, end, map_from=seq_map_from, map_closest=seq_map_closest,
-            deep_copy=seq_deep_copy, keep=seq_keep_child)
+        name = name or self.seq.name
 
-        if name is None:
-            name = seq.id
+        seq = self.seq.spawn_child(
+            start, end, name, map_from=seq_map_from, map_closest=seq_map_closest,
+            deep_copy=seq_deep_copy, keep=seq_keep_child)
 
         structures = None
         if subset_structures:

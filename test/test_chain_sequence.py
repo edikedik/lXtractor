@@ -40,7 +40,7 @@ def test_convertage(simple_chain_seq):
     assert len(df) == len(s)
 
 
-def test_closest():
+def test_closest_and_boundaries():
     fields = ChainSequence.field_names()
     s = ChainSequence(1, 5, 'S', seqs={
         fields.seq1: 'ABCDE', 'N': [1, 3, 5, 10, 20], 'K': [None, 10, None, 20, None]})
@@ -51,6 +51,13 @@ def test_closest():
     assert s.get_closest('N', 0, reverse=True) is None
     assert s.get_closest('K', 2).N == 3
     assert s.get_closest('K', 21, reverse=True).N == 10
+
+    b1, b2 = s.map_boundaries(1, 3, map_name='N')
+    assert (b1.i, b2.i) == (1, 2)
+    b1, b2 = s.map_boundaries(-1, 0, map_name='N', closest=True)
+    assert b1.i == b2.i == 1
+    b1, b2 = s.map_boundaries(22, 23, map_name='N', closest=True)
+    assert b1.i == b2.i == 5
 
 
 def test_map(simple_fasta_path):
