@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from lXtractor.core.chain import ChainList, ChainStructure
+from lXtractor.core.chain import ChainList, ChainStructure, ChainSequence
+from lXtractor.core.config import SeqNames
 from lXtractor.core.structure import GenericStructure
 from lXtractor.util.seq import read_fasta
 from lXtractor.variables.sequential import SeqEl
@@ -113,3 +114,10 @@ def sample_chain_list(_sample_chain_list) -> ChainList:
 @pytest.fixture(scope='module')
 def simple_chain_variables() -> tuple[PseudoDihedral, Dist, SeqEl]:
     return PseudoDihedral(1, 2, 3, 4), Dist(1, 40, 'CB', 'CB'), SeqEl(1)
+
+
+@pytest.fixture(scope='module')
+def simple_chain_seq() -> tuple[SeqNames, ChainSequence]:
+    fields = ChainSequence.field_names()
+    s = ChainSequence(1, 5, 'S', {fields.seq1: 'ABCDE'})
+    return fields, s

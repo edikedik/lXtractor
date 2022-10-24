@@ -12,6 +12,7 @@ from pathlib import Path
 import biotite.structure as bst
 import pandas as pd
 from more_itertools import unzip, first_true
+from tqdm.auto import tqdm
 
 from lXtractor.core.alignment import Alignment
 from lXtractor.core.base import AminoAcidDict, AbstractChain, Ord, AlignMethod, SeqReader
@@ -433,7 +434,6 @@ class ChainStructure:
 
         if search_children and dump_names.segments_dir in dirs:
             for path in (base_dir / dump_names.segments_dir).iterdir():
-
                 child = ChainStructure.read(path, dump_names, search_children=True)
                 child.parent = cs
                 cs.children[path.name] = child
@@ -521,7 +521,7 @@ class Chain(AbstractChain):
         seq = ChainSequence.read(path, dump_names, search_children=False)
 
         structures = [ChainStructure.read(p, dump_names)
-                      for p in (path / dump_names.structures_dir)]
+                      for p in (path / dump_names.structures_dir).glob('*')]
         protein = Chain(seq, structures)
         if search_children:
             for child_path in (path / dump_names.segments_dir).glob('*'):
@@ -531,14 +531,21 @@ class Chain(AbstractChain):
 
     def write(
             self, base_dir: Path, dump_names: DumpNames = DumpNames,
-            *, write_children: bool = True,
+            *, str_fmt: str = 'cif', write_children: bool = True,
     ) -> t.NoReturn:
 
-        path = base_dir / self.id
-        path.mkdir(parents=True, exist_ok=True)
+        base_dir.mkdir(parents=True, exist_ok=True)
+
+        self.seq.write(base_dir, dump_names, write_children=False)
+
+        if self.structures:
+            str_dir = base_dir / dump_names.structures_dir
+            str_dir.mkdir(exist_ok=True)
+            for s in self.structures:
+                s.write(str_dir / s.id, str_fmt, dump_names, write_children=False)
 
         for name, prot in self.children.items():
-            prot.write(path / dump_names.segments_dir)
+            prot.write(base_dir / dump_names.segments_dir / prot.id)
 
     def add_structure(
             self, structure: ChainStructure, *, check_ids: bool = True,
@@ -816,6 +823,74 @@ class ChainList(abc.MutableSequence[CT]):
         objs1, objs2 = tee(objs)
         mask = fn(objs1, match_type, s, map_name)
         return map(op.itemgetter(1), filter(lambda x: x[0], zip(mask, objs2)))
+
+
+class ChainIO:
+    # TODO: implement context manager
+    def __init__(
+            self, verbose: bool = False, tolerate_failures: bool = False,
+            dump_names: DumpNames = DumpNames
+    ):
+        self.verbose = verbose
+        self.tolerate_failures = tolerate_failures
+        self.dump_names = dump_names
+
+    def _read_one(self, obj_type: t.Type[CT], path: Path, **kwargs) -> t.Optional[CT]:
+        try:
+            return obj_type.read(path, **kwargs)
+        except Exception as e:
+            LOGGER.exception(e)
+            if not self.tolerate_failures:
+                raise e
+        return
+
+    def _write_one(self, obj: CT, path: Path, **kwargs) -> t.NoReturn:
+        try:
+            return obj.write(path, **kwargs)
+        except Exception as e:
+            LOGGER.exception(e)
+            if not self.tolerate_failures:
+                raise e
+
+    def _read(
+            self, obj_type: t.Type[CT], base: Path, **kwargs
+    ) -> t.Optional[CT] | abc.Iterator[t.Optional[CT]]:
+
+        dirs = get_dirs(base)
+
+        if DumpNames.segments_dir in dirs or not dirs:
+            return self._read_one(obj_type, base, **kwargs)
+
+        dirs = dirs.values()
+        if self.verbose:
+            dirs = tqdm(dirs, desc=f'Reading {obj_type.__class__.__name__}')
+
+        return (self._read_one(obj_type, p, **kwargs) for p in dirs)
+
+    def write(self, objs: CT | abc.Iterable[CT], base: Path, **kwargs):
+        if isinstance(objs, (Chain, ChainSequence, ChainStructure)):
+            objs.write(base)
+        else:
+            if self.verbose:
+                objs = tqdm(objs, desc='Writing objects')
+            for obj in objs:
+                path = base / obj.id
+                self._write_one(obj, path, **kwargs)
+
+    def read_chain(
+            self, path: Path, **kwargs
+    ) -> t.Optional[Chain] | abc.Iterator[t.Optional[Chain]]:
+        return self._read(Chain, path, **kwargs)
+
+    def read_chain_seq(
+            self, path: Path, **kwargs
+    ) -> t.Optional[ChainSequence] | abc.Iterator[t.Optional[ChainSequence]]:
+        return self._read(ChainSequence, path, **kwargs)
+
+    def read_chain_struc(
+            self, path: Path, **kwargs
+    ) -> t.Optional[ChainStructure] | abc.Iterator[t.Optional[ChainStructure]]:
+        return self._read(ChainStructure, path, **kwargs)
 
 
 if __name__ == '__main__':

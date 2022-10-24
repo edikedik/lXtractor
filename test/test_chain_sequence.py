@@ -6,41 +6,33 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from lXtractor import Alignment
-from lXtractor.core.config import SeqNames, DumpNames
-from lXtractor.core.exceptions import MissingData
 from lXtractor.core.chain import ChainSequence
-from lXtractor.variables.sequential import SeqEl
+from lXtractor.core.config import DumpNames
+from lXtractor.core.exceptions import MissingData
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.seq import read_fasta
 
 
-@pytest.fixture
-def seq() -> tuple[SeqNames, ChainSequence]:
-    fields = ChainSequence.field_names()
-    s = ChainSequence(1, 5, 'S', {fields.seq1: 'ABCDE'})
-    return fields, s
-
-
-def test_init(seq):
+def test_init(simple_chain_seq):
     with pytest.raises(MissingData):
         ChainSequence(1, 2)
-    fields, s = seq
+    fields, s = simple_chain_seq
     assert fields.seq3 in s
     assert fields.enum in s
     assert len(s.seq1) == len(s.seq3) == len(s.numbering)
     assert fields.variables in s.meta
 
 
-def test_map_accession(seq):
-    fields, s = seq
+def test_map_accession(simple_chain_seq):
+    fields, s = simple_chain_seq
     mapping = s.get_map(fields.enum)
     assert mapping[1].seq1 == 'A'
     assert mapping[1].i == 1
     assert s.get_item(fields.enum, 1).seq1 == mapping[1].seq1
 
 
-def test_convertage(seq):
-    fields, s = seq
+def test_convertage(simple_chain_seq):
+    fields, s = simple_chain_seq
     df = s.as_df()
     assert fields.seq1 in df.columns
     assert fields.seq3 in df.columns
@@ -48,7 +40,7 @@ def test_convertage(seq):
     assert len(df) == len(s)
 
 
-def test_closest(seq):
+def test_closest():
     fields = ChainSequence.field_names()
     s = ChainSequence(1, 5, 'S', seqs={
         fields.seq1: 'ABCDE', 'N': [1, 3, 5, 10, 20], 'K': [None, 10, None, 20, None]})
@@ -78,8 +70,8 @@ def test_map(simple_fasta_path):
     assert mapping == [3, 4, 5, 6, 7]
 
 
-def test_io(seq):
-    _, s = seq
+def test_io(simple_chain_seq):
+    _, s = simple_chain_seq
     child = s.spawn_child(1, 2)
 
     with TemporaryDirectory() as tmp:
