@@ -77,3 +77,18 @@ def test_mapping_invalid_objects(simple_chain_seq):
     chains = list(io.from_mapping(m))
     assert len(chains) == 1
     assert SeqNames.map_canonical not in chains[0].seq
+
+
+def test_callbacks(items, mapping):
+    def accept(obj):
+        if isinstance(obj, ChainSequence):
+            obj.name = 'X'
+        return obj
+
+    io = ChainInitializer()
+    xs = list(io.from_iterable(items, callbacks=[accept]))
+    assert len(xs) == 6
+    assert xs[0].name == 'X'
+
+    chains = io.from_mapping(mapping, key_callbacks=[accept])
+    assert all([c.seq.name == 'X' for c in chains])

@@ -923,6 +923,20 @@ class ChainIO:
         return self._read(ChainStructure, path, **kwargs)
 
 
+class InitializerCallback(t.Protocol):
+
+    @t.overload
+    def __call__(self, inp: CT) -> CT | None: ...
+
+    @t.overload
+    def __call__(self, inp: list[ChainStructure]) -> list[ChainStructure] | None: ...
+
+    @t.overload
+    def __call__(self, inp: None) -> None: ...
+
+    def __call__(self, inp: CT | list[ChainStructure] | None) -> CT | list[ChainStructure] | None: ...
+
+
 def _read_path(x, tolerate_failures, supported_seq_ext, supported_str_ext):
     if x.suffix in supported_seq_ext:
         return ChainSequence.from_file(x)
@@ -934,24 +948,28 @@ def _read_path(x, tolerate_failures, supported_seq_ext, supported_str_ext):
         raise InitError(f'Suffix {x.suffix} of the path {x} is not supported')
 
 
-def _read(x, tolerate_failures, supported_seq_ext, supported_str_ext):
+def _read(x, tolerate_failures, supported_seq_ext, supported_str_ext, callbacks):
     match x:
         case ChainSequence() | ChainStructure():
-            return x
+            res = x
         case [str(), str()]:
-            return ChainSequence.from_string(x[1], name=x[0])
+            res = ChainSequence.from_string(x[1], name=x[0])
         case [Path(), xs]:
             structures = _read_path(x[0], tolerate_failures, supported_seq_ext, supported_str_ext)
             structures = [s for s in structures if s.pdb.chain in xs]
-            return structures or None
+            res = structures or None
         case GenericStructure():
-            return ChainStructure.from_structure(x)
+            res = ChainStructure.from_structure(x)
         case Path():
-            return _read_path(x, tolerate_failures, supported_seq_ext, supported_str_ext)
+            res = _read_path(x, tolerate_failures, supported_seq_ext, supported_str_ext)
         case _:
-            if tolerate_failures:
-                return None
-            raise InitError(f'Unsupported input type {type(x)}')
+            res = None
+            if not tolerate_failures:
+                raise InitError(f'Unsupported input type {type(x)}')
+    if callbacks:
+        for c in callbacks:
+            res = c(res)
+    return res
 
 
 def _map_numbering(seq1, seq2):
@@ -1015,6 +1033,7 @@ class ChainInitializer:
     def from_iterable(
             self, it: abc.Iterable[
                 SS | Path | tuple[Path, abc.Sequence[str]] | tuple[str, str] | GenericStructure],
+            callbacks: list[InitializerCallback] | None = None
     ):
         """Initialize `ChainSequence` or `ChainStructure` objects from inputs."""
         if self.num_proc is not None:
@@ -1022,7 +1041,7 @@ class ChainInitializer:
                 futures = [
                     (x, executor.submit(
                         _read, x, self.tolerate_failures, self.supported_seq_ext,
-                        self.supported_str_ext))
+                        self.supported_str_ext, callbacks))
                     for x in it]
                 if self.verbose:
                     futures = tqdm(futures, desc='Initializing objects in parallel')
@@ -1041,7 +1060,7 @@ class ChainInitializer:
             yield from (
                 _read(
                     x, self.tolerate_failures, self.supported_seq_ext,
-                    self.supported_str_ext
+                    self.supported_str_ext, callbacks
                 )
                 for x in it)
 
@@ -1051,12 +1070,15 @@ class ChainInitializer:
                 abc.Sequence[
                     ChainStructure | GenericStructure | bst.AtomArray | Path |
                     tuple[Path, abc.Sequence[str]]]
-            ], **kwargs
+            ], key_callbacks: t.Optional[list[InitializerCallback]] = None,
+            val_callbacks: t.Optional[list[InitializerCallback]] = None,
+            **kwargs
     ):
         """Initialize `Chain` objects from mapping between sequences and structures."""
         # Process keys and values
-        keys = self.from_iterable(m)  # ChainSequences
-        values_flattened = self.from_iterable(chain.from_iterable(m.values()))  # ChainStructures
+        keys = self.from_iterable(m, callbacks=key_callbacks)  # ChainSequences
+        values_flattened = self.from_iterable(  # ChainStructures
+            chain.from_iterable(m.values()), callbacks=val_callbacks)
         values = split_into(values_flattened, map(len, m.values()))
 
         m_new = valmap(
