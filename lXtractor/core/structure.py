@@ -25,7 +25,11 @@ class GenericStructure(AbstractStructure):
     @classmethod
     def read(cls, path: Path) -> GenericStructure:
         loader = read_fast_pdb if path.suffix == '.pdb' else strio.load_structure
-        return cls(loader(str(path)), path.stem)
+        array = loader(str(path))
+        if isinstance(array, bst.AtomArrayStack):
+            raise InitError(f'{path} is likely an NMR structure. '
+                            f'NMR structures are not supported.')
+        return cls(array, path.stem)
 
     def write(self, path: Path | PathLike | str | bytes):
         if isinstance(path, (Path, PathLike)):
@@ -59,7 +63,7 @@ class GenericStructure(AbstractStructure):
 
 
 PDB_Chain = t.NamedTuple(
-    'PDB_Data', [('id', str), ('chain', str), ('structure', GenericStructure)])
+    'PDB_Chain', [('id', str), ('chain', str), ('structure', GenericStructure)])
 
 
 def validate_chain(pdb: PDB_Chain):

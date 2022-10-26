@@ -4,20 +4,22 @@ import logging
 import operator as op
 import typing as t
 from collections import namedtuple, abc
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import lru_cache, partial
 from io import TextIOBase
-from itertools import starmap, chain, zip_longest, tee, filterfalse
+from itertools import starmap, chain, zip_longest, tee, filterfalse, repeat
 from pathlib import Path
 
 import biotite.structure as bst
 import pandas as pd
-from more_itertools import unzip, first_true
+from cytoolz import keyfilter, keymap, valmap, itemmap
+from more_itertools import unzip, first_true, always_iterable, split_into, zip_equal, collapse
 from tqdm.auto import tqdm
 
 from lXtractor.core.alignment import Alignment
 from lXtractor.core.base import AminoAcidDict, AbstractChain, Ord, AlignMethod, SeqReader
 from lXtractor.core.config import Sep, DumpNames, SeqNames, MetaNames
-from lXtractor.core.exceptions import MissingData, AmbiguousMapping, InitError, NoOverlap
+from lXtractor.core.exceptions import MissingData, AmbiguousMapping, InitError, NoOverlap, LengthMismatch
 from lXtractor.core.segment import Segment
 from lXtractor.core.structure import GenericStructure, PDB_Chain, validate_chain
 from lXtractor.util.io import get_files, get_dirs
@@ -919,6 +921,183 @@ class ChainIO:
             self, path: Path, **kwargs
     ) -> t.Optional[ChainStructure] | abc.Iterator[t.Optional[ChainStructure]]:
         return self._read(ChainStructure, path, **kwargs)
+
+
+def _read_path(x, tolerate_failures, supported_seq_ext, supported_str_ext):
+    if x.suffix in supported_seq_ext:
+        return ChainSequence.from_file(x)
+    elif x.suffix in supported_str_ext:
+        return [ChainStructure.from_structure(c) for c in GenericStructure.read(x).split_chains()]
+    else:
+        if tolerate_failures:
+            return None
+        raise InitError(f'Suffix {x.suffix} of the path {x} is not supported')
+
+
+def _read(x, tolerate_failures, supported_seq_ext, supported_str_ext):
+    match x:
+        case ChainSequence() | ChainStructure():
+            return x
+        case [str(), str()]:
+            return ChainSequence.from_string(x[1], name=x[0])
+        case [Path(), xs]:
+            structures = _read_path(x[0], tolerate_failures, supported_seq_ext, supported_str_ext)
+            structures = [s for s in structures if s.pdb.chain in xs]
+            return structures or None
+        case GenericStructure():
+            return ChainStructure.from_structure(x)
+        case Path():
+            return _read_path(x, tolerate_failures, supported_seq_ext, supported_str_ext)
+        case _:
+            if tolerate_failures:
+                return None
+            raise InitError(f'Unsupported input type {type(x)}')
+
+
+def _map_numbering(seq1, seq2):
+    return seq1.map_numbering(seq2, save=False)
+
+
+def map_numbering_12many(
+        obj_to_map: str | tuple[str, str] | ChainSequence | Alignment,
+        seqs: abc.Iterable[ChainSequence],
+        num_proc: t.Optional[int] = None,
+) -> abc.Iterator[list[int]]:
+    if num_proc:
+        with ProcessPoolExecutor(num_proc) as executor:
+            yield from executor.map(_map_numbering, seqs, repeat(obj_to_map))
+    else:
+        yield from (x.map_numbering(obj_to_map, save=False) for x in seqs)
+
+
+def map_numbering_many2many(
+        objs_to_map: abc.Sequence[str | tuple[str, str] | ChainSequence | Alignment],
+        seq_groups: abc.Sequence[abc.Sequence[ChainSequence]],
+        num_proc: t.Optional[int] = None, verbose: bool = False,
+):
+    if len(objs_to_map) != len(seq_groups):
+        raise LengthMismatch(
+            f'The number of objects to map {len(objs_to_map)} != '
+            f'the number of sequence groups {len(seq_groups)}')
+    staged = chain.from_iterable(
+        ((obj, s) for s in g) for obj, g in zip(objs_to_map, seq_groups))
+    group_sizes = map(len, seq_groups)
+    if num_proc:
+        objs, seqs = unzip(staged)
+        with ProcessPoolExecutor(num_proc) as executor:
+            results = executor.map(_map_numbering, seqs, objs)
+            if verbose:
+                results = tqdm(results, desc='Mapping numberings')
+            yield from split_into(results, group_sizes)
+    else:
+        results = (s.map_numbering(o, save=False) for o, s in staged)
+        if verbose:
+            results = tqdm(results, desc='Mapping numberings')
+        yield from split_into(results, group_sizes)
+
+
+class ChainInitializer:
+    def __init__(
+            self, num_proc: int | None = None, tolerate_failures: bool = False,
+            verbose: bool = False):
+        self.num_proc = num_proc
+        self.tolerate_failures = tolerate_failures
+        self.verbose = verbose
+
+    @property
+    def supported_seq_ext(self) -> list[str]:
+        return ['.fasta']
+
+    @property
+    def supported_str_ext(self) -> list[str]:
+        return ['.cif', '.pdb', '.pdbx', '.mmtf', '.npz']
+
+    def from_iterable(
+            self, it: abc.Iterable[
+                SS | Path | tuple[Path, abc.Sequence[str]] | tuple[str, str] | GenericStructure],
+    ):
+        """Initialize `ChainSequence` or `ChainStructure` objects from inputs."""
+        if self.num_proc is not None:
+            with ProcessPoolExecutor(self.num_proc) as executor:
+                futures = [
+                    (x, executor.submit(
+                        _read, x, self.tolerate_failures, self.supported_seq_ext,
+                        self.supported_str_ext))
+                    for x in it]
+                if self.verbose:
+                    futures = tqdm(futures, desc='Initializing objects in parallel')
+                for x, future in futures:
+                    try:
+                        yield future.result()
+                    except Exception as e:
+                        LOGGER.warning(f'Input {x} failed with an error {e}')
+                        LOGGER.exception(e)
+                        if not self.tolerate_failures:
+                            raise e
+                        yield None
+        else:
+            if self.verbose:
+                it = tqdm(it, desc='Initializing objects sequentially')
+            yield from (
+                _read(
+                    x, self.tolerate_failures, self.supported_seq_ext,
+                    self.supported_str_ext
+                )
+                for x in it)
+
+    def from_mapping(
+            self, m: abc.Mapping[
+                ChainSequence | tuple[str, str] | Path,
+                abc.Sequence[
+                    ChainStructure | GenericStructure | bst.AtomArray | Path |
+                    tuple[Path, abc.Sequence[str]]]
+            ], **kwargs
+    ):
+        """Initialize `Chain` objects from mapping between sequences and structures."""
+        # Process keys and values
+        keys = self.from_iterable(m)  # ChainSequences
+        values_flattened = self.from_iterable(chain.from_iterable(m.values()))  # ChainStructures
+        values = split_into(values_flattened, map(len, m.values()))
+
+        m_new = valmap(
+            lambda vs: collapse(filter(bool, vs)),
+            keymap(
+                Chain,  # create `Chain` objects from `ChainSequence`s
+                keyfilter(bool, dict(zip(keys, values)))  # Filter possible failures
+            )
+        )
+
+        if self.num_proc is None:
+            for c, ss in m_new.items():
+                for s in ss:
+                    c.add_structure(s, **kwargs)
+        else:
+            map_name = kwargs.get('map_name') or SeqNames.map_canonical
+
+            # explicitly unpack value iterable into lists
+            m_new = valmap(list, m_new)
+
+            # create numbering groups -- lists of lists with numberings for each structure in values
+            numbering_groups = map_numbering_many2many(
+                [x.seq for x in m_new], [[x.seq for x in val] for val in m_new.values()],
+                num_proc=self.num_proc, verbose=self.verbose
+            )
+            for (c, ss), num_group in zip_equal(m_new.items(), numbering_groups):
+                if len(num_group) != len(ss):
+                    raise LengthMismatch(
+                        f'The number of mapped numberings {len(num_group)} must match '
+                        f'the number of structures {len(ss)}.')
+                for s, n in zip(ss, num_group):
+                    try:
+                        s.seq.add_seq(map_name, n)
+                        c.add_structure(s, map_to_seq=False, **kwargs)
+                    except Exception as e:
+                        LOGGER.warning(f'Failed to add structure {s} to chain {c} due to {e}')
+                        LOGGER.exception(e)
+                        if not self.tolerate_failures:
+                            raise e
+
+        return list(m_new)
 
 
 if __name__ == '__main__':
