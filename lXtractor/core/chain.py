@@ -4,16 +4,17 @@ import logging
 import operator as op
 import typing as t
 from collections import namedtuple, abc
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 from functools import lru_cache, partial
 from io import TextIOBase
 from itertools import starmap, chain, zip_longest, tee, filterfalse, repeat
 from pathlib import Path
 
 import biotite.structure as bst
+import numpy as np
 import pandas as pd
-from cytoolz import keyfilter, keymap, valmap, itemmap
-from more_itertools import unzip, first_true, always_iterable, split_into, zip_equal, collapse
+from cytoolz import keyfilter, keymap, valmap
+from more_itertools import unzip, first_true, split_into, zip_equal, collapse
 from tqdm.auto import tqdm
 
 from lXtractor.core.alignment import Alignment
@@ -175,6 +176,18 @@ class ChainSequence(Segment):
         other.add_seq(map_name, list(mapped))
         return other
 
+    def coverage(
+            self, map_names: list[str] | None,
+            save_to_meta: bool = True, prefix: str = 'cov',
+    ) -> dict[str, float]:
+        df = self.as_df()
+        map_names = map_names or self.fields[3:]
+        size = len(df)
+        cov = {f'{prefix}_{n}': ~df[n].isna().sum() / size for n in map_names}
+        if save_to_meta:
+            self.meta.update(cov)
+        return cov
+
     @lru_cache()
     def get_map(self, key: str) -> dict[t.Any, namedtuple]:
         return dict(zip(self[key], iter(self)))
@@ -212,8 +225,13 @@ class ChainSequence(Segment):
     # def as_record(self) -> SeqRec:
     #     return SeqRec(Seq(self.seq1), self.id, self.id, self.id)
 
+    @lru_cache
     def as_df(self) -> pd.DataFrame:
         return pd.DataFrame(iter(self))
+
+    @lru_cache
+    def as_np(self) -> np.ndarray:
+        return self.as_df().values
 
     def spawn_child(
             self, start: int, end: int, name: t.Optional[str] = None, *,

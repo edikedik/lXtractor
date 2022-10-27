@@ -1,6 +1,1 @@
-"""
-Modules here depend on .base, .protein, or ../util.
-"""
-from .alignment import Alignment
-from .base import AminoAcidDict
-from .chain import Chain
+from .chain import Chain, ChainList, ChainStructure, ChainSequence, ChainInitializer, ChainIO

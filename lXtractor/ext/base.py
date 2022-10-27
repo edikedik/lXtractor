@@ -1,5 +1,4 @@
 import typing as t
-from abc import ABCMeta
 from collections import abc
 
 from lXtractor.core.chain import CT
