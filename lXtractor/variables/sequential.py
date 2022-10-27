@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import typing as t
 
-from lXtractor import AminoAcidDict
 from lXtractor.core.exceptions import FailedCalculation
 from lXtractor.variables.base import SequenceVariable, MappingT
 

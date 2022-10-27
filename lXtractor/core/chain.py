@@ -4,7 +4,7 @@ import logging
 import operator as op
 import typing as t
 from collections import namedtuple, abc
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed, Future
 from functools import lru_cache, partial
 from io import TextIOBase
 from itertools import starmap, chain, zip_longest, tee, filterfalse, repeat
@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 from cytoolz import keyfilter, keymap, valmap
 from more_itertools import unzip, first_true, split_into, zip_equal, collapse
+from toolz import curry
 from tqdm.auto import tqdm
 
 from lXtractor.core.alignment import Alignment
@@ -879,57 +880,100 @@ class ChainList(abc.MutableSequence[CT]):
         return ChainList([fn(c, *args, **kwargs) for c in self])
 
 
+@curry
+def _read_obj(path: Path, obj_type: t.Type[CT], tolerate_failures: bool, **kwargs):
+    try:
+        return obj_type.read(path, **kwargs)
+    except Exception as e:
+        LOGGER.exception(e)
+        if not tolerate_failures:
+            raise e
+    return
+
+
+@curry
+def _write_obj(obj: CT, path: Path, tolerate_failures: bool, **kwargs) -> Path:
+    try:
+        obj.write(path, **kwargs)
+        return path
+    except Exception as e:
+        LOGGER.exception(e)
+        if not tolerate_failures:
+            raise e
+
+
 class ChainIO:
     # TODO: implement context manager
     def __init__(
-            self, verbose: bool = False, tolerate_failures: bool = False,
-            dump_names: DumpNames = DumpNames
+            self, num_proc: None | int = None, verbose: bool = False,
+            tolerate_failures: bool = False, dump_names: DumpNames = DumpNames,
     ):
+        self.num_proc = num_proc
         self.verbose = verbose
         self.tolerate_failures = tolerate_failures
         self.dump_names = dump_names
 
-    def _read_one(self, obj_type: t.Type[CT], path: Path, **kwargs) -> t.Optional[CT]:
-        try:
-            return obj_type.read(path, **kwargs)
-        except Exception as e:
-            LOGGER.exception(e)
-            if not self.tolerate_failures:
-                raise e
-        return
-
-    def _write_one(self, obj: CT, path: Path, **kwargs) -> t.NoReturn:
-        try:
-            return obj.write(path, **kwargs)
-        except Exception as e:
-            LOGGER.exception(e)
-            if not self.tolerate_failures:
-                raise e
-
     def _read(
-            self, obj_type: t.Type[CT], base: Path, **kwargs
+            self, obj_type: t.Type[CT], base: Path, non_blocking: bool = False, **kwargs
     ) -> t.Optional[CT] | abc.Iterator[t.Optional[CT]]:
 
         dirs = get_dirs(base)
 
         if DumpNames.segments_dir in dirs or not dirs:
-            return self._read_one(obj_type, base, **kwargs)
+            return _read_obj(obj_type, base, **kwargs)
 
         dirs = dirs.values()
-        if self.verbose:
-            dirs = tqdm(dirs, desc=f'Reading {obj_type.__class__.__name__}')
 
-        return (self._read_one(obj_type, p, **kwargs) for p in dirs)
+        _read = _read_obj(obj_type=obj_type, tolerate_failures=self.tolerate_failures, **kwargs)
 
-    def write(self, objs: CT | abc.Iterable[CT], base: Path, **kwargs):
+        if self.num_proc is None:
+
+            if self.verbose:
+                dirs = tqdm(dirs, desc=f'Reading {obj_type.__class__.__name__}')
+
+            yield from map(_read, dirs)
+
+        else:
+
+            with ProcessPoolExecutor(self.num_proc) as executor:
+
+                futures = [executor.submit(_read, d) for d in dirs]
+
+                if non_blocking:
+                    return futures
+
+                if self.verbose:
+                    futures = tqdm(futures, desc='Writing objects')
+
+                for future in as_completed(futures):
+                    yield future.result()
+
+    def write(
+            self, objs: CT | abc.Iterable[CT], base: Path, non_blocking: bool = False, **kwargs
+    ) -> abc.Iterator[Future] | abc.Iterator[Path]:
         if isinstance(objs, (Chain, ChainSequence, ChainStructure)):
             objs.write(base)
         else:
-            if self.verbose:
-                objs = tqdm(objs, desc='Writing objects')
-            for obj in objs:
-                path = base / obj.id
-                self._write_one(obj, path, **kwargs)
+            _write = _write_obj(tolerate_failures=self.tolerate_failures, **kwargs)
+
+            if self.num_proc is None:
+                if self.verbose:
+                    objs = tqdm(objs, desc='Writing objects')
+                for obj in objs:
+                    yield _write(obj, base / obj.id)
+            else:
+                with ProcessPoolExecutor(self.num_proc) as executor:
+
+                    futures = [executor.submit(_write, obj, base / obj.id) for obj in objs]
+
+                    if non_blocking:
+                        return futures
+
+                    if self.verbose:
+                        futures = tqdm(futures, desc='Writing objects')
+
+                    for future in as_completed(futures):
+                        yield future.result()
 
     def read_chain(
             self, path: Path, **kwargs
@@ -972,7 +1016,7 @@ def _read_path(x, tolerate_failures, supported_seq_ext, supported_str_ext):
         raise InitError(f'Suffix {x.suffix} of the path {x} is not supported')
 
 
-def _read(x, tolerate_failures, supported_seq_ext, supported_str_ext, callbacks):
+def _init(x, tolerate_failures, supported_seq_ext, supported_str_ext, callbacks):
     match x:
         case ChainSequence() | ChainStructure():
             res = x
@@ -1064,7 +1108,7 @@ class ChainInitializer:
             with ProcessPoolExecutor(self.num_proc) as executor:
                 futures = [
                     (x, executor.submit(
-                        _read, x, self.tolerate_failures, self.supported_seq_ext,
+                        _init, x, self.tolerate_failures, self.supported_seq_ext,
                         self.supported_str_ext, callbacks))
                     for x in it]
                 if self.verbose:
@@ -1082,10 +1126,8 @@ class ChainInitializer:
             if self.verbose:
                 it = tqdm(it, desc='Initializing objects sequentially')
             yield from (
-                _read(
-                    x, self.tolerate_failures, self.supported_seq_ext,
-                    self.supported_str_ext, callbacks
-                )
+                _init(x, self.tolerate_failures, self.supported_seq_ext,
+                      self.supported_str_ext, callbacks)
                 for x in it)
 
     def from_mapping(

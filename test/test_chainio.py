@@ -6,7 +6,7 @@ from lXtractor.core.config import DumpNames
 from lXtractor.util.io import get_files, get_dirs
 
 
-def test_chain_io(simple_structure, simple_chain_seq):
+def test_chainio(simple_structure, simple_chain_seq):
     fields, seq = simple_chain_seq
     struc = ChainStructure.from_structure(simple_structure)
     seq_child = seq.spawn_child(1, 2)
@@ -88,3 +88,21 @@ def test_chain_io(simple_structure, simple_chain_seq):
         assert len(objs) == 1
         c_r = objs.pop()
         assert c_r.id == ch.id
+
+
+def test_chainio_parallel(simple_structure, simple_chain_seq):
+    fields, seq = simple_chain_seq
+
+    io = ChainIO(num_proc=2)
+
+    with TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        res = list(io.write([seq, seq], tmp))
+        assert len(res) == 2
+
+        dirs = get_dirs(tmp)
+        assert len(dirs) == 1
+
+        c_r = list(io.read_chain_seq(tmp))
+
+        assert len(c_r) == 1
