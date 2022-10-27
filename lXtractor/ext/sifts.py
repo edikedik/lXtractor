@@ -238,8 +238,8 @@ class SIFTS(AbstractResource):
         raise NotImplementedError
 
     @staticmethod
-    def _parse_obj_id(obj_id: str) -> str:
-        if len(obj_id) == 6 and ':' in obj_id:
+    def _categorize(obj_id: str) -> str:
+        if ':' in obj_id:
             LOGGER.debug(f'Assumed {obj_id} to be a PDB:Chain')
             sel_column = 'PDB_Chain'
         elif len(obj_id) == 4:
@@ -274,7 +274,7 @@ class SIFTS(AbstractResource):
             the UniProt numbering to the PDB numbering
             regardless of the ``obj_id`` nature.
         """
-        sel_column = self._parse_obj_id(obj_id)
+        sel_column = self._categorize(obj_id)
 
         if self.df is None:
             raise MissingData('No SIFTS df found; try calling .parse() first')
@@ -295,13 +295,25 @@ class SIFTS(AbstractResource):
             Mapping(uni_id, pdb_chain, m)
             for (uni_id, pdb_chain), m in zip(group_ids, mappings))
 
-    def map_id(self, _id: str) -> t.Optional[t.List[str]]:
+    def map_id(self, x: str) -> t.Optional[t.List[str]]:
         if self.id_mapping is None:
             self._prepare_id_map(self.df)
-        if _id not in self.id_mapping:
-            LOGGER.warning(f"Couldn't find {_id} in SIFTS")
-            return None
-        return self.id_mapping[_id]
+        res = self.id_mapping.get(x)
+        if res is None:
+            LOGGER.warning(f"Couldn't find {x} in SIFTS")
+        return res
+
+    @property
+    def uniprot_ids(self) -> set[str]:
+        return {x for x in self.id_mapping if self._categorize(x) == 'UniProt_ID'}
+
+    @property
+    def pdb_ids(self) -> set[str]:
+        return {x for x in self.id_mapping if self._categorize(x) == 'PDB'}
+
+    @property
+    def pdb_chains(self) -> set[str]:
+        return {x for x in self.id_mapping if self._categorize(x) == 'PDB_Chain'}
 
 
 def wrap_into_segments(df: pd.DataFrame) -> t.Tuple[t.List[Segment], t.List[Segment]]:
