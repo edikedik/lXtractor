@@ -167,23 +167,24 @@ class ChainSequence(Segment):
 
     def transfer_map(
             self, other: ChainSequence, map_name: str,
-            link_name: str, link_name_points_to: str = 'i'
+            link_name: str, link_name_points_to: str = 'i',
+            map_name_in_other: str | None = None,
     ):
         mapping = self.get_map(link_name_points_to)
         mapped = map(
             lambda x: x if x is None else x._asdict()[map_name],
             (mapping.get(x) for x in other[link_name]))
-        other.add_seq(map_name, list(mapped))
+        other.add_seq(map_name_in_other or map_name, list(mapped))
         return other
 
     def coverage(
-            self, map_names: list[str] | None,
+            self, map_names: list[str] | None = None,
             save_to_meta: bool = True, prefix: str = 'cov',
     ) -> dict[str, float]:
         df = self.as_df()
         map_names = map_names or self.fields[3:]
         size = len(df)
-        cov = {f'{prefix}_{n}': ~df[n].isna().sum() / size for n in map_names}
+        cov = {f'{prefix}_{n}': (~df[n].isna()).sum() / size for n in map_names}
         if save_to_meta:
             self.meta.update(cov)
         return cov
@@ -221,9 +222,6 @@ class ChainSequence(Segment):
         if result:
             return result[1]
         return None
-
-    # def as_record(self) -> SeqRec:
-    #     return SeqRec(Seq(self.seq1), self.id, self.id, self.id)
 
     @lru_cache
     def as_df(self) -> pd.DataFrame:
@@ -343,7 +341,7 @@ class ChainSequence(Segment):
     def write_seq(
             self, path: Path, fields: t.Optional[t.Container[str]] = None, sep: str = '\t'
     ) -> None:
-        self.as_df().drop_duplicates().to_csv(path, columns=fields, sep=sep)
+        self.as_df().drop_duplicates().to_csv(path, index=False, columns=fields, sep=sep)
 
     def write_meta(self, path: Path, sep='\t'):
         items = (f'{k}{sep}{v}' for k, v in self.meta.items()
@@ -605,10 +603,12 @@ class Chain(AbstractChain):
 
     def transfer_seq_mapping(
             self, map_name: str, link_map: str = SeqNames.map_canonical,
-            link_map_points_to: str = SeqNames.enum):
+            link_map_points_to: str = SeqNames.enum,
+            map_name_in_other: str | None = None):
         """Transfer sequence mapping to structure sequences"""
         for s in self.structures:
-            self.seq.transfer_map(s.seq, map_name, link_map, link_map_points_to)
+            self.seq.transfer_map(
+                s.seq, map_name, link_map, link_map_points_to, map_name_in_other)
 
     def spawn_child(
             self, start: int, end: int, name: None | str = None, *,
@@ -873,7 +873,10 @@ class ChainList(abc.MutableSequence[CT]):
         return map(op.itemgetter(1), filter(lambda x: x[0], zip(mask, objs2)))
 
     def filter(self, pred: abc.Callable[[CT], bool]) -> ChainList:
-        return ChainList(filter(pred, self._chains))
+        return ChainList(filter(pred, self))
+
+    def apply(self, fn: abc.Callable[[CT, ...], CT], *args, **kwargs) -> ChainList:
+        return ChainList([fn(c, *args, **kwargs) for c in self])
 
 
 class ChainIO:
@@ -1071,7 +1074,7 @@ class ChainInitializer:
                         yield future.result()
                     except Exception as e:
                         LOGGER.warning(f'Input {x} failed with an error {e}')
-                        LOGGER.exception(e)
+                        # LOGGER.exception(e)
                         if not self.tolerate_failures:
                             raise e
                         yield None
