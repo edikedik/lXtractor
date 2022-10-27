@@ -853,7 +853,7 @@ class ChainList(abc.MutableSequence[CT]):
         return self._filter_seqs(
             map(lambda x: x.seq, structures), match_type, s, map_name)
 
-    def filter(
+    def filter_pos(
             self, s: Segment | abc.Collection[Ord], *,
             obj_type: str = 'seq', match_type: str = 'overlap',
             map_name: t.Optional[str] = None
@@ -871,6 +871,9 @@ class ChainList(abc.MutableSequence[CT]):
         objs1, objs2 = tee(objs)
         mask = fn(objs1, match_type, s, map_name)
         return map(op.itemgetter(1), filter(lambda x: x[0], zip(mask, objs2)))
+
+    def filter(self, pred: abc.Callable[[CT], bool]) -> ChainList:
+        return ChainList(filter(pred, self._chains))
 
 
 class ChainIO:
