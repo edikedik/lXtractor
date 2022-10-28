@@ -29,12 +29,14 @@ def _map_pos(pos: int, mapping: t.Optional[MappingT] = None) -> int:
 
 
 @curry
-def _get_residue(
+def _get_residue_mask(
         pos: int, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
-) -> bst.AtomArray:
+) -> np.ndarray:
     pos = _map_pos(pos, mapping)
 
-    residue_atoms = array[array.res_id == pos]
+    mask = np.equal(array.res_id, pos)
+
+    residue_atoms = array[mask]
     if not residue_atoms.array_length():
         raise FailedCalculation(f'Missing position {pos}')
 
@@ -42,7 +44,15 @@ def _get_residue(
     if len(num_starts) > 1:
         raise FailedCalculation(f'Position {pos} points to {len(num_starts)}>1 residues')
 
-    return residue_atoms
+    return mask
+
+
+@curry
+def _get_residue(
+        pos: int, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+) -> bst.AtomArray:
+    mask = _get_residue_mask(pos, array, mapping)
+    return array[mask]
 
 
 @curry
@@ -249,7 +259,7 @@ class PseudoDihedral(Dihedral):
 
 
 class Phi(Dihedral):
-    __slots__ = ('p', )
+    __slots__ = ('p',)
 
     def __init__(self, p: int):
         self.p = p
@@ -260,7 +270,7 @@ class Phi(Dihedral):
 
 
 class Psi(Dihedral):
-    __slots__ = ('p', )
+    __slots__ = ('p',)
 
     def __init__(self, p: int):
         self.p = p
@@ -271,7 +281,7 @@ class Psi(Dihedral):
 
 
 class Omega(Dihedral):
-    __slots__ = ('p', )
+    __slots__ = ('p',)
 
     def __init__(self, p: int):
         self.p = p
@@ -282,7 +292,7 @@ class Omega(Dihedral):
 
 
 class CompositeDihedral(StructureVariable):
-    __slots__ = ('p', )
+    __slots__ = ('p',)
 
     def __init__(self, p: int):
         self.p = p
@@ -341,6 +351,25 @@ class Chi2(CompositeDihedral):
             Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG', 'CD1', 'Chi2_CG-CD1'),
             Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG', 'SD', 'Chi2_CG-SD'),
         ]
+
+
+class SASA(StructureVariable):
+    __slots__ = ('p', 'a')
+
+    def __init__(self, p: int, a: str | None = None):
+        self.p = p
+        self.a = a
+
+    @property
+    def rtype(self) -> t.Type[float]:
+        return float
+
+    def calculate(
+            self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+    ) -> float:
+        m = _get_residue_mask(self.p, array, mapping)
+        sasa = bst.sasa(array, atom_filter=m)
+        return float(np.sum(sasa[~np.isnan(sasa)]))
 
 
 if __name__ == '__main__':
