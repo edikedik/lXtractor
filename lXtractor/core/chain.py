@@ -315,7 +315,7 @@ class ChainSequence(Segment):
 
         if dump_names.meta in files:
             df = pd.read_csv(
-                base_dir / dump_names.meta, sep=r'\s+', names=['Title', 'Value'])
+                files[dump_names.meta], sep=r'\s+', names=['Title', 'Value'])
             meta = dict(zip(df['Title'], df['Value']))
             if MetaNames.name in meta:
                 name = meta[MetaNames.name]
@@ -324,7 +324,7 @@ class ChainSequence(Segment):
         else:
             meta, name = {}, 'UnnamedSequence'
 
-        df = pd.read_csv(base_dir / files[dump_names.sequence], sep=r'\s+')
+        df = pd.read_csv(files[dump_names.sequence], sep=r'\s+')
         seq = cls.from_df(df, name)
         seq.meta = meta
 
@@ -458,7 +458,7 @@ class ChainStructure:
         variables = None
 
         bname = dump_names.structure_base_name
-        stems = {p.stem: p for p in files.values()}
+        stems = {p.stem: p.name for p in files.values()}
         if bname not in stems:
             raise InitError(f'{base_dir} must contain {bname}.fmt '
                             f'where "fmt" is supported structure format')
@@ -937,15 +937,15 @@ class ChainIO:
 
             with ProcessPoolExecutor(self.num_proc) as executor:
 
-                futures = [executor.submit(_read, d) for d in dirs]
+                futures = as_completed([executor.submit(_read, d) for d in dirs])
 
                 if non_blocking:
                     return futures
 
                 if self.verbose:
-                    futures = tqdm(futures, desc='Writing objects')
+                    futures = tqdm(futures, desc=f'Reading {obj_type.__class__.__name__}')
 
-                for future in as_completed(futures):
+                for future in futures:
                     yield future.result()
 
     def write(
