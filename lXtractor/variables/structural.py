@@ -366,8 +366,15 @@ class SASA(StructureVariable):
 
     def calculate(
             self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
-    ) -> float:
+    ) -> float | None:
         m = _get_residue_mask(self.p, array, mapping)
+
+        if self.a is not None:
+            m &= (array.atom_name == self.a)
+
+        if m.sum() == 0:
+            raise FailedCalculation('Empty selection')
+
         sasa = bst.sasa(array, atom_filter=m)
         return float(np.sum(sasa[~np.isnan(sasa)]))
 
