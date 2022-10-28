@@ -964,7 +964,8 @@ class ChainIO:
             else:
                 with ProcessPoolExecutor(self.num_proc) as executor:
 
-                    futures = [executor.submit(_write, obj, base / obj.id) for obj in objs]
+                    futures = as_completed(
+                        [executor.submit(_write, obj, base / obj.id) for obj in objs])
 
                     if non_blocking:
                         return futures
@@ -972,7 +973,7 @@ class ChainIO:
                     if self.verbose:
                         futures = tqdm(futures, desc='Writing objects')
 
-                    for future in as_completed(futures):
+                    for future in futures:
                         yield future.result()
 
     def read_chain(
