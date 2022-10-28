@@ -14,7 +14,7 @@ import biotite.structure as bst
 import numpy as np
 import pandas as pd
 from cytoolz import keyfilter, keymap, valmap
-from more_itertools import unzip, first_true, split_into, zip_equal, collapse
+from more_itertools import unzip, first_true, split_into, zip_equal, collapse, nth
 from toolz import curry
 from tqdm.auto import tqdm
 
@@ -297,7 +297,7 @@ class ChainSequence(Segment):
             raise InitError('Must contain the "i" column')
         assert len(df) >= 1
         start, end = df['i'].iloc[0], df['i'].iloc[-1]
-        seqs = {col: list(df[col]) for col in df.columns}
+        seqs = {col: list(df[col]) for col in df.columns if col != 'i'}
         return cls(start, end, name, seqs=seqs)
 
     @classmethod
@@ -324,7 +324,7 @@ class ChainSequence(Segment):
         else:
             meta, name = {}, 'UnnamedSequence'
 
-        df = pd.read_csv(files[dump_names.sequence], sep=r'\s+')
+        df = pd.read_csv(files[dump_names.sequence], sep='\t')
         seq = cls.from_df(df, name)
         seq.meta = meta
 
@@ -686,6 +686,10 @@ class ChainList(abc.MutableSequence[CT]):
         else:
             return None
 
+    @property
+    def type(self) -> str:
+        return self._type
+
     def _check_match_and_set_type(self, x: str) -> t.NoReturn:
         if self._type is not None:
             if x != self._type:
@@ -762,7 +766,12 @@ class ChainList(abc.MutableSequence[CT]):
     def iter_children(self) -> abc.Generator[ChainList[CT]]:
         levels = zip_longest(*map(lambda c: c.iter_children(), self._chains))
         for level in levels:
-            yield ChainList(list(chain.from_iterable(level)))
+            yield ChainList(chain.from_iterable(level))
+
+    def get_level(self, n: int) -> ChainList[CT]:
+        if n == 0:
+            return self
+        return nth(self.iter_children(), n - 1, default=ChainList([]))
 
     def collapse_children(self) -> ChainList[CT] | list:
         children = list(chain.from_iterable(self.iter_children()))
@@ -770,21 +779,24 @@ class ChainList(abc.MutableSequence[CT]):
             return ChainList(children)
         return children
 
-    def iter_sequences(self) -> abc.Iterator[ChainSequence]:
+    def iter_sequences(self) -> abc.Generator[ChainSequence]:
         match self._type:
             case 'chain' | 'str':
-                return (c.seq for c in self._chains)
+                yield from (c.seq for c in self._chains)
             case _:
-                return iter(self._chains)
+                yield from iter(self._chains)
 
-    def iter_structures(self) -> abc.Iterator[ChainStructure]:
+    def iter_structures(self) -> abc.Generator[ChainStructure]:
         match self._type:
             case 'chain':
-                return chain.from_iterable(c.structures for c in self._chains)
+                yield from chain.from_iterable(c.structures for c in self._chains)
             case 'str':
-                return iter(self._chains)
+                yield from iter(self._chains)
             case _:
-                return iter([])
+                yield from iter([])
+
+    def iter_structure_sequences(self) -> abc.Iterator[ChainSequence]:
+        yield from (s.seq for s in self.iter_structures())
 
     @staticmethod
     def _to_segment(s: abc.Sequence[int, int] | Segment) -> Segment:
@@ -929,7 +941,7 @@ class ChainIO:
         if self.num_proc is None:
 
             if self.verbose:
-                dirs = tqdm(dirs, desc=f'Reading {obj_type.__class__.__name__}')
+                dirs = tqdm(dirs, desc=f'Reading {obj_type}')
 
             yield from map(_read, dirs)
 
@@ -943,7 +955,7 @@ class ChainIO:
                     return futures
 
                 if self.verbose:
-                    futures = tqdm(futures, desc=f'Reading {obj_type.__class__.__name__}')
+                    futures = tqdm(futures, desc=f'Reading {obj_type}')
 
                 for future in futures:
                     yield future.result()
