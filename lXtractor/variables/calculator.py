@@ -10,7 +10,7 @@ from more_itertools import zip_equal
 from lXtractor.core.exceptions import FailedCalculation
 from lXtractor.variables.base import AbstractCalculator, OT, RT, VT, MappingT
 
-ERT: t.TypeAlias = tuple[bool, t.Union[RT, str]]
+ERT: t.TypeAlias = tuple[bool, t.Union[RT, str]]  # extended return type
 
 
 def _try_calculate(
@@ -29,7 +29,7 @@ def _calc_on_object(
     return [_try_calculate(o, v, m, valid_exceptions) for v in vs]
 
 
-class SimpleCalculator(AbstractCalculator):
+class SimpleCalculator(AbstractCalculator[OT, VT, RT]):
     """
     Uses straightforward calls of :meth:`calculate` method, i.e., `variable.calculate(obj, mapping)`.
     Returns the extended calculation result `(is_calculated, res)` where `is_calculated` is `True` when
@@ -51,11 +51,13 @@ class SimpleCalculator(AbstractCalculator):
         return map(lambda _v: _try_calculate(o, _v, m, self.valid_exceptions), v)
 
     def vmap(
-            self, o: abc.Iterable[OT], v: VT, m: abc.Iterable[MappingT | None]
+            self, o: abc.Iterable[OT], v: VT, m: abc.Iterable[MappingT | None] | None
     ) -> abc.Iterator[ERT]:
+        if m is None:
+            m = repeat(m)
         return starmap(
             lambda _o, _m: _try_calculate(_o, v, _m, self.valid_exceptions),
-            zip_equal(o, m))
+            zip(o, m))
 
 
 class ParallelCalculator(AbstractCalculator):

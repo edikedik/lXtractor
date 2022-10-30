@@ -1,6 +1,7 @@
 import pytest
 
 from lXtractor.core.exceptions import FailedCalculation
+from lXtractor.variables.calculator import SimpleCalculator, ParallelCalculator
 from lXtractor.variables.structural import Dist, Dihedral, PseudoDihedral, Phi, Psi, Omega
 from lXtractor.variables.sequential import SeqEl
 from lXtractor.variables.parser import parse_var
@@ -65,3 +66,31 @@ def test_dist(simple_structure):
         v.calculate(simple_structure.array)
     r = v.calculate(simple_structure.array, mapping={-10: 1, 1000: 40})
     assert abs(round(r, 2) - 4.56) < EPS
+
+
+def test_simple_calculator(simple_structure):
+    v = Dist(1, 40, 'CB', 'CB')
+    calculator = SimpleCalculator()
+    is_calculated, result = calculator(simple_structure.array, v, None)
+    assert is_calculated
+    assert abs(round(result, 2) - 4.56) < EPS
+    results = list(calculator.map(simple_structure.array, [v, v], None))
+    assert len(results) == 2
+    results = list(calculator.vmap([simple_structure.array, simple_structure.array], v, None))
+    assert len(results) == 2
+
+
+def test_parallel_calculator(simple_structure):
+    v = Dist(1, 40, 'CB', 'CB')
+    calculator = ParallelCalculator(2)
+    results = list(calculator(
+        [simple_structure.array, simple_structure.array], [[v, v, v], [v]], None))
+    assert len(results) == 2
+    results1, results2 = results
+    assert len(results1) == 3
+    assert len(results2) == 1
+    r1_calculated, r1 = results1.pop()
+    r2_calculated, r2 = results2.pop()
+    assert r1_calculated and r2_calculated
+    assert r1 == r2
+
