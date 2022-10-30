@@ -926,13 +926,17 @@ class ChainIO:
         self.dump_names = dump_names
 
     def _read(
-            self, obj_type: t.Type[CT], base: Path, non_blocking: bool = False, **kwargs
+            self, obj_type: t.Type[CT], path: Path | abc.Iterable[Path],
+            non_blocking: bool = False, **kwargs
     ) -> t.Optional[CT] | abc.Iterator[t.Optional[CT]]:
 
-        dirs = get_dirs(base)
+        if isinstance(path, Path):
+            dirs = get_dirs(path)
+        else:
+            dirs = {p.name: p for p in path if p.is_dir()}
 
-        if DumpNames.segments_dir in dirs or not dirs:
-            return _read_obj(obj_type, base, **kwargs)
+        if DumpNames.segments_dir in dirs or not dirs and isinstance(path, Path):
+            return _read_obj(obj_type, path, **kwargs)
 
         dirs = dirs.values()
 
@@ -989,17 +993,17 @@ class ChainIO:
                         yield future.result()
 
     def read_chain(
-            self, path: Path, **kwargs
+            self, path: Path | abc.Iterable[Path], **kwargs
     ) -> t.Optional[Chain] | abc.Iterator[t.Optional[Chain]]:
         return self._read(Chain, path, **kwargs)
 
     def read_chain_seq(
-            self, path: Path, **kwargs
+            self, path: Path | abc.Iterable[Path], **kwargs
     ) -> t.Optional[ChainSequence] | abc.Iterator[t.Optional[ChainSequence]]:
         return self._read(ChainSequence, path, **kwargs)
 
     def read_chain_struc(
-            self, path: Path, **kwargs
+            self, path: Path | abc.Iterable[Path], **kwargs
     ) -> t.Optional[ChainStructure] | abc.Iterator[t.Optional[ChainStructure]]:
         return self._read(ChainStructure, path, **kwargs)
 
