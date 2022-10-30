@@ -1,77 +1,38 @@
 import typing as t
 from collections import abc
-from itertools import chain
+from concurrent.futures import ProcessPoolExecutor
+from itertools import chain, repeat, starmap, tee
 
 import biotite.structure as bst
 import pandas as pd
-from more_itertools import nth, partition
+from more_itertools import partition, unzip, zip_equal
+from tqdm.auto import tqdm
 
 from lXtractor.core.chain import ChainList, SS, ChainSequence, ChainStructure, CT
 from lXtractor.core.config import SeqNames
-from lXtractor.core.exceptions import MissingData
-from lXtractor.variables.base import AbstractManager, CalcT, VT, SequenceVariable, StructureVariable
+from lXtractor.variables.base import VT, SequenceVariable, StructureVariable, Variables, CalculatorProtocol, RT, OT
+from lXtractor.variables.calculator import SimpleCalculator, ParallelCalculator
 
 T = t.TypeVar('T')
 StagedSeq: t.TypeAlias = tuple[
-    ChainSequence, list[SequenceVariable], abc.Iterable[T], abc.Mapping[int, int] | None]
+    ChainSequence, abc.Sequence[T], list[SequenceVariable],  abc.Mapping[int, int] | None]
 StagedStr: t.TypeAlias = tuple[
-    ChainStructure, list[StructureVariable], bst.AtomArray, abc.Mapping[int, int] | None]
+    ChainStructure, bst.AtomArray, list[StructureVariable],  abc.Mapping[int, int] | None]
+C = t.Union[ChainSequence, ChainStructure]
 
 
-class Manager(AbstractManager):
+def _update_variables(vs: Variables, upd: abc.Iterable[VT]) -> Variables:
+    for v in upd:
+        vs[v] = None
+    return vs
 
-    @property
-    def valid_types(self) -> set[str]:
-        return {'seq', 'str', 'str_seq'}
 
-    def _validate_obj_type(self, obj_type: str | abc.Sequence[str] | None):
-        match obj_type:
-            case str():
-                is_valid = obj_type[:3].lower() in self.valid_types
-            case abc.Sequence():
-                is_valid = set(obj_type).issubset(self.valid_types)
-            case _:
-                is_valid = False
-        if not is_valid:
-            raise ValueError(f'Invalid object type {obj_type}')
+class Manager:
+    __slots__ = ('num_proc', 'verbose')
 
-    def _filter_objs(
-            self, chains: CT | ChainList, level: int | None,
-            id_contains: str | None, obj_type: str | abc.Sequence[str] | None,
-    ) -> abc.Iterator[SS]:
-
-        match obj_type:
-            case str():
-                obj_type = [obj_type]
-            case None:
-                obj_type = list(self.valid_types)
-        self._validate_obj_type(obj_type)
-
-        if not isinstance(chains, ChainList):
-            if not isinstance(chains, abc.Iterable):
-                chains = [chains]
-            else:
-                chains = list(chains)
-            chains = ChainList(chains)
-        if level is None:
-            chains = chains + chains.collapse_children()
-        elif level == 0:
-            chains = chains
-        else:
-            chains = nth(chains.iter_children(), level - 1, default=None)
-            if chains is None:
-                raise MissingData(f'Level {level} is absent')
-
-        objs = iter([])
-        if 'seq' in obj_type:
-            objs = chain(objs, chains.iter_sequences())
-        if 'str' in obj_type:
-            objs = chain(objs, chains.iter_structures())
-        if 'str_seq' in obj_type:
-            objs = chain(objs, (s.seq for s in chains.iter_structures()))
-        if id_contains:
-            objs = filter(lambda o: id_contains in o.id, objs)
-        return objs
+    def __init__(self, num_proc: int | None = None, verbose: bool = False):
+        self.num_proc = num_proc
+        self.verbose = verbose
 
     @staticmethod
     def _split_variables(
@@ -99,69 +60,82 @@ class Manager(AbstractManager):
         return None or structure.array
 
     def assign(
-            self, vs: abc.Sequence[VT], chains: CT | ChainList, *,
-            level: int | None = None, id_contains: str | None = None,
-            obj_type: abc.Sequence[str] | str | None = None
+            self, vs: abc.Sequence[VT], chains: abc.Iterable[SS]
     ) -> t.NoReturn:
-        def _assign(c: SS, _vs: abc.Sequence[VT]) -> t.NoReturn:
-            for v in _vs:
-                if c not in c.variables:
-                    c.variables[v] = None
 
-        objs = self._filter_objs(chains, level, id_contains, obj_type)
         seq_vs, str_vs = self._split_variables(vs)
-        for obj in objs:
-            if isinstance(obj, ChainSequence):
-                _assign(obj, seq_vs)
-            else:
-                _assign(obj, str_vs)
+        seqs, strs = self._split_objects(chains)
+
+        staged = ((obj, (obj.variables, upd_vs)) for obj, upd_vs in
+                  chain(zip(seqs, repeat(seq_vs)), zip(strs, repeat(str_vs))))
+        objs, updates = unzip(staged)
+
+        if self.num_proc is None:
+            updates = starmap(_update_variables, updates)
+
+            if self.verbose:
+                updates = tqdm(updates, desc='Assigning variables')
+
+            for obj, updated_vs in zip(objs, updates):
+                obj.variables = updated_vs
+
+        else:
+            with ProcessPoolExecutor(self.num_proc) as executor:
+
+                old, new = unzip(updates)
+                updates = executor.map(_update_variables, old, new)
+
+                if self.verbose:
+                    updates = tqdm(updates, desc='Assigning variables')
+
+                for obj, updated_vs in zip(objs, updates):
+                    obj.variables = updated_vs
 
     def remove(
-            self, chains: CT | ChainList, vs: abc.Sequence[VT] | None = None, *,
-            level: int | None = None, id_contains: str | None = None,
-            obj_type: abc.Sequence[str] | str | None = None
+            self, chains: abc.Iterable[SS], vs: abc.Sequence[VT] | None = None
     ) -> t.NoReturn:
         def _take_key(v):
             return vs is not None and v in vs or vs is None
 
-        objs = self._filter_objs(chains, level, id_contains, obj_type)
-        for obj in objs:
-            keys = list(filter(_take_key, obj.variables))
+        if self.verbose:
+            chains = tqdm(chains, desc='Removing variables')
+
+        for c in chains:
+            keys = list(filter(_take_key, c.variables))
             for k in keys:
-                obj.variables.pop(k)
+                c.variables.pop(k)
 
     def reset(
-            self, chains: CT | ChainList, vs: abc.Sequence[VT] | None = None, *,
-            level: int | None = None, id_contains: str | None = None,
-            obj_type: abc.Sequence[str] | str | None = None
+            self, chains: abc.Iterable[SS], vs: abc.Sequence[VT] | None = None
     ) -> t.NoReturn:
         def _take_key(v):
             return vs is not None and v in vs or vs is None
 
-        objs = self._filter_objs(chains, level, id_contains, obj_type)
-        for obj in objs:
-            keys = list(filter(_take_key, obj.variables))
-            for k in keys:
-                obj.variables[k] = None
+        if self.verbose:
+            chains = tqdm(chains, desc='Resetting variable results')
 
-    def aggregate(
-            self, chains: CT | ChainList, *, level: int | None = None,
-            id_contains: str | None = None, obj_type: abc.Sequence[str] | str | None = None,
-    ) -> pd.DataFrame:
+        for c in chains:
+            keys = list(filter(_take_key, c.variables))
+            for k in keys:
+                c.variables[k] = None
+
+    def aggregate_from_chains(self, chains: abc.Iterable[SS]) -> pd.DataFrame:
         def _get_vs(obj: SS):
             vs_df = obj.variables.as_df()
             vs_df['ObjectID'] = obj.id
             vs_df['ObjectType'] = obj.__class__.__name__
             return vs_df
 
-        objs = self._filter_objs(chains, level, id_contains, obj_type)
-        vs = filter(lambda x: len(x) > 0, map(_get_vs, objs))
+        vs = filter(lambda x: len(x) > 0, map(_get_vs, chains))
+
+        if self.verbose:
+            vs = tqdm(vs, desc='Aggregating variables')
+
         return pd.concat(vs, ignore_index=True)
 
     def stage_calculations(
-            self, chains: CT | ChainList, *, missing: bool = True,
-            seq_name: str = SeqNames.seq1, map_name: t.Optional[str] = None, level: int | None = None,
-            id_contains: str | None = None, obj_type: abc.Sequence[str] | str | None = None
+            self, chains: CT | ChainList, vs: abc.Sequence[VT] | None, *, missing: bool = True,
+            seq_name: str = SeqNames.seq1, map_name: t.Optional[str] = None
     ) -> tuple[abc.Iterator[StagedSeq], abc.Iterator[StagedStr]]:
         def get_mapping(obj: SS) -> t.Optional[abc.Mapping[int, int]]:
             if map_name is None:
@@ -185,38 +159,86 @@ class Manager(AbstractManager):
             ...
 
         def stage(obj: ChainStructure | ChainSequence) -> t.Optional[StagedStr | StagedSeq]:
-            vs = get_vs(obj)
+            _vs = vs or get_vs(obj)
+
             target = self._find_structure(obj) if isinstance(obj, ChainStructure) else obj[seq_name]
             mapping = get_mapping(obj)
-            if not vs or obj is None:
-                return None
-            return obj, vs, target, mapping
 
-        objs = self._filter_objs(chains, level, id_contains, obj_type)
-        seqs, strs = self._split_objects(objs)
+            return obj, target, _vs, mapping
+
+        seqs, strs = self._split_objects(chains)
+
         staged_seqs, staged_strs = map(
-            lambda xs: filter(bool, map(stage, xs)), [seqs, strs])
+            lambda xs: map(stage, xs), [seqs, strs])
+
         return staged_seqs, staged_strs
 
-    def calculate(
-            self, chains: CT | ChainList, calculator: CalcT, *, missing: bool = True,
-            seq_name: str = SeqNames.seq1, map_name: t.Optional[str] = None, level: int | None = None,
-            id_contains: str | None = None, obj_type: abc.Sequence[str] | str | None = None
-    ) -> tuple[list[tuple[CT, VT, t.Any]], list[tuple[CT, VT, str]]]:
+    def calculate_sequentially(
+            self, chains: C | abc.Iterable[C], vs: abc.Sequence[VT] | None,
+            calculator: CalculatorProtocol[OT, VT, RT], *, save: bool = False, missing: bool = True,
+            seq_name: str = SeqNames.seq1, map_name: t.Optional[str] = None
+    ) -> abc.Generator[tuple[C, VT, bool, t.Any]]:
+
         staged_seqs, staged_strs = self.stage_calculations(
-            chains, missing=missing, seq_name=seq_name, map_name=map_name,
-            level=level, id_contains=id_contains, obj_type=obj_type)
+            chains, vs, missing=missing, seq_name=seq_name, map_name=map_name)
+
         # element = (object, variable, is_calculated, result)
         calculated = chain.from_iterable(
             ((obj, v, *calculator(target, v, mapping)) for v in vs)
-            for obj, vs, target, mapping in chain(staged_seqs, staged_strs))
+            for obj, target, vs, mapping in chain(staged_seqs, staged_strs))
 
-        failures, successes = map(lambda xs: [(x[0], x[1], x[3]) for x in xs],
-                                  partition(lambda x: x[2], calculated))
-        for obj, v, res in successes:
-            obj.variables[v] = res
+        if self.verbose:
+            calculated = tqdm(calculated, desc='Calculating variables')
 
-        return successes, failures
+        for obj, v, is_calculated, res in calculated:
+            if save:
+                if is_calculated:
+                    obj.variables[v] = res
+                else:
+                    obj.variables[v] = None
+            yield obj, v, is_calculated, res
+
+    def calculate_parallel(
+            self, chains: C | abc.Iterable[C], vs: abc.Sequence[VT] | None,
+            calculator: CalculatorProtocol[OT, VT, RT], *, save: bool = False,
+            missing: bool = True, seq_name: str = SeqNames.seq1, map_name: t.Optional[str] = None
+    ) -> abc.Generator[tuple[C, VT, bool, RT]]:
+        staged_seqs, staged_strs = self.stage_calculations(
+            chains, vs, missing=missing, seq_name=seq_name, map_name=map_name)
+
+        objs, targets, variables, mappings = unzip(chain(staged_seqs, staged_strs))
+        variables1, variables2 = tee(variables)
+        calculated = calculator(targets, variables1, mappings)
+
+        if self.verbose:
+            calculated = tqdm(calculated, desc='Calculating variables')
+
+        for obj, vs, results in zip_equal(objs, variables2, calculated):
+            try:
+                for v, (is_calculated, res) in zip_equal(vs, results):
+                    if save:
+                        if is_calculated:
+                            obj.variables[v] = res
+                        else:
+                            obj.variables[v] = None
+                    yield obj, v, is_calculated, res
+            except Exception as e:
+                print(f'Failed to assign variables due to {e}')
+                print(len(vs), len(results))
+
+    def calculate(
+            self, chains: T | abc.Iterable[T], vs: abc.Sequence[VT] | None, *,
+            missing: bool = True, seq_name: str = SeqNames.seq1,
+            map_name: t.Optional[str] = None
+    ) -> abc.Generator[tuple[C, VT, bool, t.Any]]:
+        if self.num_proc is None:
+            yield from self.calculate_sequentially(
+                chains, vs, SimpleCalculator(), missing=missing,
+                seq_name=seq_name, map_name=map_name)
+        else:
+            yield from self.calculate_parallel(
+                chains, vs, ParallelCalculator(self.num_proc), missing=missing,
+                seq_name=seq_name, map_name=map_name)
 
 
 if __name__ == '__main__':

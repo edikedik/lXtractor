@@ -17,7 +17,7 @@ AggFns = {'min': np.min, 'max': np.max, 'mean': np.mean, 'median': np.median}
 LOGGER = logging.getLogger(__name__)
 MappingT: t.TypeAlias = abc.Mapping[int, t.Optional[int]]
 RT = t.TypeVar('RT')  # return type
-OT = t.TypeVar('OT', str, bst.AtomArray)  # object type
+OT = t.TypeVar('OT', abc.Sequence, bst.AtomArray)  # object type
 T = t.TypeVar('T')
 
 
@@ -224,44 +224,59 @@ class AbstractCalculator(t.Generic[OT, VT, RT], metaclass=ABCMeta):
     ) -> abc.Iterator[RT]: ...
 
 
-CalcT = t.TypeVar('CalcT', bound=AbstractCalculator)
+class CalculatorProtocol(t.Protocol[OT, VT, RT]):
+
+    @t.overload
+    def __call__(self, o: OT, v: VT, m: MappingT | None, *args, **kwargs) -> RT: ...
+
+    @t.overload
+    def __call__(
+            self, o: abc.Iterable[OT], v: abc.Iterable[abc.Iterable[VT]],
+            m: abc.Iterable[MappingT | None] | None, *args, **kwargs
+    ) -> abc.Iterable[abc.Iterable[RT]]: ...
+
+    def __call__(
+            self, o: OT | abc.Iterable[OT], v: VT | abc.Iterable[abc.Iterable[VT]],
+            m: MappingT | abc.Iterable[MappingT | None] | None,
+            *args, **kwargs
+    ) -> RT | abc.Iterable[abc.Iterable[RT]]: ...
 
 
-class AbstractManager(t.Generic[VT, OT, T, CalcT], metaclass=ABCMeta):
-
-    __slots__ = ()
-
-    @abstractmethod
-    def assign(
-            self, vs: abc.Sequence[VT], chains: T | abc.MutableSequence[T], *,
-            level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
-    ) -> t.NoReturn: ...
-
-    @abstractmethod
-    def reset(
-            self, chains: T | abc.MutableSequence[T], vs: abc.Sequence[VT] | None, *,
-            level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
-    ) -> t.NoReturn: ...
-
-    @abstractmethod
-    def remove(
-            self, chains: T | abc.MutableSequence[T], vs: abc.Sequence[VT] | None, *,
-            level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
-    ) -> t.NoReturn: ...
-
-    @abstractmethod
-    def calculate(
-            self, chains: T | abc.MutableSequence[T], calculator: CalcT, *,
-            missing: bool, seq_name: str, map_name: t.Optional[str],
-            level: int, id_contains: str | None,
-            obj_type: abc.Sequence[str] | str | None
-    ) -> t.NoReturn: ...
-
-    @abstractmethod
-    def aggregate(
-            self, chains: T | abc.MutableSequence[T], *,
-            level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
-    ) -> pd.DataFrame: ...
+# class AbstractManager(t.Generic[VT, OT, T, CalcT], metaclass=ABCMeta):
+#
+#     __slots__ = ()
+#
+#     @abstractmethod
+#     def assign(
+#             self, vs: abc.Sequence[VT], chains: T | abc.MutableSequence[T], *,
+#             level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
+#     ) -> t.NoReturn: ...
+#
+#     @abstractmethod
+#     def reset(
+#             self, chains: T | abc.MutableSequence[T], vs: abc.Sequence[VT] | None, *,
+#             level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
+#     ) -> t.NoReturn: ...
+#
+#     @abstractmethod
+#     def remove(
+#             self, chains: T | abc.MutableSequence[T], vs: abc.Sequence[VT] | None, *,
+#             level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
+#     ) -> t.NoReturn: ...
+#
+#     @abstractmethod
+#     def calculate(
+#             self, chains: T | abc.MutableSequence[T], calculator: CalcT, *,
+#             missing: bool, seq_name: str, map_name: t.Optional[str],
+#             level: int, id_contains: str | None,
+#             obj_type: abc.Sequence[str] | str | None
+#     ) -> t.NoReturn: ...
+#
+#     @abstractmethod
+#     def aggregate(
+#             self, chains: T | abc.MutableSequence[T], *,
+#             level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
+#     ) -> pd.DataFrame: ...
 
 
 if __name__ == '__main__':
