@@ -13,7 +13,7 @@ ERT: t.TypeAlias = tuple[bool, t.Union[RT, str]]  # extended return type
 
 def _try_calculate(
         o: OT, v: VT, m: MappingT | None,
-        valid_exceptions: abc.Sequence[Exception]
+        valid_exceptions: abc.Sequence[t.Type[Exception]]
 ) -> ERT:
     try:
         return True, v.calculate(o, m)
@@ -23,7 +23,7 @@ def _try_calculate(
 
 def _calc_on_object(
         o: OT, vs: abc.Iterable[VT], m: MappingT | None,
-        valid_exceptions: abc.Sequence[Exception]):
+        valid_exceptions: abc.Sequence[t.Type[Exception]]):
     return [_try_calculate(o, v, m, valid_exceptions) for v in vs]
 
 
@@ -39,7 +39,7 @@ class SimpleCalculator(AbstractCalculator[OT, VT, RT]):
 
     __slots__ = ('valid_exceptions',)
 
-    def __init__(self, valid_exceptions: abc.Sequence[Exception] = (FailedCalculation,)):
+    def __init__(self, valid_exceptions: abc.Sequence[t.Type[Exception]] = (FailedCalculation,)):
         self.valid_exceptions = valid_exceptions
 
     def __call__(self, o: OT, v: VT, m: MappingT | None) -> ERT:
