@@ -1,9 +1,10 @@
 import typing as t
-from collections import abc
+from collections import abc, defaultdict
 from concurrent.futures import ProcessPoolExecutor
-from itertools import chain, repeat, starmap, tee
+from itertools import chain, groupby, repeat, starmap, tee
 
 import biotite.structure as bst
+import numpy as np
 import pandas as pd
 from more_itertools import partition, unzip, zip_equal
 from tqdm.auto import tqdm
@@ -132,6 +133,38 @@ class Manager:
             vs = tqdm(vs, desc='Aggregating variables')
 
         return pd.concat(vs, ignore_index=True)
+
+    def aggregate_from_it(
+            self, results: abc.Iterable[tuple[
+                ChainStructure | ChainSequence, SequenceVariable | StructureVariable, bool, t.Any]],
+            vs_to_cols: bool = True, replace_errors: bool = True,
+            replace_errors_with: t.Any = np.NaN,
+    ):
+        d = defaultdict(list)
+        if self.verbose:
+            results = tqdm(results, 'Aggregating variables')
+
+        if vs_to_cols:
+            # Note that these should be already sorted by IDs
+            results = groupby(results, lambda x: x[0].id)
+            for obj_id, group in results:
+                d['ObjectID'].append(obj_id)
+                for _, v, is_calculated, calc_res in group:
+                    if is_calculated:
+                        d[v.id].append(calc_res)
+                    else:
+                        if replace_errors:
+                            d[v.id].append(None)
+                        else:
+                            d[v.id].append(calc_res)
+        else:
+            for obj, v, is_calculated, calc_res in results:
+                d['ObjectID'].append(obj.id)
+                d['VariableID'].append(v.id)
+                d['VariableCalculated'].append(is_calculated)
+                d['VariableResult'].append(
+                    replace_errors_with if replace_errors and not is_calculated else calc_res)
+        return pd.DataFrame(d)
 
     def stage_calculations(
             self, chains: CT | ChainList, vs: abc.Sequence[VT] | None, *, missing: bool = True,

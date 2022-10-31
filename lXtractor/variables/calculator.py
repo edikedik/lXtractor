@@ -5,8 +5,6 @@ from collections import abc
 from concurrent.futures import ProcessPoolExecutor
 from itertools import starmap, repeat
 
-from more_itertools import zip_equal
-
 from lXtractor.core.exceptions import FailedCalculation
 from lXtractor.variables.base import AbstractCalculator, OT, RT, VT, MappingT
 
