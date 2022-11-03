@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typing as t
 from collections import abc
+from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
 
@@ -67,6 +68,7 @@ class GenericStructure(AbstractStructure):
             res_id_other: abc.Iterable[int] | None = None,
             atom_names_self: abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None = None,
             atom_names_other: abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None = None,
+            mask_self: np.ndarray | None = None, mask_other: np.ndarray | None = None,
     ) -> tuple[GenericStructure, float, tuple[np.ndarray, np.ndarray, np.ndarray]]:
         def _get_mask(a, res_id, atom_names):
             if res_id:
@@ -78,27 +80,32 @@ class GenericStructure(AbstractStructure):
                     m = np.ones_like(a, bool)
             return m
 
-        m_self = _get_mask(self.array, res_id_self, atom_names_self)
-        m_other = _get_mask(other.array, res_id_other, atom_names_other)
+        if mask_self is None:
+            mask_self = _get_mask(self.array, res_id_self, atom_names_self)
+        if mask_other is None:
+            mask_other = _get_mask(other.array, res_id_other, atom_names_other)
 
-        num_self, num_other = m_self.sum(), m_other.sum()
+        num_self, num_other = mask_self.sum(), mask_other.sum()
         if num_self != num_other:
             raise LengthMismatch(f'To superpose, the number of atoms must match. '
-                                 f'Got {num_other} in self and {num_other} in other.')
+                                 f'Got {num_self} in self and {num_other} in other.')
 
         if num_self == num_other == 0:
             raise MissingData('No atoms selected')
 
-        superposed, transformation = bst.superimpose(self.array[m_self], other.array[m_other])
+        superposed, transformation = bst.superimpose(self.array[mask_self], other.array[mask_other])
         other_transformed = bst.superimpose_apply(other.array, transformation)
 
-        rmsd_target = bst.rmsd(self.array[m_self], superposed)
+        rmsd_target = bst.rmsd(self.array[mask_self], superposed)
 
         return GenericStructure(other_transformed, other.pdb_id), rmsd_target, transformation
 
 
-PDB_Chain = t.NamedTuple(
-    'PDB_Chain', [('id', str), ('chain', str), ('structure', GenericStructure)])
+@dataclass
+class PDB_Chain:
+    id: str
+    chain: str
+    structure: GenericStructure
 
 
 def validate_chain(pdb: PDB_Chain):

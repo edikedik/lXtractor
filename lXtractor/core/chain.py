@@ -23,18 +23,16 @@ from lXtractor.core.base import AminoAcidDict, AbstractChain, Ord, AlignMethod, 
 from lXtractor.core.config import Sep, DumpNames, SeqNames, MetaNames
 from lXtractor.core.exceptions import MissingData, AmbiguousMapping, InitError, NoOverlap, LengthMismatch
 from lXtractor.core.segment import Segment
-from lXtractor.core.structure import GenericStructure, PDB_Chain, validate_chain
+from lXtractor.core.structure import GenericStructure, validate_chain, PDB_Chain
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.seq import mafft_align, map_pairs_numbering, read_fasta
+from lXtractor.util.structure import filter_selection
 from lXtractor.variables.base import Variables
 
 T = t.TypeVar('T')
 
 LOGGER = logging.getLogger(__name__)
 
-
-# TODO: variable calculation may depend on the original structure and should NOT require the extracted one
-# -> find the closest parent with the structure having ID matching such of the assigned variable
 
 
 def topo_iter(
@@ -403,6 +401,10 @@ class ChainStructure:
     def id(self) -> str:
         return f'{self.__class__.__name__}({self.seq})'
 
+    @property
+    def array(self) -> bst.AtomArray:
+        return self.pdb.structure.array
+
     @classmethod
     def from_structure(
             cls, structure: bst.AtomArray | GenericStructure,
@@ -417,6 +419,56 @@ class ChainStructure:
             pdb_id = structure.pdb_id
 
         return cls(pdb_id, chain_id, structure)
+
+    def superpose(
+            self, other: ChainStructure,
+            res_id: abc.Sequence[int] | None = None,
+            atom_names: abc.Sequence[abc.Sequence[str]] | abc.Sequence[str] | None = None,
+            map_name_self: str | None = None, map_name_other: str | None = None,
+            mask_self: np.ndarray | None = None, mask_other: np.ndarray | None = None,
+            inplace: bool = False, rmsd_to_meta: bool = True,
+    ):
+        def _get_mask(c: ChainStructure, map_name: str) -> np.ndarray:
+            if res_id is None:
+                return np.ones_like(c.array, bool)
+            _res_id = res_id if not map_name or res_id is None else [
+                c.seq.get_item(map_name, x)._asdict()[SeqNames.enum] for x in res_id]
+            return filter_selection(c.array, _res_id, atom_names)
+
+        match atom_names:
+            case [str(), *xs]:
+                if res_id is not None:
+                    atom_names = [atom_names] * len(res_id)
+            case [[str(), *xs], *ys]:
+                if len(res_id) != len(atom_names):
+                    raise LengthMismatch(
+                        'When specifying `atom_names` per residue, the number of '
+                        f'residues must match the number of atom name groups; Got {len(res_id)} '
+                        f'residues and {len(atom_names)} atom names groups.'
+                    )
+
+        if mask_self is None:
+            mask_self = _get_mask(self, map_name_self)
+        if mask_other is None:
+            mask_other = _get_mask(other, map_name_other)
+
+        superposed, rmsd, transformation = self.pdb.structure.superpose(
+            other.pdb.structure, mask_self=mask_self, mask_other=mask_other)
+
+        if inplace:
+            other.pdb.structure = superposed
+        else:
+            other = ChainStructure(
+                other.pdb.id, other.pdb.chain, superposed, other.seq,
+                parent=other.parent, children=other.children,
+                variables=other.variables
+            )
+
+        if rmsd_to_meta:
+            map_name = map_name_other or other.seq.name
+            other.seq.meta[f'rmsd_{map_name}'] = rmsd
+
+        return other, rmsd, transformation
 
     def spawn_child(
             self, start: int, end: int, name: t.Optional[str] = None, *,
@@ -870,25 +922,27 @@ class ChainList(abc.MutableSequence[CT]):
             self, s: Segment | abc.Collection[Ord], *,
             obj_type: str = 'seq', match_type: str = 'overlap',
             map_name: t.Optional[str] = None
-    ) -> abc.Iterator[SS]:
+    ) -> ChainList[SS]:
         # Use cases:
         # 1) search using Segment's start/end => good for matching canonical sequence
         # 2) use map_name => overlapping with ref/aln/etc-based boundaries; esp. for structures
         match obj_type[:3]:
             case 'seq':
-                objs, fn = self.iter_sequences(), self._filter_seqs
+                objs, fn, _type = self.iter_sequences(), self._filter_seqs, ChainSequence
             case 'str':
-                objs, fn = self.iter_structures(), self._filter_str
+                objs, fn, _type = self.iter_structures(), self._filter_str, ChainStructure
             case _:
                 raise ValueError(f'Unsupported object type {obj_type}')
         objs1, objs2 = tee(objs)
         mask = fn(objs1, match_type, s, map_name)
-        return map(op.itemgetter(1), filter(lambda x: x[0], zip(mask, objs2)))
+        res: ChainList[_type] = ChainList(
+            map(op.itemgetter(1), filter(lambda x: x[0], zip(mask, objs2))))
+        return res
 
-    def filter(self, pred: abc.Callable[[CT], bool]) -> ChainList:
+    def filter(self, pred: abc.Callable[[CT], bool]) -> ChainList[CT]:
         return ChainList(filter(pred, self))
 
-    def apply(self, fn: abc.Callable[[CT, ...], CT], *args, **kwargs) -> ChainList:
+    def apply(self, fn: abc.Callable[[CT, ...], CT], *args, **kwargs) -> ChainList[CT]:
         return ChainList([fn(c, *args, **kwargs) for c in self])
 
 

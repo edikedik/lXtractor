@@ -66,6 +66,12 @@ def pkinase_hmm_path() -> Path:
     return path
 
 
+def human_abl_str_path() -> Path:
+    path = DATA / '5hu9.cif'
+    assert path.exists()
+    return path
+
+
 @pytest.fixture(scope='module')
 def simple_structure(simple_structure_path) -> GenericStructure:
     return GenericStructure.read(simple_structure_path)
