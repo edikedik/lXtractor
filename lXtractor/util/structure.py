@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
+from collections import abc
+from itertools import repeat
 from pathlib import Path
 
 import biotite.structure as bst
 import fastpdb
 import numpy as np
+from more_itertools import zip_equal
 
 LOGGER = logging.getLogger(__name__)
 
@@ -62,6 +65,25 @@ def check_backbone_bond_continuity(
     discont_idx = check_bond_continuity(array, min_len, max_len)
 
     return discont_idx[np.isin(discont_idx, backbone_idx)]
+
+
+def filter_selection(
+        array: bst.AtomArray, res_id: abc.Iterable[int],
+        atom_names: abc.Iterable[abc.Sequence[str]] | None
+) -> np.ndarray:
+    if atom_names is None:
+        staged = zip(res_id, repeat(None))
+    else:
+        staged = zip_equal(res_id, atom_names)
+
+    mask = np.zeros_like(array, bool)
+
+    for r_id, a_names in staged:
+        mask_local = array.res_id == r_id
+        if a_names is not None:
+            mask_local &= np.isin(array.atom_name, a_names)
+        mask |= mask_local
+    return mask
 
 
 if __name__ == '__main__':

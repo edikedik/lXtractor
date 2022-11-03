@@ -7,15 +7,15 @@ from pathlib import Path
 
 import biotite.structure as bst
 import biotite.structure.io as strio
+import numpy as np
 
 from lXtractor.core.base import AminoAcidDict, AbstractStructure
-from lXtractor.core.exceptions import NoOverlap, InitError
+from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
 from lXtractor.core.segment import Segment
-from lXtractor.util.structure import read_fast_pdb
+from lXtractor.util.structure import read_fast_pdb, filter_selection
 
 
 class GenericStructure(AbstractStructure):
-
     __slots__ = ('array', 'pdb_id')
 
     def __init__(self, array: bst.AtomArray, pdb_id: t.Optional[str] = None):
@@ -60,6 +60,41 @@ class GenericStructure(AbstractStructure):
                             f'of the structure positions {self_start, self_end}')
         idx = (self.array.res_id >= start) & (self.array.res_id <= end)
         return GenericStructure(self.array[idx], self.pdb_id)
+
+    def superpose(
+            self, other: GenericStructure | bst.AtomArray,
+            res_id_self: abc.Iterable[int] | None = None,
+            res_id_other: abc.Iterable[int] | None = None,
+            atom_names_self: abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None = None,
+            atom_names_other: abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None = None,
+    ) -> tuple[GenericStructure, float, tuple[np.ndarray, np.ndarray, np.ndarray]]:
+        def _get_mask(a, res_id, atom_names):
+            if res_id:
+                m = filter_selection(a, res_id, atom_names)
+            else:
+                if atom_names:
+                    m = np.isin(a.atom_name, atom_names)
+                else:
+                    m = np.ones_like(a, bool)
+            return m
+
+        m_self = _get_mask(self.array, res_id_self, atom_names_self)
+        m_other = _get_mask(other.array, res_id_other, atom_names_other)
+
+        num_self, num_other = m_self.sum(), m_other.sum()
+        if num_self != num_other:
+            raise LengthMismatch(f'To superpose, the number of atoms must match. '
+                                 f'Got {num_other} in self and {num_other} in other.')
+
+        if num_self == num_other == 0:
+            raise MissingData('No atoms selected')
+
+        superposed, transformation = bst.superimpose(self.array[m_self], other.array[m_other])
+        other_transformed = bst.superimpose_apply(other.array, transformation)
+
+        rmsd_target = bst.rmsd(self.array[m_self], superposed)
+
+        return GenericStructure(other_transformed, other.pdb_id), rmsd_target, transformation
 
 
 PDB_Chain = t.NamedTuple(

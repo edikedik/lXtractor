@@ -1,4 +1,11 @@
+from copy import deepcopy
+from itertools import repeat
+
+import pytest
+
+from lXtractor.core.exceptions import LengthMismatch, MissingData
 from lXtractor.core.structure import GenericStructure
+from test.conftest import EPS
 
 
 def test_init(simple_structure_path):
@@ -28,3 +35,33 @@ def test_subsetting(simple_structure):
 def test_write(simple_structure):
     # TODO: implement when providing paths is fixed in biotite
     pass
+
+
+def test_superpose(chicken_src_str):
+    a = chicken_src_str
+    bb_atoms = ['N', 'CA', 'C']
+
+    _, rmsd, _ = a.superpose(a)
+    assert rmsd <= EPS
+
+    a_cp = deepcopy(a)
+    a_cp.array.res_id += 1
+
+    # align backbone of the first three residues
+
+    _, rmsd, _ = a.superpose(
+        a_cp, res_id_self=[256, 257, 258], res_id_other=[257, 258, 259])
+    assert rmsd < EPS
+
+    _, rmsd, _ = a.superpose(
+        a_cp, res_id_self=[256, 257, 258], res_id_other=[257, 258, 259],
+        atom_names_self=repeat(bb_atoms, 3),
+        atom_names_other=repeat(bb_atoms, 3),
+    )
+    assert rmsd < EPS
+
+    with pytest.raises(LengthMismatch):
+        _ = a.superpose(a, res_id_self=[256])
+
+    with pytest.raises(MissingData):
+        _ = a.superpose(a, res_id_self=[0], res_id_other=[0])

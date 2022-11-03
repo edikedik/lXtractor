@@ -14,6 +14,7 @@ from lXtractor.variables.structural import Dist, PseudoDihedral
 from test.common import sample_chain
 
 DATA = Path(__file__).parent / 'data'
+EPS = 10e-5
 
 
 @pytest.fixture(scope='module')
