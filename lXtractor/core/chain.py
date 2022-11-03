@@ -758,15 +758,17 @@ class ChainList(abc.MutableSequence[CT]):
         ...
 
     @t.overload
-    def __getitem__(self, index: slice) -> ChainList[CT]:
+    def __getitem__(self, index: slice | str) -> ChainList[CT]:
         ...
 
-    def __getitem__(self, index: int | slice) -> CT | ChainList[CT]:
+    def __getitem__(self, index: int | slice | str) -> CT | ChainList[CT]:
         match index:
             case int():
                 return self._chains[index]
             case slice():
                 return ChainList(self._chains[index])
+            case str():
+                return self.filter(lambda x: index in x.id)
             case _:
                 raise TypeError(f'Incorrect index type {type(index)}')
 
