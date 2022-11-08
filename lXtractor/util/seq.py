@@ -5,6 +5,7 @@ import operator as op
 import typing as t
 from collections import abc
 from io import StringIO, TextIOBase
+from itertools import filterfalse
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -28,6 +29,7 @@ def read_fasta(
         inp: Path | TextIOBase | abc.Iterable[str], strip_id: bool = True
 ) -> abc.Iterator[tuple[str, str]]:
     def _yield_seqs(buffer):
+        buffer = filterfalse(lambda x: not x or x =='\n', buffer)
         items = split_before(map(str.rstrip, buffer), lambda x: x[0] == '>')
         for it in items:
             header, seq = it[0][1:], it[1:]
