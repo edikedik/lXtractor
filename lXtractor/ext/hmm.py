@@ -4,7 +4,7 @@ from itertools import count
 from pathlib import Path
 
 from pyhmmer.easel import DigitalSequence, TextSequence
-from pyhmmer.plan7 import HMMFile, Pipeline, TopHits, Alignment
+from pyhmmer.plan7 import HMMFile, Pipeline, TopHits, Alignment, Domain
 
 from lXtractor.core.chain import ChainSequence, CT, ChainStructure, Chain
 
@@ -14,6 +14,7 @@ class PyHMMer:
     A basis pyhmmer interface aimed at domain extraction.
     It works with a single hmm model and pipeline instance.
     """
+
     def __init__(self, hmm: HMMFile | Path | str, **kwargs):
         match hmm:
             case HMMFile():
@@ -56,8 +57,20 @@ class PyHMMer:
 
     def annotate(
             self, objs: abc.Iterable[CT] | CT,
-            new_map_name: t.Optional[str] = None, **kwargs
+            new_map_name: t.Optional[str] = None,
+            min_score: float | None = None,
+            min_size: int | None = None,
+            domain_filter: abc.Callable[[Domain], bool] | None = None,
+            **kwargs
     ) -> abc.Generator[CT, None, None]:
+
+        def accept_domain(d: Domain) -> bool:
+            if min_score:
+                return d.score >= min_score
+            if min_size:
+                size = d.alignment.target_to - d.alignment.target_from
+                return size >= min_size
+            return True
 
         if not isinstance(objs, abc.Iterable):
             objs = [objs]
@@ -72,7 +85,12 @@ class PyHMMer:
 
         for hit in self.hits:
             obj = objs_by_id[hit.accession.decode('utf-8')]
+
             for dom_i, dom in enumerate(hit.domains, start=1):
+                if not accept_domain(dom):
+                    continue
+                if domain_filter and not domain_filter(dom):
+                    continue
                 aln = dom.alignment
                 name = f'{new_map_name}_{dom_i}'
                 sub = obj.spawn_child(aln.target_from, aln.target_to, name, **kwargs)
