@@ -3,9 +3,10 @@ from __future__ import annotations
 import typing as t
 from collections import namedtuple, abc
 from copy import deepcopy
-from itertools import islice
+from itertools import islice, combinations
 
-from more_itertools import zip_equal, nth, always_reversible
+import networkx as nx
+from more_itertools import zip_equal, nth, always_reversible, powerset
 
 from lXtractor.core.base import Ord
 from lXtractor.core.config import Sep
@@ -283,6 +284,60 @@ def translate_idx(idx: _I, offset: int) -> _I:
         return idx - offset
     else:
         return idx
+
+
+def segments2graph(segments: abc.Iterable[Segment]) -> nx.Graph:
+    """
+    Convert segments to an undirected graph such that segments are nodes
+    and edges are drawn between overlapping segments.
+
+    :param segments: an iterable with segments objects.
+    :return: an undirected graph.
+    """
+    g = nx.Graph()
+    for s in segments:
+        g.add_node(s)
+        edges = [(s, n) for n in g.nodes if s.overlaps(s)]
+        if edges:
+            g.add_edges_from(edges)
+    return g
+
+
+def do_overlap(segments: abc.Iterable[Segment]) -> bool:
+    """
+    Check if any pair of segments overlap.
+
+    :param segments: an iterable with at least two segments.
+    :return: ``True`` if there are overlapping segments, ``False`` otherwise.
+    """
+    return any(s1.overlaps(s2) for s1, s2 in combinations(segments, 2))
+
+
+def resolve_overlaps(
+        segments: abc.Iterable[Segment],
+        value_fn: abc.Callable[[Segment], float] = len
+) -> abc.Generator[Segment]:
+    """
+    Eliminate overlapping segments.
+
+    Convert segments into and undirected graph (see :func:`segments2graph`).
+    Iterate over connected components.
+    If a component has only a single node (no overlaps), yield it.
+    Otherwise, consider all possible non-overlapping subsets of nodes.
+    Find a subset such that the sum of the `value_fn` over the segments is
+    maximized and yield nodes from it.
+
+    :param segments:
+    :param value_fn:
+    :return:
+    """
+    g = segments2graph(segments)
+    for cc in nx.connected_components(g):
+        if len(cc) == 1:
+            yield next(iter(cc.nodes))
+        else:
+            overlapping_subsets = filter(do_overlap, powerset(iter(cc.nodes)))
+            yield from max(overlapping_subsets, key=lambda xs: sum(map(value_fn, xs)))
 
 
 if __name__ == '__main__':
