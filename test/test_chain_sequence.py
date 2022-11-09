@@ -84,7 +84,7 @@ def test_map_transfer(simple_chain_seq):
     s1.add_seq('R', 'PUTIN')
     s1.add_seq('V', 'MUDAK')
     s2.add_seq('O', 'PUKIN')
-    s1.transfer_map(s2, 'V', 'O', 'R')
+    s1.relate(s2, 'V', 'O', 'R')
     assert 'V' in s2
     assert s2['V'] == ['M', 'U', None, 'A', 'K']
 

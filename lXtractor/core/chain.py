@@ -5,6 +5,7 @@ import operator as op
 import typing as t
 from collections import namedtuple, abc
 from concurrent.futures import ProcessPoolExecutor, as_completed, Future
+from dataclasses import dataclass
 from functools import lru_cache, partial
 from io import TextIOBase
 from itertools import starmap, chain, zip_longest, tee, filterfalse, repeat
@@ -34,7 +35,6 @@ T = t.TypeVar('T')
 LOGGER = logging.getLogger(__name__)
 
 
-
 def topo_iter(
         start_obj: T, iterator: abc.Callable[[T], abc.Iterator[T]]
 ) -> abc.Generator[list[T]]:
@@ -51,33 +51,74 @@ def topo_iter(
 
 
 class ChainSequence(Segment):
+    """
+    A class representing polymeric sequence of a single entity (chain).
+
+    The sequences are stored internally as a dictionary `{seq_name => seq}`
+    and must all have the same length.
+    A single gap-less primary sequence (:meth:`seq1`) is mandatory during the initialization.
+    We refer to the sequences other than :meth:`seq1` as "maps."
+    To view the standard sequence names supported by :class:`ChainSequence`,
+    use the :meth:`flied_names` property.
+
+    The sequence can be a part of a larger one. The child-parent relationships
+    are indicated via :attr:`parent` and attr:`children`, where the latter
+    entails any sub-sequence. A preferable way to create subsequences is
+    the :meth:`spawn_child` method.
+
+    """
     __slots__ = ()
 
     def iter_children(self) -> abc.Generator[list[ChainSequence]]:
+        """
+        Iterate over a child tree in topological order.
+
+        :return: a generator over child tree levels, starting from the :attr:`children`
+            and expandingsuch attributes over :class:`ChainSequence` instances
+            within this attribute.
+        """
         return topo_iter(self, lambda x: iter(x.children.values()))
 
     @property
     def fields(self) -> tuple[str, ...]:
+        """
+        :return: Names of the currently stored sequences.
+        """
         return tuple(self._seqs.keys())
 
     @classmethod
-    def field_names(cls):
+    def field_names(cls) -> dataclass:
+        """
+        :return: default sequence names.
+        """
         return SeqNames
 
     @classmethod
-    def meta_names(cls):
+    def meta_names(cls) -> dataclass:
+        """
+        :return: defaults names of the :attr:`meta` fields.
+        """
         return MetaNames
 
     @property
-    def numbering(self) -> t.Sequence[int]:
+    def numbering(self) -> abc.Sequence[int]:
+        """
+        :return: the primary sequence's (:meth:`seq1`) numbering.
+        """
         return self[SeqNames.enum]
 
     @property
     def seq1(self) -> str:
+        """
+        :return: the primary sequence.
+        """
         return self[SeqNames.seq1]
 
     @property
     def seq3(self) -> t.Sequence[str]:
+        """
+        :return: the three-letter codes of a primary sequence.
+        """
         return self[SeqNames.seq3]
 
     def _setup_and_validate(self):
@@ -107,6 +148,17 @@ class ChainSequence(Segment):
             align_method: AlignMethod = mafft_align,
             save: bool = True, name: t.Optional[str] = None, **kwargs
     ) -> list[None | int]:
+        """
+        Map the :meth:`numbering: of another sequence onto this one.
+        For this, align primary sequences and relate their numbering.
+
+        :param other: another chain sequence.
+        :param align_method: a method to use for alignment.
+        :param save: save the numbering as a sequence.
+        :param name: a name to use if `save` is ``True``.
+        :param kwargs: passed to `func:map_pairs_numbering`.
+        :return: a list of integers with ``None`` indicating gaps.
+        """
 
         if isinstance(other, str):
             other = ChainSequence.from_string(other)
@@ -147,6 +199,19 @@ class ChainSequence(Segment):
     def map_boundaries(
             self, start: Ord, end: Ord, map_name: str, closest: bool = False
     ) -> tuple[namedtuple, namedtuple]:
+        """
+        Map the provided boundaries onto sequence.
+
+        A convenient interface for common task where one wants to find sequence elements
+        corresponding to arbitrary boundaries.
+
+        :param start: some orderable object.
+        :param end: some orderable object.
+        :param map_name: use this sequence to search for boundaries. It is assumed that
+            `map_name in self is True`.
+        :param closest: If true, instead of exact mapping, search for the closest elements.
+        :return: an tuple with two items corresponding to mapped `start` and `end`.
+        """
         if closest:
             mapping = list(filterfalse(lambda x: x is None, self[map_name]))
             map_min, map_max = min(mapping), max(mapping)
@@ -164,35 +229,82 @@ class ChainSequence(Segment):
 
         return _start, _end
 
-    def transfer_map(
+    def relate(
             self, other: ChainSequence, map_name: str,
             link_name: str, link_name_points_to: str = 'i',
-            map_name_in_other: str | None = None,
-    ):
+            save: bool = True, map_name_in_other: str | None = None,
+    ) -> list[t.Any]:
+        """
+        Relate mapping from this sequence with `other` via some common "link" sequence.
+
+        The "link" sequence is a part of `other` pointing to some sequence in this instance.
+
+        To provide an example, consider the case of transferring the mapping to alignment
+        positions `aln_map`. To do this, the `other` must be mapped to some sequence within
+        this instance -- typically to the canonical numbering -- via some stored `map_canonical`
+        sequence. Thus, one would use::
+            this.transfer_to(
+                other, map_name=aln_map,
+                link_name=map_canonical, link_name_points_to="i")
+
+        :param other: arbitrary chain sequence.
+        :param map_name: the name of the sequence to transfer.
+        :param link_name: the name of the "link" sequence that connects `self` and `other`.
+        :param link_name_points_to: values within this instance the "link" sequence points to.
+        :param save: store the obtained sequence within the `other`.
+        :param map_name_in_other: the name of the mapped sequence to store within the `other`.
+            By default, the `map_name` is used.
+        :return: the mapped sequence.
+        """
         mapping = self.get_map(link_name_points_to)
-        mapped = map(
+        mapped = list(map(
             lambda x: x if x is None else x._asdict()[map_name],
-            (mapping.get(x) for x in other[link_name]))
-        other.add_seq(map_name_in_other or map_name, list(mapped))
-        return other
+            (mapping.get(x) for x in other[link_name])))
+        if save:
+            other.add_seq(map_name_in_other or map_name, mapped)
+        return mapped
 
     def coverage(
-            self, map_names: list[str] | None = None,
-            save_to_meta: bool = True, prefix: str = 'cov',
+            self, map_names: abc.Sequence[str] | None = None,
+            save: bool = True, prefix: str = 'cov',
     ) -> dict[str, float]:
+        """
+        Calculate maps' coverage, i.e., the number of non-empty elements.
+
+        :param map_names: optionally, provide the sequence of map names
+            to calculate coveage for.
+        :param save: save the results to :attr:`meta`
+        :param prefix: if `save` is ``True``, format keys f"{prefix}_{name}"
+            for the :attr:`meta` dictionary.
+        :return:
+        """
         df = self.as_df()
         map_names = map_names or self.fields[3:]
         size = len(df)
         cov = {f'{prefix}_{n}': (~df[n].isna()).sum() / size for n in map_names}
-        if save_to_meta:
+        if save:
             self.meta.update(cov)
         return cov
 
     @lru_cache()
     def get_map(self, key: str) -> dict[t.Any, namedtuple]:
+        """
+        Obtain the mapping of the form "key->item(seq_name=*,...)".
+
+        :param key: map name.
+        :return: `dict` mapping key values to items.
+        """
         return dict(zip(self[key], iter(self)))
 
     def get_item(self, key: str, value: t.Any) -> namedtuple:
+        """
+        Get a specific item. Same as :meth:`get_map`, but uses `value` to retrieve
+        the needed item immediately.
+
+        :param key: map name.
+        :param value: sequence value of the sequence under the `key` name.
+        :return: an item correpsonding to the desired sequence element.
+        """
         return self.get_map(key)[value]
 
     def get_closest(
@@ -200,10 +312,13 @@ class ChainSequence(Segment):
     ) -> t.Optional[namedtuple]:
         """
         Find the closest item for which item.key >=/<= value.
+        By default, the search starts from the sequence's beggining, and expands towards the end
+        until the first element for which the retrieved value >= the provided `value`.
+        If the `reverse` is ``True``, the search direction is reversed.
 
-        :param key: Sequence name.
-        :param value: Sequence value. Must support comparison operators.
-        :param reverse: Reverse the sequence order and the comparison operator.
+        :param key: map name.
+        :param value: map value. Must support comparison operators.
+        :param reverse: reverse the sequence order and the comparison operator.
         :return: The first relevant item or `None` if no relevant items were found.
         """
 
@@ -224,10 +339,18 @@ class ChainSequence(Segment):
 
     @lru_cache
     def as_df(self) -> pd.DataFrame:
+        """
+        :return: The pandas DataFrame representation of the sequence where
+            each column correspond to a sequence or map.
+        """
         return pd.DataFrame(iter(self))
 
     @lru_cache
     def as_np(self) -> np.ndarray:
+        """
+        :return: The numpy representation of a sequence as matrix.
+            This is a shortcut to :meth:`as_df`().values.
+        """
         return self.as_df().values
 
     def spawn_child(
@@ -236,6 +359,18 @@ class ChainSequence(Segment):
             map_closest: bool = False,
             deep_copy: bool = False, keep: bool = True
     ) -> ChainSequence:
+        """
+        Spawn the sub-sequence from the current instance.
+
+        :param start: start of the sub-sequence.
+        :param end: end of the sub-sequence.
+        :param name: the name of the spawned child sequence.
+        :param map_from: optionally, the map name the boundaries correspond to.
+        :param map_closest: map to closest `start`, `end` boundaries (see :meth:`map_boundaries`).
+        :param deep_copy: 
+        :param keep:
+        :return:
+        """
         if map_from:
             start, end = map(
                 lambda x: x._asdict()['i'],
@@ -657,11 +792,14 @@ class Chain(AbstractChain):
     def transfer_seq_mapping(
             self, map_name: str, link_map: str = SeqNames.map_canonical,
             link_map_points_to: str = SeqNames.enum,
-            map_name_in_other: str | None = None):
+            map_name_in_other: str | None = None,
+            **kwargs
+    ) -> t.NoReturn:
         """Transfer sequence mapping to structure sequences"""
         for s in self.structures:
-            self.seq.transfer_map(
-                s.seq, map_name, link_map, link_map_points_to, map_name_in_other)
+            self.seq.relate(
+                s.seq, map_name, link_map, link_map_points_to,
+                map_name_in_other=map_name_in_other, **kwargs)
 
     def spawn_child(
             self, start: int, end: int, name: None | str = None, *,
