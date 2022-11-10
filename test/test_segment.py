@@ -1,7 +1,7 @@
 import pytest
 
 from lXtractor.core.exceptions import LengthMismatch, NoOverlap
-from lXtractor.core.segment import Segment
+from lXtractor.core.segment import Segment, resolve_overlaps
 
 
 # TODO: Test inheritance and deepcopying explicitly
@@ -90,3 +90,19 @@ def test_overlap():
 
     with pytest.raises(NoOverlap):
         s1.sub(5, 6)
+
+
+def test_resolving_overlaps():
+    segments = [
+        Segment(1, 3, 'x', meta={'s': 1}),
+        Segment(2, 5, 'y', meta={'s': 3}),
+        Segment(4, 6, 'z', meta={'s': 1}),
+        Segment(8, 9, 'q', meta={'s': 1})
+    ]
+    filtered = list(resolve_overlaps(segments))
+    assert len(filtered) == 3
+    assert set(x.name for x in filtered) == {'x', 'z', 'q'}
+
+    filtered = list(resolve_overlaps(segments, value_fn=lambda x: x.meta['s']))
+    assert len(filtered) == 2
+    assert set(x.name for x in filtered) == {'y', 'q'}

@@ -3,7 +3,7 @@ from __future__ import annotations
 import typing as t
 from collections import namedtuple, abc
 from copy import deepcopy, copy
-from itertools import islice, combinations
+from itertools import islice, combinations, filterfalse
 
 import networkx as nx
 from more_itertools import zip_equal, nth, always_reversible, powerset
@@ -298,7 +298,7 @@ def segments2graph(segments: abc.Iterable[Segment]) -> nx.Graph:
     g = nx.Graph()
     for s in segments:
         g.add_node(s)
-        edges = [(s, n) for n in g.nodes if s.overlaps(s)]
+        edges = [(s, n) for n in g.nodes if n != s and s.overlaps(n)]
         if edges:
             g.add_edges_from(edges)
     return g
@@ -335,10 +335,13 @@ def resolve_overlaps(
     g = segments2graph(segments)
     for cc in nx.connected_components(g):
         if len(cc) == 1:
-            yield next(iter(cc.nodes))
+            yield cc.pop()
         else:
-            overlapping_subsets = filter(do_overlap, powerset(iter(cc.nodes)))
-            yield from max(overlapping_subsets, key=lambda xs: sum(map(value_fn, xs)))
+            overlapping_subsets = filterfalse(do_overlap, powerset(cc))
+            yield from max(
+                overlapping_subsets,
+                key=lambda xs: sum(map(value_fn, xs))
+            )
 
 
 if __name__ == '__main__':
