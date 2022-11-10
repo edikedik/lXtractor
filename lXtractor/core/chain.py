@@ -393,6 +393,7 @@ class ChainSequence(Segment):
             start: t.Optional[int] = None,
             end: t.Optional[int] = None,
             name: t.Optional[str] = None,
+            meta: dict[str, t.Any] | None = None,
             **kwargs
     ):
         seqs = list(reader(inp))
@@ -409,7 +410,7 @@ class ChainSequence(Segment):
         if name is None:
             name = seq[0]
 
-        return cls(start, end, name, seqs={SeqNames.seq1: seq[1], **kwargs})
+        return cls(start, end, name, meta=meta, seqs={SeqNames.seq1: seq[1], **kwargs})
 
     @classmethod
     def from_string(
@@ -417,21 +418,25 @@ class ChainSequence(Segment):
             start: t.Optional[int] = None,
             end: t.Optional[int] = None,
             name: t.Optional[str] = None,
+            meta: dict[str, t.Any] | None = None,
             **kwargs
     ) -> ChainSequence:
         start = start or 1
         end = end or start + len(s) - 1
 
-        return cls(start, end, name, seqs={SeqNames.seq1: s, **kwargs})
+        return cls(start, end, name, meta=meta, seqs={SeqNames.seq1: s, **kwargs})
 
     @classmethod
-    def from_df(cls, df: pd.DataFrame, name: t.Optional[str] = None):
+    def from_df(
+            cls, df: pd.DataFrame, name: t.Optional[str] = None,
+            meta: dict[str, t.Any] | None = None
+    ):
         if 'i' not in df.columns:
             raise InitError('Must contain the "i" column')
         assert len(df) >= 1
         start, end = df['i'].iloc[0], df['i'].iloc[-1]
         seqs = {col: list(df[col]) for col in df.columns if col != 'i'}
-        return cls(start, end, name, seqs=seqs)
+        return cls(start, end, name, meta=meta, seqs=seqs)
 
     @classmethod
     def read(
