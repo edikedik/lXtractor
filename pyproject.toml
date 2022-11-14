@@ -1,0 +1,77 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lXtractor"
+dynamic = ["version"]
+description = "Feature extraction library for sequences and structures"
+readme = "README.rst"
+requires-python = ">=3.10"
+license_file = { text = "LICENSE" }
+keywords = [
+    "Bioinformatics", "Computational biology", "Data Mining", "Feature extracton",
+    "Protein structure", "Protein sequence", "Datasets"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Documentation :: Sphinx",
+]
+authors = [
+    { name = "Ivan Reveguk", email = "ivan.reveguk@gmail.com" }
+]
+maintainers = [
+    { name = "Ivan Reveguk", email = "ivan.reveguk@gmail.com" }
+]
+dependencies = [
+    "biotite~=0.35.0",
+    "fastpdb~=1.0.1",
+    "joblib~=1.1.1",
+    "more-itertools~=9.0",
+    "networkx~=2.8.6",
+    "numpy~=1.23",
+    "toolz~=0.12",
+    "tqdm~=4.64",
+    "pandas~=1.5",
+    "pyhmmer~=0.6.3",
+    "requests~=2.28.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+sandbox = [
+    "jupyterlab",
+    "ipywidgets"
+]
+
+[project.urls]
+#"Homepage" = ""
+"Source code" = "https://github.com/edikedik/lXtractor"
+"Bug Tracker" = "https://github.com//edikedik/lXtractor/issues"
+
+[tool.hatch]
+version.path = "lXtractor/__about__.py"
+
+[tool.hatch.build]
+only-packages = true
+
+[tool.hatch.build.targets.wheel]
+only-include = ['lXtractor']
+
+[tool.hatch.envs.test]
+dependencies = [
+  "coverage[toml]",
+  "pytest",
+  "pytest-cov",
+]
+
+[tool.hatch.envs.test.scripts]
+run-coverage = "pytest --cov-config=pyproject.toml --cov=pkg --cov=tests"
+run = "run-coverage --no-cov"

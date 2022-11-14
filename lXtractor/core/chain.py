@@ -14,9 +14,8 @@ from pathlib import Path
 import biotite.structure as bst
 import numpy as np
 import pandas as pd
-from cytoolz import keyfilter, keymap, valmap
 from more_itertools import unzip, first_true, split_into, zip_equal, collapse, nth
-from toolz import curry
+from toolz import curry, keyfilter, keymap, valmap
 from tqdm.auto import tqdm
 
 from lXtractor.core.alignment import Alignment
@@ -359,6 +358,7 @@ class ChainSequence(Segment):
             map_closest: bool = False,
             deep_copy: bool = False, keep: bool = True
     ) -> ChainSequence:
+        # TODO: spawning without deep copy shares meta -> copy meta by default!
         """
         Spawn the sub-sequence from the current instance.
 
@@ -417,12 +417,13 @@ class ChainSequence(Segment):
             start: t.Optional[int] = None,
             end: t.Optional[int] = None,
             name: t.Optional[str] = None,
+            meta: dict[str, t.Any] | None = None,
             **kwargs
     ) -> ChainSequence:
         start = start or 1
         end = end or start + len(s) - 1
 
-        return cls(start, end, name, seqs={SeqNames.seq1: s, **kwargs})
+        return cls(start, end, name, meta=meta, seqs={SeqNames.seq1: s, **kwargs})
 
     @classmethod
     def from_df(cls, df: pd.DataFrame, name: t.Optional[str] = None):

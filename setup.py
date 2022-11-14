@@ -1,23 +1,22 @@
 from distutils.core import setup
-from pathlib import Path
 
 from setuptools import find_packages
 
-HERE = Path(__file__).parent
-README = (HERE / "README.rst").read_text()
+# HERE = Path(__file__).parent
+# README = (HERE / "README.rst").read_text()
 
 setup(
-    name='lXtractor',
-    version='0.1',
-    author='Ivan Reveguk',
-    author_email='ivan.reveguk@polytechnique.edu',
-    description="Macromolecular feature extraction framework",
-    long_description=README,
-    long_description_content_type="text/markdown",
-    classifiers=[
-        "Programming Language :: Python :: 3.10",
-    ],
-    python_requires='>=3.8',
+    # name='lXtractor',
+    # version='0.1',
+    # author='Ivan Reveguk',
+    # author_email='ivan.reveguk@polytechnique.edu',
+    # description="Macromolecular feature extraction framework",
+    # long_description=README,
+    # long_description_content_type="text/markdown",
+    # classifiers=[
+    #     "Programming Language :: Python :: 3.10",
+    # ],
+    # python_requires='>=3.8',
     # install_requires=[
     #     'click~=8.0.1',
     #     'biopython~=1.78',
@@ -30,20 +29,20 @@ setup(
     #     'tqdm~=4.61.0',
     #     'joblib~=1.0.1'
     # ],
-    install_requires=[
-        'biopython',
-        # 'ray',
-        'numpy',
-        'pandas',
-        'more_itertools',
-        'toolz',
-        'requests',
-        'tqdm',
-        'joblib',
-    ],
-    include_package_data=True,
-    package_data={
-        '': ['*.gz']
-    },
-    packages=find_packages(exclude=['test']),
+    # install_requires=[
+    #     'biopython',
+    #     # 'ray',
+    #     'numpy',
+    #     'pandas',
+    #     'more_itertools',
+    #     'toolz',
+    #     'requests',
+    #     'tqdm',
+    #     'joblib',
+    # ],
+    # include_package_data=True,
+    # package_data={
+    #     '': ['*.gz']
+    # },
+    # packages=find_packages(exclude=['test']),
 )

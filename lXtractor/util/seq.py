@@ -10,9 +10,9 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import numpy as np
-from Bio import SeqIO
-from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord as SeqRec
+# from Bio import SeqIO
+# from Bio.Seq import Seq
+# from Bio.SeqRecord import SeqRecord as SeqRec
 from more_itertools import split_at, partition, split_before, tail
 
 from lXtractor.core.base import SupportsWrite, AlignMethod
@@ -129,26 +129,26 @@ def mafft_align(
     return read_fasta(StringIO(run_sp(cmd).stdout))
 
 
-def hmmer_align(
-        seqs: t.Iterable[SeqRec],
-        profile_path: Path,
-        hmmalign_exe: str = 'hmmalign'
-) -> t.List[SeqRec]:
-    """
-    Align sequences using hmmalign from hmmer.
-    The latter must be installed and available.
-
-    :param seqs: Sequences to align.
-    :param profile_path: A path to a profile.
-    :param hmmalign_exe: Name of the executable.
-    :return: A list of aligned sequences.
-    """
-    handle = NamedTemporaryFile('w')
-    SeqIO.write(seqs, handle, 'fasta')
-    handle.seek(0)
-
-    cmd = f'{hmmalign_exe} {profile_path} {handle.name}'
-    return list(SeqIO.parse(StringIO(run_sp(cmd).stdout), 'stockholm'))
+# def hmmer_align(
+#         seqs: t.Iterable[SeqRec],
+#         profile_path: Path,
+#         hmmalign_exe: str = 'hmmalign'
+# ) -> t.List[SeqRec]:
+#     """
+#     Align sequences using hmmalign from hmmer.
+#     The latter must be installed and available.
+#
+#     :param seqs: Sequences to align.
+#     :param profile_path: A path to a profile.
+#     :param hmmalign_exe: Name of the executable.
+#     :return: A list of aligned sequences.
+#     """
+#     handle = NamedTemporaryFile('w')
+#     SeqIO.write(seqs, handle, 'fasta')
+#     handle.seek(0)
+#
+#     cmd = f'{hmmalign_exe} {profile_path} {handle.name}'
+#     return list(SeqIO.parse(StringIO(run_sp(cmd).stdout), 'stockholm'))
 
 
 def remove_gap_columns(
@@ -214,51 +214,51 @@ def parse_cdhit(clstr_file: Path) -> t.List[t.List[str]]:
         ))
 
 
-def cluster_cdhit(
-        seqs: t.Iterable[SeqRec], ts: float,
-        cdhit_exec: t.Union[str, Path] = 'cd-hit'
-) -> t.List[t.List[SeqRec]]:
-    """
-    Run cd-hit with params `-A 0.9 -g 1 -T 0 -d 0`.
-    :param seqs: Collection of seq records.
-    :param ts: Threshold value (`c` parameter).
-    :param cdhit_exec: Path or name of the executable.
-    :return: clustered seq record objects.
-    """
-
-    def get_word_length():
-        """
-        -n 5 for thresholds 0.7 ~ 1.0
-        -n 4 for thresholds 0.6 ~ 0.7
-        -n 3 for thresholds 0.5 ~ 0.6
-        -n 2 for thresholds 0.4 ~ 0.5
-        """
-        if ts > 0.7:
-            return 5
-        if ts > 0.6:
-            return 4
-        if ts > 0.5:
-            return 3
-        return 2
-
-    def ungap_seq(seq: SeqRec):
-        return SeqRec(
-            seq.seq.ungap(), id=seq.id, name=seq.name,
-            description=seq.description)
-
-    seqs_map = {s.id: s for s in seqs}
-    seqs = list(map(ungap_seq, seqs_map.values()))
-    msa_handle = NamedTemporaryFile('w')
-    num_aln = SeqIO.write(seqs, msa_handle, 'fasta')
-    LOGGER.debug(f'Wrote {num_aln} sequences into {msa_handle.name}')
-    msa_handle.seek(0)
-    out_handle = NamedTemporaryFile('w')
-    cmd = f'{cdhit_exec} -i {msa_handle.name} -o {out_handle.name} ' \
-          f'-c {round(ts, 2)} -g 1 -T 0 -M 0 -d 0 -n {get_word_length()}'
-    run_sp(cmd)
-    LOGGER.debug(f'successfully executed {cmd}')
-    clusters = parse_cdhit(Path(f'{out_handle.name}.clstr'))
-    return [[seqs_map[x] for x in c] for c in clusters]
+# def cluster_cdhit(
+#         seqs: t.Iterable[SeqRec], ts: float,
+#         cdhit_exec: t.Union[str, Path] = 'cd-hit'
+# ) -> t.List[t.List[SeqRec]]:
+#     """
+#     Run cd-hit with params `-A 0.9 -g 1 -T 0 -d 0`.
+#     :param seqs: Collection of seq records.
+#     :param ts: Threshold value (`c` parameter).
+#     :param cdhit_exec: Path or name of the executable.
+#     :return: clustered seq record objects.
+#     """
+#
+#     def get_word_length():
+#         """
+#         -n 5 for thresholds 0.7 ~ 1.0
+#         -n 4 for thresholds 0.6 ~ 0.7
+#         -n 3 for thresholds 0.5 ~ 0.6
+#         -n 2 for thresholds 0.4 ~ 0.5
+#         """
+#         if ts > 0.7:
+#             return 5
+#         if ts > 0.6:
+#             return 4
+#         if ts > 0.5:
+#             return 3
+#         return 2
+#
+#     def ungap_seq(seq: SeqRec):
+#         return SeqRec(
+#             seq.seq.ungap(), id=seq.id, name=seq.name,
+#             description=seq.description)
+#
+#     seqs_map = {s.id: s for s in seqs}
+#     seqs = list(map(ungap_seq, seqs_map.values()))
+#     msa_handle = NamedTemporaryFile('w')
+#     num_aln = SeqIO.write(seqs, msa_handle, 'fasta')
+#     LOGGER.debug(f'Wrote {num_aln} sequences into {msa_handle.name}')
+#     msa_handle.seek(0)
+#     out_handle = NamedTemporaryFile('w')
+#     cmd = f'{cdhit_exec} -i {msa_handle.name} -o {out_handle.name} ' \
+#           f'-c {round(ts, 2)} -g 1 -T 0 -M 0 -d 0 -n {get_word_length()}'
+#     run_sp(cmd)
+#     LOGGER.debug(f'successfully executed {cmd}')
+#     clusters = parse_cdhit(Path(f'{out_handle.name}.clstr'))
+#     return [[seqs_map[x] for x in c] for c in clusters]
 
 
 # def seq_identity(
@@ -377,48 +377,48 @@ def map_pairs_numbering(
         yield n1, n2
 
 
-def subset_by_idx(seq: SeqRec, idx: t.Sequence[int], start=1):
-    sub = ''.join(c for i, c in enumerate(seq, start=start) if i in idx)
-    start, end = idx[0], idx[-1]
-    new_id = f'{seq.id}/{start}-{end}'
-    return SeqRec(Seq(sub), new_id, new_id, new_id)
+# def subset_by_idx(seq: SeqRec, idx: t.Sequence[int], start=1):
+#     sub = ''.join(c for i, c in enumerate(seq, start=start) if i in idx)
+#     start, end = idx[0], idx[-1]
+#     new_id = f'{seq.id}/{start}-{end}'
+#     return SeqRec(Seq(sub), new_id, new_id, new_id)
 
 
-def cut(
-        rec: SeqRec, segment: Segment
-) -> t.Tuple[int, int, SeqRec]:
-    """
-    Cut sequence in ``rec`` using ``segment``'s boundaries.
-
-    :param rec: Sequence record.
-    :param segment: Arbitrary segment. Makes sense for
-        :attr:`lXtractor.base.Segment.start` and :attr:`lXtractor.base.Segment.end`
-        to  define some subsequence's boundaries.
-    :return: A sequence record cut according to ``segment``'s boundaries.
-        A suffix "/{start}-{end]" is appended to ``rec``'s id, name and  description.
-    """
-
-    overlap = segment.overlap_with(Segment(1, len(rec)))
-
-    if segment.end != overlap.end:
-        LOGGER.warning(
-            f"Segment's {segment} end of segment is larger "
-            f"than the sequence it supposedly belongs to. "
-            f"Will cut at sequence's end.")
-    if segment.start != overlap.start:
-        LOGGER.warning(
-            f"Segment's {segment} start is lower than 0. "
-            f"Will correct it to 1.")
-
-    start, end = overlap.start, overlap.end
-    add = f'{start}-{end}'
-    domain_rec = SeqRec(
-        rec.seq[start - 1: end],
-        id=f'{rec.id}/{add}',
-        name=f'{rec.name}/{add}',
-        description=rec.description)
-
-    return start, end, domain_rec
+# def cut(
+#         rec: SeqRec, segment: Segment
+# ) -> t.Tuple[int, int, SeqRec]:
+#     """
+#     Cut sequence in ``rec`` using ``segment``'s boundaries.
+#
+#     :param rec: Sequence record.
+#     :param segment: Arbitrary segment. Makes sense for
+#         :attr:`lXtractor.base.Segment.start` and :attr:`lXtractor.base.Segment.end`
+#         to  define some subsequence's boundaries.
+#     :return: A sequence record cut according to ``segment``'s boundaries.
+#         A suffix "/{start}-{end]" is appended to ``rec``'s id, name and  description.
+#     """
+#
+#     overlap = segment.overlap_with(Segment(1, len(rec)))
+#
+#     if segment.end != overlap.end:
+#         LOGGER.warning(
+#             f"Segment's {segment} end of segment is larger "
+#             f"than the sequence it supposedly belongs to. "
+#             f"Will cut at sequence's end.")
+#     if segment.start != overlap.start:
+#         LOGGER.warning(
+#             f"Segment's {segment} start is lower than 0. "
+#             f"Will correct it to 1.")
+#
+#     start, end = overlap.start, overlap.end
+#     add = f'{start}-{end}'
+#     domain_rec = SeqRec(
+#         rec.seq[start - 1: end],
+#         id=f'{rec.id}/{add}',
+#         name=f'{rec.name}/{add}',
+#         description=rec.description)
+#
+#     return start, end, domain_rec
 
 
 if __name__ == '__main__':
