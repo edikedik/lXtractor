@@ -21,7 +21,6 @@ def test_init(simple_structure, four_chain_structure):
     # no structure init
     s = ChainStructure(pdb_id, 'A', simple_structure)
     assert s.seq is None
-    assert s.pdb.structure is None
 
     # chain must match
     with pytest.raises(InitError):

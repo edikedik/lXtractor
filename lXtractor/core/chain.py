@@ -1165,8 +1165,8 @@ class ChainIO:
 
     def write(
             self, objs: CT | abc.Iterable[CT], base: Path, non_blocking: bool = False, **kwargs
-    ) -> abc.Iterator[Future] | abc.Iterator[Path]:
-        if isinstance(objs, (Chain, ChainSequence, ChainStructure)):
+    ) -> abc.Iterator[Future] | abc.Iterator[Path] | t.NoReturn:
+        if isinstance(objs, (ChainSequence, ChainStructure, Chain)):
             objs.write(base)
         else:
             _write = _write_obj(tolerate_failures=self.tolerate_failures, **kwargs)

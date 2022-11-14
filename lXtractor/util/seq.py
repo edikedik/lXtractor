@@ -377,11 +377,11 @@ def map_pairs_numbering(
         yield n1, n2
 
 
-# def subset_by_idx(seq: SeqRec, idx: t.Sequence[int], start=1):
-#     sub = ''.join(c for i, c in enumerate(seq, start=start) if i in idx)
-#     start, end = idx[0], idx[-1]
-#     new_id = f'{seq.id}/{start}-{end}'
-#     return SeqRec(Seq(sub), new_id, new_id, new_id)
+def subset_by_idx(seq: SeqRec, idx: t.Sequence[int], start=1):
+    sub = ''.join(c for i, c in enumerate(seq, start=start) if i in idx)
+    start, end = idx[0], idx[-1]
+    new_id = f'{seq.id}/{start}-{end}'
+    return SeqRec(Seq(sub), new_id, new_id, new_id)
 
 
 # def cut(

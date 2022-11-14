@@ -66,15 +66,11 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     assert s_num[-1] == 260
 
     child_of_child = child.spawn_child(256, 260, str_map_from=SeqNames.map_canonical)
-    assert child_of_child.id in p.children[child.id].children
+    assert child_of_child.seq.name in p.children[child.seq.name].children
 
     with pytest.raises(KeyError):
         _ = p.spawn_child(1, 4, 'child', keep=False, str_map_from=SeqNames.enum,
                           str_map_closest=False)
-
-    with pytest.raises(AmbiguousMapping):
-        _ = p.spawn_child(1, 4, 'child', keep=False, str_map_from=SeqNames.enum,
-                          str_map_closest=True)
 
 
 def test_iter(chicken_src_str):

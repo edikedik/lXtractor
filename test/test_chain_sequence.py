@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from lXtractor import Alignment
+from lXtractor.core.alignment import Alignment
 from lXtractor.core.chain import ChainSequence
 from lXtractor.core.config import DumpNames
 from lXtractor.core.exceptions import MissingData
@@ -21,7 +21,6 @@ def test_init(simple_chain_seq):
     assert fields.seq3 in s
     assert fields.enum in s
     assert len(s.seq1) == len(s.seq3) == len(s.numbering)
-    assert fields.variables in s.meta
 
 
 def test_map_accession(simple_chain_seq):
@@ -32,7 +31,7 @@ def test_map_accession(simple_chain_seq):
     assert s.get_item(fields.enum, 1).seq1 == mapping[1].seq1
 
 
-def test_convertage(simple_chain_seq):
+def test_convert(simple_chain_seq):
     fields, s = simple_chain_seq
     df = s.as_df()
     assert fields.seq1 in df.columns

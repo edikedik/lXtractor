@@ -20,7 +20,7 @@ from lXtractor.core.base import _Fetcher, _Getter
 from lXtractor.core.exceptions import MissingData
 from lXtractor.core.chain import Chain
 from lXtractor.util.io import try_fetching_until, download_text, fetch_iterable
-from lXtractor.util.seq import subset_by_idx
+# from lXtractor.util.seq import subset_by_idx
 
 T = t.TypeVar('T')
 LOGGER = logging.getLogger(__name__)
