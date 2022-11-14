@@ -16,9 +16,9 @@ from lXtractor.variables.calculator import SimpleCalculator, ParallelCalculator
 
 T = t.TypeVar('T')
 StagedSeq: t.TypeAlias = tuple[
-    ChainSequence, abc.Sequence[T], list[SequenceVariable],  abc.Mapping[int, int] | None]
+    ChainSequence, abc.Sequence[T], list[SequenceVariable], abc.Mapping[int, int] | None]
 StagedStr: t.TypeAlias = tuple[
-    ChainStructure, bst.AtomArray, list[StructureVariable],  abc.Mapping[int, int] | None]
+    ChainStructure, bst.AtomArray, list[StructureVariable], abc.Mapping[int, int] | None]
 C = t.Union[ChainSequence, ChainStructure]
 
 
@@ -168,15 +168,25 @@ class Manager:
 
     def stage_calculations(
             self, chains: CT | ChainList, vs: abc.Sequence[VT] | None, *, missing: bool = True,
-            seq_name: str = SeqNames.seq1, map_name: t.Optional[str] = None
+            seq_name: str = SeqNames.seq1, map_name: t.Optional[str] = None, map_to: str | None = None
     ) -> tuple[abc.Iterator[StagedSeq], abc.Iterator[StagedStr]]:
         def get_mapping(obj: SS) -> t.Optional[abc.Mapping[int, int]]:
             if map_name is None:
                 return None
-            if isinstance(obj, ChainStructure):
-                obj = obj.seq
-            map_from, map_to = obj[map_name], obj[SeqNames.enum]
-            return dict(filter(lambda x: x[0] is not None, zip(map_from, map_to)))
+
+            seq = obj.seq if isinstance(obj, ChainStructure) else obj
+
+            fr = seq[map_name]
+
+            if map_to is None:
+                if isinstance(obj, ChainStructure):
+                    to = seq[SeqNames.enum]
+                else:
+                    to = range(1, len(fr) + 1)
+            else:
+                to = seq[map_to]
+
+            return dict(filter(lambda x: x[0] is not None, zip_equal(fr, to)))
 
         def get_vs(obj: SS) -> list[VT]:
             if missing:
@@ -209,11 +219,11 @@ class Manager:
     def calculate_sequentially(
             self, chains: C | abc.Iterable[C], vs: abc.Sequence[VT] | None,
             calculator: CalculatorProtocol[OT, VT, RT], *, save: bool = False, missing: bool = True,
-            seq_name: str = SeqNames.seq1, map_name: t.Optional[str] = None
+            seq_name: str = SeqNames.seq1, map_name: t.Optional[str] = None, map_to: str | None = None
     ) -> abc.Generator[tuple[C, VT, bool, t.Any]]:
 
         staged_seqs, staged_strs = self.stage_calculations(
-            chains, vs, missing=missing, seq_name=seq_name, map_name=map_name)
+            chains, vs, missing=missing, seq_name=seq_name, map_name=map_name, map_to=map_to)
 
         # element = (object, variable, is_calculated, result)
         calculated = chain.from_iterable(
@@ -234,10 +244,12 @@ class Manager:
     def calculate_parallel(
             self, chains: C | abc.Iterable[C], vs: abc.Sequence[VT] | None,
             calculator: CalculatorProtocol[OT, VT, RT], *, save: bool = False,
-            missing: bool = True, seq_name: str = SeqNames.seq1, map_name: t.Optional[str] = None
+            missing: bool = True, seq_name: str = SeqNames.seq1,
+            map_name: str | None = None, map_to: str | None = None
     ) -> abc.Generator[tuple[C, VT, bool, RT]]:
         staged_seqs, staged_strs = self.stage_calculations(
-            chains, vs, missing=missing, seq_name=seq_name, map_name=map_name)
+            chains, vs, missing=missing, seq_name=seq_name,
+            map_name=map_name, map_to=map_to)
 
         objs, targets, variables, mappings = unzip(chain(staged_seqs, staged_strs))
         variables1, variables2 = tee(variables)
@@ -262,16 +274,16 @@ class Manager:
     def calculate(
             self, chains: T | abc.Iterable[T], vs: abc.Sequence[VT] | None, *,
             missing: bool = True, seq_name: str = SeqNames.seq1,
-            map_name: t.Optional[str] = None
+            map_name: str | None = None, map_to: str | None = None
     ) -> abc.Generator[tuple[C, VT, bool, t.Any]]:
         if self.num_proc is None:
             yield from self.calculate_sequentially(
                 chains, vs, SimpleCalculator(), missing=missing,
-                seq_name=seq_name, map_name=map_name)
+                seq_name=seq_name, map_name=map_name, map_to=map_to)
         else:
             yield from self.calculate_parallel(
                 chains, vs, ParallelCalculator(self.num_proc), missing=missing,
-                seq_name=seq_name, map_name=map_name)
+                seq_name=seq_name, map_name=map_name, map_to=map_to)
 
 
 if __name__ == '__main__':

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import typing as t
 from collections import namedtuple, abc
-from copy import deepcopy
-from itertools import islice, combinations
+from copy import deepcopy, copy
+from itertools import islice, combinations, filterfalse
 
 import networkx as nx
 from more_itertools import zip_equal, nth, always_reversible, powerset
@@ -178,16 +178,16 @@ class Segment(abc.Sequence):
         =>       +-----+
 
         :param other: other :class:`Segment` instance.
-        :param deep_copy: deepcopy seqs and metadata.
+        :param deep_copy: deepcopy seqs to avoid side effects.
         :param handle_mode: When the child overlapping segment is created,
-            this parameter defines how :attr:`name` and :attr:`data` are handled.
+            this parameter defines how :attr:`name` and :attr:`meta` are handled.
             The following values are possible:
-                - "merge": merge data and name from `self` and `other`
+                - "merge": merge meta and name from `self` and `other`
                 - "self": the current instance provides both attributes
                 - "other": `other` provides both attributes
         :param sep: If `handle_mode` == "merge", the new name is created by joining
             names of `self` and `other` using this separator.
-        :return: New segment instance with inherited name and data.
+        :return: New segment instance with inherited name and meta.
         """
 
         def subset_seqs(
@@ -203,25 +203,26 @@ class Segment(abc.Sequence):
         start, end = max(self.start, other.start), min(self.end, other.end)
 
         if handle_mode == 'merge':
-            data = {**self.meta, **other.meta}
+            meta = {**self.meta, **other.meta}
             seqs = {
                 **subset_seqs(self._seqs, self.start, start, end),
                 **subset_seqs(other._seqs, other.start, start, end)}
             name = sep.join(map(str, [self.name, other.name]))
         elif handle_mode == 'self':
-            data, name = self.meta, self.name
+            meta, name = self.meta, self.name
             seqs = subset_seqs(self._seqs, self.start, start, end)
         elif handle_mode == 'other':
-            data, name = other.meta, other.name
+            meta, name = other.meta, other.name
             seqs = subset_seqs(other._seqs, other.start, start, end)
         else:
             raise ValueError(f'Handle mode {handle_mode} is not supported. '
                              f'Supported modes are {DATA_HANDLE_MODES}')
 
+        meta = copy(meta)
         if deep_copy:
-            data, seqs = deepcopy(data), deepcopy(seqs)
+            seqs = deepcopy(seqs)
 
-        return self.__class__(start, end, name=name, seqs=seqs, parent=self, meta=data)
+        return self.__class__(start, end, name=name, seqs=seqs, parent=self, meta=meta)
 
     def overlap(self, start: int, end: int) -> Segment:
         """
@@ -297,7 +298,7 @@ def segments2graph(segments: abc.Iterable[Segment]) -> nx.Graph:
     g = nx.Graph()
     for s in segments:
         g.add_node(s)
-        edges = [(s, n) for n in g.nodes if s.overlaps(s)]
+        edges = [(s, n) for n in g.nodes if n != s and s.overlaps(n)]
         if edges:
             g.add_edges_from(edges)
     return g
@@ -334,10 +335,13 @@ def resolve_overlaps(
     g = segments2graph(segments)
     for cc in nx.connected_components(g):
         if len(cc) == 1:
-            yield next(iter(cc.nodes))
+            yield cc.pop()
         else:
-            overlapping_subsets = filter(do_overlap, powerset(iter(cc.nodes)))
-            yield from max(overlapping_subsets, key=lambda xs: sum(map(value_fn, xs)))
+            overlapping_subsets = filterfalse(do_overlap, powerset(cc))
+            yield from max(
+                overlapping_subsets,
+                key=lambda xs: sum(map(value_fn, xs))
+            )
 
 
 if __name__ == '__main__':
