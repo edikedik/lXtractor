@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import logging
 import typing as t
 from collections import namedtuple, abc
 from copy import deepcopy, copy
 from itertools import islice, combinations, filterfalse
 
 import networkx as nx
-from more_itertools import zip_equal, nth, always_reversible, powerset
+from more_itertools import zip_equal, nth, always_reversible, powerset, take
+from tqdm.auto import tqdm
 
 from lXtractor.core.base import Ord
 from lXtractor.core.config import Sep
@@ -16,6 +18,7 @@ from lXtractor.variables.base import Variables
 _I = t.TypeVar('_I', bound=t.Union[int, slice])
 # _IterType = t.Union[abc.Iterator[tuple], abc.Iterator[namedtuple]]
 DATA_HANDLE_MODES = ('merge', 'self', 'other')
+LOGGER = logging.getLogger(__name__)
 
 
 class Segment(abc.Sequence):
@@ -316,28 +319,47 @@ def do_overlap(segments: abc.Iterable[Segment]) -> bool:
 
 def resolve_overlaps(
         segments: abc.Iterable[Segment],
-        value_fn: abc.Callable[[Segment], float] = len
+        value_fn: abc.Callable[[Segment], float] = len,
+        max_it: int | None = None,
+        verbose: bool = False,
 ) -> abc.Generator[Segment]:
     """
     Eliminate overlapping segments.
 
     Convert segments into and undirected graph (see :func:`segments2graph`).
     Iterate over connected components.
-    If a component has only a single node (no overlaps), yield it.
+    If a component has only a single node (no overlaps§), yield it.
     Otherwise, consider all possible non-overlapping subsets of nodes.
     Find a subset such that the sum of the `value_fn` over the segments is
     maximized and yield nodes from it.
 
-    :param segments:
-    :param value_fn:
-    :return:
+    :param segments: A collection of possibly overlapping segments.
+    :param value_fn: A function accepting the segment and returning its value.
+    :param max_it: The maximum number of subsets to consider when resolving a
+        group of overlapping segments.
+    :param verbose: Progress bar and general info.
+    :return: A collection of non-overlapping segments with maximum cumulative value.
+        Note that the optimal solution is guaranteed iff the number of possible subsets
+        for an overlapping group does not exceed `max_it`.
     """
+    # TODO: option to fallback to a greedy strategy when reaching `max_it`
+
     g = segments2graph(segments)
-    for cc in nx.connected_components(g):
+    ccs = nx.connected_components(g)
+    if verbose:
+        ccs = list(ccs)
+        LOGGER.info(f'Found {len(ccs)} connected components with sizes: '
+                    f'{list(map(len, ccs))}')
+    for i, cc in enumerate(nx.connected_components(g), start=1):
         if len(cc) == 1:
             yield cc.pop()
         else:
-            overlapping_subsets = filterfalse(do_overlap, powerset(cc))
+            sets = powerset(cc)
+            if verbose:
+                sets = tqdm(sets, desc=f'Resolving cc {i} with size: {len(cc)}')
+            if max_it is not None:
+                sets = take(max_it, sets)
+            overlapping_subsets = filterfalse(do_overlap, sets)
             yield from max(
                 overlapping_subsets,
                 key=lambda xs: sum(map(value_fn, xs))
