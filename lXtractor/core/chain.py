@@ -104,7 +104,9 @@ class ChainSequence(Segment):
         """
         :return: the primary sequence's (:meth:`seq1`) numbering.
         """
-        return self[SeqNames.enum]
+        if SeqNames.enum in self:
+            return self[SeqNames.enum]
+        return list(range(1, len(self) + 1))
 
     @property
     def seq1(self) -> str:
@@ -118,6 +120,9 @@ class ChainSequence(Segment):
         """
         :return: the three-letter codes of a primary sequence.
         """
+        if SeqNames.seq3 not in self:
+            d = AminoAcidDict()
+            return [d[x] for x in self.seq1]
         return self[SeqNames.seq3]
 
     def _setup_and_validate(self):
@@ -125,11 +130,11 @@ class ChainSequence(Segment):
 
         if SeqNames.seq1 not in self:
             raise MissingData(f'Requires {SeqNames.seq1} in `seqs`')
-        if SeqNames.seq3 not in self:
-            d = AminoAcidDict()
-            self[SeqNames.seq3] = [d[c] for c in self[SeqNames.seq1]]
-        if SeqNames.enum not in self._seqs:
-            self[SeqNames.enum] = list(range(self.start, self.end + 1))
+        # if SeqNames.seq3 not in self:
+        #     d = AminoAcidDict()
+        #     self[SeqNames.seq3] = [d[c] for c in self[SeqNames.seq1]]
+        # if SeqNames.enum not in self._seqs:
+        #     self[SeqNames.enum] = list(range(self.start, self.end + 1))
 
         if not isinstance(self.seq1, str):
             try:
