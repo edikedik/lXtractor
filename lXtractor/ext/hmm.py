@@ -3,10 +3,12 @@ from collections import abc
 from itertools import count
 from pathlib import Path
 
-from pyhmmer.easel import DigitalSequence, TextSequence
+from more_itertools import peekable
+from pyhmmer.easel import DigitalSequence, TextSequence, Alphabet
 from pyhmmer.plan7 import HMMFile, Pipeline, TopHits, Alignment, Domain
 
 from lXtractor.core.chain import ChainSequence, CT, ChainStructure, Chain
+from lXtractor.core.exceptions import MissingData
 
 
 class PyHMMer:
@@ -74,6 +76,10 @@ class PyHMMer:
 
         if not isinstance(objs, abc.Iterable):
             objs = [objs]
+        else:
+            peeking = peekable(objs)
+            if not peeking.peek(False):
+                raise MissingData('No sequences provided')
 
         if new_map_name is None:
             new_map_name = self.hmm.accession.decode('utf-8')
