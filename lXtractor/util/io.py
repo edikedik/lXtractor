@@ -44,14 +44,16 @@ def download_text(
 def download_to_file(
         url: str, fpath: t.Optional[Path] = None,
         fname: t.Optional[str] = None,
-        root_dir: t.Optional[Path] = None) -> Path:
+        root_dir: t.Optional[Path] = None,
+        text: bool = True,
+) -> Path:
     if fpath is None:
         root_dir = root_dir or Path().cwd()
         fname = fname or url.split('/')[-1]
         fpath = root_dir / fname
     if not fpath.parent.exists():
         raise ValueError(f'Directory {fpath.parent} must exist')
-    if url.startswith('ftp'):
+    if not text or url.startswith('ftp'):
         with urllib.request.urlopen(url) as r, fpath.open('wb') as f:
             copyfileobj(r, f)
     else:
