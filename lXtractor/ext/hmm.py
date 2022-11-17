@@ -4,7 +4,7 @@ from itertools import count
 from pathlib import Path
 
 from more_itertools import peekable
-from pyhmmer.easel import DigitalSequence, TextSequence, Alphabet
+from pyhmmer.easel import DigitalSequence, TextSequence
 from pyhmmer.plan7 import HMMFile, Pipeline, TopHits, Alignment, Domain
 
 from lXtractor.core.chain import ChainSequence, CT, ChainStructure, Chain
@@ -62,17 +62,17 @@ class PyHMMer:
             new_map_name: t.Optional[str] = None,
             min_score: float | None = None,
             min_size: int | None = None,
+            min_cov: float | None = None,
             domain_filter: abc.Callable[[Domain], bool] | None = None,
             **kwargs
     ) -> abc.Generator[CT, None, None]:
 
-        def accept_domain(d: Domain) -> bool:
-            if min_score:
-                return d.score >= min_score
-            if min_size:
-                size = d.alignment.target_to - d.alignment.target_from
-                return size >= min_size
-            return True
+        def accept_domain(d: Domain, cov: float) -> bool:
+            acc_cov = min_cov is None or cov >= min_cov
+            acc_score = min_score is None or d.score >= min_score
+            acc_size = min_size is None or (
+                    d.alignment.target_to - d.alignment.target_from >= min_size)
+            return all([acc_cov, acc_score, acc_size])
 
         if not isinstance(objs, abc.Iterable):
             objs = [objs]
@@ -86,26 +86,30 @@ class PyHMMer:
 
         objs_by_id: dict[str, CT] = {s.id: s for s in objs}
 
-        # if self.hits is None:
         self.search(objs_by_id.values())
 
         for hit in self.hits:
             obj = objs_by_id[hit.accession.decode('utf-8')]
 
             for dom_i, dom in enumerate(hit.domains, start=1):
-                if not accept_domain(dom):
+                aln = dom.alignment
+                num = [hmm_i for seq_i, hmm_i in enumerate_numbering(aln) if seq_i]
+                coverage = sum(1 for x in num if x is not None) / len(num)
+
+                if not accept_domain(dom, coverage):
                     continue
                 if domain_filter and not domain_filter(dom):
                     continue
-                aln = dom.alignment
+
                 name = f'{new_map_name}_{dom_i}'
                 sub = obj.spawn_child(aln.target_from, aln.target_to, name, **kwargs)
-                num = [hmm_i for seq_i, hmm_i in enumerate_numbering(aln) if seq_i]
+
                 seq = sub.seq if isinstance(obj, (Chain, ChainStructure)) else sub
                 seq.add_seq(new_map_name, num)
                 seq.meta[f'{new_map_name}_pvalue'] = dom.pvalue
                 seq.meta[f'{new_map_name}_score'] = dom.score
                 seq.meta[f'{new_map_name}_bias'] = dom.bias
+                seq.meta[f'{new_map_name}_cov'] = coverage
                 yield sub
 
 
