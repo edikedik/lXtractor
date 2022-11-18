@@ -1,3 +1,4 @@
+import logging
 import typing as t
 from collections import abc
 from itertools import count
@@ -9,6 +10,9 @@ from pyhmmer.plan7 import HMMFile, Pipeline, TopHits, Alignment, Domain
 
 from lXtractor.core.chain import ChainSequence, CT, ChainStructure, Chain
 from lXtractor.core.exceptions import MissingData
+
+LOGGER = logging.getLogger(__name__)
+HMM_DEFAULT_NAME = 'HMM'
 
 
 class PyHMMer:
@@ -82,7 +86,17 @@ class PyHMMer:
                 raise MissingData('No sequences provided')
 
         if new_map_name is None:
-            new_map_name = self.hmm.accession.decode('utf-8')
+            try:
+                new_map_name = self.hmm.accession.decode('utf-8')
+            except ValueError:
+                try:
+                    new_map_name = self.hmm.name.decode(
+                        'utr-8').replace(' ', '_').replace('-', '_')
+                except ValueError:
+                    LOGGER.warning(
+                        'new_map_name was not provided, and neither `accession` nor `name` '
+                        f'attribute exist: falling back to default name: {HMM_DEFAULT_NAME}')
+                    new_map_name = HMM_DEFAULT_NAME
 
         objs_by_id: dict[str, CT] = {s.id: s for s in objs}
 
