@@ -1113,6 +1113,7 @@ def _write_obj(obj: CT, path: Path, tolerate_failures: bool, **kwargs) -> Path:
         obj.write(path, **kwargs)
         return path
     except Exception as e:
+        LOGGER.warning(f'Failed to initialize {obj} from {path}')
         LOGGER.exception(e)
         if not tolerate_failures:
             raise e
@@ -1139,8 +1140,10 @@ class ChainIO:
         else:
             dirs = {p.name: p for p in path if p.is_dir()}
 
+        _read = _read_obj(obj_type=obj_type, tolerate_failures=self.tolerate_failures, **kwargs)
+
         if DumpNames.segments_dir in dirs or not dirs and isinstance(path, Path):
-            return _read_obj(obj_type, path, **kwargs)
+            return _read(path)
 
         dirs = dirs.values()
 
