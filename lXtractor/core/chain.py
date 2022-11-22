@@ -33,6 +33,8 @@ T = t.TypeVar('T')
 
 LOGGER = logging.getLogger(__name__)
 
+# TODO: introduce annotation categories: (optionally) non-overlapping sets of children
+
 
 def topo_iter(
         start_obj: T, iterator: abc.Callable[[T], abc.Iterator[T]]
@@ -385,6 +387,8 @@ class ChainSequence(Segment):
 
         child = self.sub(start, end, deep_copy=deep_copy, handle_mode='self')
         child.name = name
+        child.meta[MetaNames.name] = name
+        child.meta[MetaNames.id] = child.id
 
         if keep:
             self.children[child.id] = child
