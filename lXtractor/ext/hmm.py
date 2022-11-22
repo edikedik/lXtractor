@@ -66,17 +66,19 @@ class PyHMMer:
             new_map_name: t.Optional[str] = None,
             min_score: float | None = None,
             min_size: int | None = None,
-            min_cov: float | None = None,
+            min_cov_hmm: float | None = None,
+            min_cov_seq: float | None = None,
             domain_filter: abc.Callable[[Domain], bool] | None = None,
             **kwargs
     ) -> abc.Generator[CT, None, None]:
 
-        def accept_domain(d: Domain, cov: float) -> bool:
-            acc_cov = min_cov is None or cov >= min_cov
+        def accept_domain(d: Domain, cov_hmm: float, cov_seq: float) -> bool:
+            acc_cov_hmm = min_cov_hmm is None or cov_hmm >= min_cov_hmm
+            acc_cov_seq = min_cov_seq is None or cov_seq >= min_cov_seq
             acc_score = min_score is None or d.score >= min_score
             acc_size = min_size is None or (
                     d.alignment.target_to - d.alignment.target_from >= min_size)
-            return all([acc_cov, acc_score, acc_size])
+            return all([acc_cov_hmm, acc_cov_seq, acc_score, acc_size])
 
         if not isinstance(objs, abc.Iterable):
             objs = [objs]
@@ -108,9 +110,11 @@ class PyHMMer:
             for dom_i, dom in enumerate(hit.domains, start=1):
                 aln = dom.alignment
                 num = [hmm_i for seq_i, hmm_i in enumerate_numbering(aln) if seq_i]
-                coverage = sum(1 for x in num if x is not None) / len(num)
+                n = sum(1 for x in num if x is not None)
+                cov_seq = n / len(num)
+                cov_hmm = n / self.hmm.M
 
-                if not accept_domain(dom, coverage):
+                if not accept_domain(dom, cov_hmm, cov_seq):
                     continue
                 if domain_filter and not domain_filter(dom):
                     continue
@@ -123,7 +127,8 @@ class PyHMMer:
                 seq.meta[f'{new_map_name}_pvalue'] = dom.pvalue
                 seq.meta[f'{new_map_name}_score'] = dom.score
                 seq.meta[f'{new_map_name}_bias'] = dom.bias
-                seq.meta[f'{new_map_name}_cov'] = coverage
+                seq.meta[f'{new_map_name}_cov_seq'] = cov_seq
+                seq.meta[f'{new_map_name}_cov_hmm'] = cov_hmm
                 yield sub
 
 
