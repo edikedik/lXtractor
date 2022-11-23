@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "lXtractor"
 dynamic = ["version"]
 description = "Feature extraction library for sequences and structures"
-readme = "README.rst"
+readme = "README.md"
 requires-python = ">=3.10"
 license_file = { text = "LICENSE" }
 keywords = [
