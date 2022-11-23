@@ -6,7 +6,7 @@ import typing as t
 from collections import namedtuple, abc
 from concurrent.futures import ProcessPoolExecutor, as_completed, Future
 from dataclasses import dataclass
-from functools import lru_cache, partial
+from functools import partial
 from io import TextIOBase
 from itertools import starmap, chain, zip_longest, tee, filterfalse, repeat
 from pathlib import Path
@@ -292,8 +292,8 @@ class ChainSequence(Segment):
             self.meta.update(cov)
         return cov
 
-    @lru_cache()
-    def get_map(self, key: str) -> dict[t.Any, namedtuple]:
+    # @lru_cache()
+    def get_map(self, key: str) -> dict[t.Any, t.NamedTuple]:
         """
         Obtain the mapping of the form "key->item(seq_name=*,...)".
 
@@ -302,7 +302,7 @@ class ChainSequence(Segment):
         """
         return dict(zip(self[key], iter(self)))
 
-    def get_item(self, key: str, value: t.Any) -> namedtuple:
+    def get_item(self, key: str, value: t.Any) -> t.NamedTuple:
         """
         Get a specific item. Same as :meth:`get_map`, but uses `value` to retrieve
         the needed item immediately.
@@ -315,7 +315,7 @@ class ChainSequence(Segment):
 
     def get_closest(
             self, key: str, value: Ord, *, reverse: bool = False
-    ) -> t.Optional[namedtuple]:
+    ) -> t.Optional[t.NamedTuple]:
         """
         Find the closest item for which item.key >=/<= value.
         By default, the search starts from the sequence's beggining, and expands towards the end
@@ -343,7 +343,7 @@ class ChainSequence(Segment):
             return result[1]
         return None
 
-    @lru_cache
+    # @lru_cache
     def as_df(self) -> pd.DataFrame:
         """
         :return: The pandas DataFrame representation of the sequence where
@@ -351,7 +351,7 @@ class ChainSequence(Segment):
         """
         return pd.DataFrame(iter(self))
 
-    @lru_cache
+    # @lru_cache
     def as_np(self) -> np.ndarray:
         """
         :return: The numpy representation of a sequence as matrix.
@@ -365,7 +365,6 @@ class ChainSequence(Segment):
             map_closest: bool = False,
             deep_copy: bool = False, keep: bool = True
     ) -> ChainSequence:
-        # TODO: spawning without deep copy shares meta -> copy meta by default!
         """
         Spawn the sub-sequence from the current instance.
 
