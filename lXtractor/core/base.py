@@ -17,7 +17,16 @@ _MapT = t.Dict[int, t.Optional[int]]
 
 
 class SoftMapper(UserDict):
+    """
+    A dict with ``[]`` syntax behaving as :meth:`dict.get`.
+    """
     def __init__(self, *args, unk: t.Any, **kwargs):
+        """
+
+        :param args: Passed to :class:`dict`.
+        :param unk: A value returned when `item` is not in dict.
+        :param kwargs: Passed to :class:`dict`.
+        """
         self.unk = unk
         super(SoftMapper, self).__init__(*args, **kwargs)
 
@@ -32,11 +41,12 @@ class AminoAcidDict(UserDict):
     """
     Provides mapping between 3->1 and 1->3-letter amino acid residue codes.
 
-    >>> d = AminoAcidDict()
+    >>> d = AminoAcidDict(any_unk='X')
     >>> assert d['A'] == 'ALA'
     >>> assert d['ALA'] == 'A'
     >>> assert d['XXX'] == 'X'
     >>> assert d['X'] == 'UNK'
+    >>> assert d['CA'] == 'X'
 
     """
 
@@ -47,9 +57,9 @@ class AminoAcidDict(UserDict):
             any_unk: t.Optional[str] = None,
     ):
         """
-        :param aa1_unk: unknown character when mapping 3->1
-        :param aa3_unk: unknown character when mapping 1->3
-        :param any_unk: unknown character when a key doesn't
+        :param aa1_unk: Unknown character when mapping 3->1
+        :param aa3_unk: Unknown character when mapping 1->3
+        :param any_unk: Unknown character when a key doesn't
             meet 1 or 3 length requirements.
         """
 
@@ -124,6 +134,9 @@ class AbstractResource(metaclass=ABCMeta):
 
 
 class AbstractStructure(metaclass=ABCMeta):
+    """
+    Generic structure abstract interface.
+    """
     __slots__ = ()
 
     @classmethod
@@ -139,7 +152,7 @@ class AbstractStructure(metaclass=ABCMeta):
 
 class AbstractChain(metaclass=ABCMeta):
     """
-    Protein basic interface definition.
+    Chain basic interface definition.
     """
 
     __slots__ = ()
@@ -157,6 +170,9 @@ class AbstractChain(metaclass=ABCMeta):
 
 
 class Ord(t.Protocol[T]):
+    """
+    Any objects defining comparison operators.
+    """
     def __le__(self, other: T) -> bool: pass
 
     def __ge__(self, other: T) -> bool: pass
@@ -166,11 +182,18 @@ class Ord(t.Protocol[T]):
 
 @runtime_checkable
 class SupportsWrite(t.Protocol):
+    """
+    Any object with the `write` method.
+    """
     def write(self, data): ...
 
 
 @runtime_checkable
 class AddMethod(t.Protocol):
+    """
+    A callable to add sequences to the aligned ones,
+    preserving the alignment length.
+    """
     def __call__(
             self,
             msa: abc.Iterable[tuple[str, str]] | Path,
@@ -180,18 +203,27 @@ class AddMethod(t.Protocol):
 
 @runtime_checkable
 class AlignMethod(t.Protocol):
+    """
+    A callable to align arbitrary sequences.
+    """
     def __call__(
             self, seqs: abc.Iterable[tuple[str, str]] | Path, **kwargs
     ) -> abc.Iterable[tuple[str, str]]: ...
 
 
 class SeqReader(t.Protocol):
+    """
+    A callable reading sequences into tuples of (header, seq) pairs.
+    """
     def __call__(
             self, inp: Path | TextIOBase | abc.Iterable[str], **kwargs
     ) -> abc.Iterable[tuple[str, str]]: ...
 
 
 class SeqWriter(t.Protocol):
+    """
+    A callable writing (header, seq) pairs to disk.
+    """
     def __call__(
             self, inp: abc.Iterable[tuple[str, str]],
             out: Path | SupportsWrite, **kwargs
@@ -199,10 +231,16 @@ class SeqWriter(t.Protocol):
 
 
 class SeqMapper(t.Protocol):
+    """
+    A callable accepting and returning a pair (header, seq).
+    """
     def __call__(self, seq: tuple[str, str], **kwargs) -> tuple[str, str]: ...
 
 
 class SeqFilter(t.Protocol):
+    """
+    A callable accepting a pair (header, seq) and returning a boolean.
+    """
     def __call__(self, seq: tuple[str, str], **kwargs) -> bool: ...
 
 
