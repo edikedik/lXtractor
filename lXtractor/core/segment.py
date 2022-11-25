@@ -23,20 +23,94 @@ LOGGER = logging.getLogger(__name__)
 
 class Segment(abc.Sequence):
     """
-    An arbitrary segment with boundaries included.
+    An arbitrary segment with inclusive boundaries containing arbitrary number of sequences.
+
+    Sequences themselves may be retrieved via ``[]`` syntax:
+
+    >>> s = Segment(1, 10, 'S', seqs={'X': list(range(10))})
+    >>> s.id == 'S|1-10'
+    True
+    >>> s['X'] == list(range(10))
+    True
+    >>> 'X' in s
+    True
+
+    One can use the same syntax to check if a Segment contains certain index:
+
+    >>> 1 in s and 10 in s and not 11 in s
+    True
+
+    Iteration over the segment yields it's items:
+
+    >>> next(iter(s))
+    Item(i=1, X=0)
+
+    One can just get the same item by explicit index:
+
+    >>> s[1]
+    Item(i=1, X=0)
+
+    Slicing returns an iterable slice object:
+
+    >>> list(s[1:2])
+    [Item(i=1, X=0), Item(i=2, X=1)]
+
+    One can add a new sequence in two ways.
+
+    1) using a method:
+
+    >>> s.add_seq('Y', tuple(range(10, 20)))
+    >>> 'Y' in s
+    True
+
+    2) using ``[]`` syntax:
+
+    >>> s['Y'] = tuple(range(10, 20))
+    >>> 'Y' in s
+    True
+
+    Note that using the first method, if ``s`` already contains ``Y``, this will cause an
+    exception. To overwrite a sequence with the same name, please use explicit ``[]`` syntax.
+
+    Additionally, one can offset Segment indices using ``>>``/``<<`` syntax.
+    This operation mutates original Segment!
+
+    >>> s >> 1
+    S|2-11
+    >>> 11 in s
+    True
+
     """
 
     __slots__ = ('start', 'end', 'name', 'parent', 'children', 'meta', '_seqs', 'variables')
 
     def __init__(
             self, start: int, end: int,
-            name: t.Optional[str] = None,
-            seqs: t.Optional[t.Dict[str, t.Sequence[t.Any]]] = None,
-            parent: t.Optional[Segment] = None,
-            children: t.Optional[dict[str, Segment]] = None,
-            meta: t.Optional[t.Dict[str, t.Any]] = None,
-            variables: t.Optional[Variables] = None
+            name: str | None = None,
+            seqs: dict[str, abc.Sequence[t.Any]] | None = None,
+            parent: Segment | None = None,
+            children: dict[str, Segment] | None = None,
+            meta: dict[str, t.Any] | None = None,
+            variables: Variables | None = None
     ):
+        """
+        :param start: Start coordinate.
+        :param end: End coordinate.
+        :param name: The name of the segment. Name with start and end coordinates
+            should uniquely specify the segmet. They are used to dynamically construct
+            :meth:`id`.
+        :param seqs: A dictionary name => sequence, where sequence is some sequence
+            (preferably mutable) bounded by segment. Name of a sequence must be "simple",
+            i.e., convertable to a field of a namedtuple.
+        :param parent: Parental segment bounding this instance, typically obtained via
+            :meth:`sub` or :meth:`sub_by` methods.
+        :param children: A mapping name => :class:`Segment` with child segments bounded
+            by this instance.
+        :param meta: A dictionary with any meta-information str() => str() since
+            reading/writing `meta` to disc will inevitably convert values to strings.
+        :param variables: A collection of variables calculated or staged for calculation
+            for this segment.
+        """
         self.start = start
         self.end = end
         self.name = name
@@ -50,11 +124,26 @@ class Segment(abc.Sequence):
 
     @property
     def id(self) -> str:
+        """
+        :return: Unique segment's identifier encapsulating name, boundaries and
+            parents of a segment if it was spawned from another :class:`Segment`
+            instance. For instance::
+
+              S|1-2<-(P|1-10)
+
+            would specify a segment `S` with boundaries ``[1, 2]``
+            descended from `P`.
+        """
         parent = f'<-({self.parent.id})' if self.parent else ''
         return f'{self.name}{Sep.start_end}{self.start}-{self.end}{parent}'
 
     @property
     def item_type(self) -> namedtuple:
+        """
+        A factory to make an `Item` namedtuple object encapsulating sequence names
+        contained within this instance. The first field is reserved for "i" -- an index.
+        :return: `Item` namedtuple object.
+        """
         return namedtuple('Item', ['i', *self._seqs.keys()])
 
     def __str__(self) -> str:
@@ -132,7 +221,15 @@ class Segment(abc.Sequence):
             if len(seq) != len(self):
                 self._validate_seq(k, seq)
 
-    def add_seq(self, name: str, seq: t.Sequence[t.Any]):
+    def add_seq(self, name: str, seq: t.Sequence[t.Any]) -> t.NoReturn:
+        """
+        Add sequence to this segment.
+
+        :param name: Sequence's name. Should be convertible to the namedtuple's field.
+        :param seq: A sequence with arbitrary elements and the length of a segment.
+        :return: returns nothing. This operation mutates `attr:`seqs`.
+        :raise ValueError: If the `name` is reserved by another segment.
+        """
         if name not in self:
             self[name] = seq
         else:
@@ -141,21 +238,29 @@ class Segment(abc.Sequence):
 
     def bounds(self, other: Segment) -> bool:
         """
-        self: +-------+
+        Check if this segment bounds other.
 
-        other:  +----+
+        ::
 
-        => True
+            self: +-------+
+            other:  +----+
+            => True
+
+        :param other; Another segment.
         """
         return other.start >= self.start and self.end >= other.end
 
     def bounded_by(self, other: Segment) -> bool:
         """
-        self:   +----+
+        Check whether this segment is bounded by other.
 
-        other: +------+
+        ::
 
-        => True
+            self:   +----+
+            other: +------+
+            => True
+
+        :param other; Another segment.
         """
         return self.start >= other.start and other.end >= self.end
 
@@ -172,31 +277,35 @@ class Segment(abc.Sequence):
     def overlap_with(
             self, other: Segment, deep_copy: bool = True,
             handle_mode: str = 'merge', sep: str = '&'
-    ) -> t.Optional[Segment]:
+    ) -> Segment | None:
         """
-        self: +--------+
+        Overlap this segment with other over common indices.
 
-        other:   +-------+
+        ::
 
-        =>       +-----+
+          self: +---------+
+          other:    +-------+
+          =>:       +-----+
 
         :param other: other :class:`Segment` instance.
         :param deep_copy: deepcopy seqs to avoid side effects.
         :param handle_mode: When the child overlapping segment is created,
             this parameter defines how :attr:`name` and :attr:`meta` are handled.
             The following values are possible:
+
                 - "merge": merge meta and name from `self` and `other`
                 - "self": the current instance provides both attributes
                 - "other": `other` provides both attributes
+
         :param sep: If `handle_mode` == "merge", the new name is created by joining
             names of `self` and `other` using this separator.
         :return: New segment instance with inherited name and meta.
         """
 
         def subset_seqs(
-                _seqs: t.Dict[str, t.Sequence],
+                _seqs: dict[str, abc.Sequence],
                 curr_start: int, ov_start: int, ov_end: int
-        ) -> t.Dict[str, t.Sequence]:
+        ) -> dict[str, abc.Sequence]:
             _start, _end = ov_start - curr_start, ov_end - curr_start
             return {k: s[_start: _end + 1] for k, s in _seqs.items()}
 
