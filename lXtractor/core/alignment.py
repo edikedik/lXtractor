@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import operator as op
 import typing as t
 from collections import abc
@@ -17,12 +16,12 @@ from lXtractor.util.seq import (
     mafft_add, mafft_align, read_fasta, write_fasta, remove_gap_columns, partition_gap_sequences)
 
 _Idx = t.Union[int, t.Tuple[int, ...]]
-LOGGER = logging.getLogger(__name__)
+# LOGGER = logging.getLogger(__name__)
 
 
 class Alignment:
     """
-    An MSA resource: a list of proteins sequences with the same length.
+    An MSA resource: a collection of aligned sequences.
     """
 
     __slots__ = ('seqs', 'add_method', 'align_method', '_seqs_map')
@@ -37,8 +36,8 @@ class Alignment:
         :param add_method: A callable adding sequences. Check the type for a signature.
         :param align_method: A callable aligning sequences.
         """
-        self.add_method = add_method
-        self.align_method = align_method
+        self.add_method: AddMethod = add_method
+        self.align_method: AlignMethod = align_method
         self.seqs: list[tuple[str, str]] = list(seqs)
         self._seqs_map: dict[str, str] = dict(self.seqs)
         self._verify()
@@ -89,15 +88,52 @@ class Alignment:
             raise InitError(f'Expected all _seqs to have the same length, got {lengths}')
 
     def itercols(self, *, join: bool = True) -> abc.Iterator[str] | abc.Iterator[list[str]]:
+        """
+        Iterate over the Alignment columns.
+
+        >>> a = Alignment([('A', 'ABCD'), ('X', 'XXXX')])
+        >>> list(a.itercols())
+        ['AX', 'BX', 'CX', 'DX']
+
+        :param join: Join columns into a string.
+        :return: An iterator over columns.
+        """
         cols = chunked(interleave(*map(op.itemgetter(1), self.seqs)), len(self))
         if join:
             cols = map(lambda x: ''.join(x), cols)
         return cols
 
     def slice(self, start: int, stop: int, step: t.Optional[int] = None) -> Alignment:
+        """
+        Slice alignment columns.
+
+        >>> a = Alignment([('A', 'ABCD'), ('X', 'XXXX')])
+        >>> aa = a.slice(1, 2)
+        >>> aa.shape == (2, 2)
+        True
+        >>>
+        >>> aa.seqs[0]
+        ('A', 'AB')
+        >>> aa = a.slice(-4, 10)
+        >>> aa.seqs[0]
+        ('A', 'ABCD')
+
+        To add the aligned sequences to the existing ones, use ``+`` or :meth:`add`:
+
+        >>> aaa = a + aa
+        >>> aaa.shape
+        (3, 4)
+
+        :param start: Start coordinate, boundaries inclusive.
+        :param stop: Stop coordinate, boundaries inclusive.
+        :param step: Step for slicing, i.e., take every column separated by `step - 1`
+            number of columns.
+        :return: A new alignment with sequences subset according to the slicing params.
+        """
         def slice_one(item):
             header, seq = item
-            return header, ''.join(islice_extended(seq, start, stop, step))
+            return header, ''.join(islice_extended(
+                seq, start - 1 if start > 0 else start, stop, step))
 
         return Alignment(map(slice_one, self.seqs))
 
@@ -105,12 +141,33 @@ class Alignment:
             self, seq: abc.Iterable[tuple[str, str]] | tuple[str, str] | Alignment,
             **kwargs
     ) -> Alignment:
+        """
+        Align (add) sequences to this alignment via :attr:`add_method`.
+
+        >>> a = Alignment([('A', 'ABCD'), ('X', 'XXXX')])
+        >>> aa = a.align(('Y', 'ABXD'))
+        >>> aa.shape
+        (1, 4)
+        >>> aa.seqs
+        [('Y', 'ABXD')]
+
+
+        :param seq: A sequence, iterable over sequences, or another :class:`Alignment`.
+        :param kwargs: Passed to :attr:`add_method`.
+        :return: A new alignment object with sequences from `seq`.
+            The original number of columns should be preserved,
+            which is true when using the default :attr:`add_method`.
+        """
         if isinstance(seq, tuple):
             seq = [seq]
         seqs = self.add_method(self, seq, **kwargs)
         return Alignment(seqs)
 
     def realign(self):
+        """
+        Realign sequences in :attr:`seqs` using :attr:`align_method`.
+        :return: A new :class:`Alignment` object with realigned sequences.
+        """
         return Alignment(self.align_method(self.seqs),
                          align_method=self.align_method,
                          add_method=self.add_method)
@@ -119,6 +176,19 @@ class Alignment:
             self, other: abc.Iterable[tuple[str, str]] | tuple[str, str] | Alignment,
             **kwargs
     ) -> Alignment:
+        """
+        Add sequences to existing ones using :meth:`add`.
+        This is similar to :meth:`align` but automatically adds the aligned seqs.
+
+        >>> a = Alignment([('A', 'ABCD'), ('X', 'XXXX')])
+        >>> aa = a.add(('Y', 'ABXD'))
+        >>> aa.shape
+        (3, 4)
+
+        :param other: A sequence, iterable over sequences, or another :class:`Alignment`.
+        :param kwargs: passed to :meth:`add`
+        :return: A new :class:`Alignment` object with added sequences.
+        """
         aligned_other = self.align(other, **kwargs)
         return self + aligned_other
 
@@ -126,6 +196,35 @@ class Alignment:
             self, item: str | tuple[str, str] | t.Iterable[str] | t.Iterable[tuple[str, str]],
             error_if_missing: bool = True, realign: bool = False, **kwargs
     ) -> Alignment:
+        """
+        Remove a sequence or collection of sequences.
+
+        >>> a = Alignment([('A', 'ABCD-'), ('X', 'XXXX-'), ('Y', 'YYYYY')])
+        >>> aa = a.remove('A')
+        >>> 'A' in aa
+        False
+        >>> aa = a.remove(('Y', 'YYYYY'))
+        >>> aa.shape
+        (2, 5)
+        >>> aa = a.remove(('Y', 'YYYYY'), realign=True)
+        >>> aa.shape
+        (2, 4)
+        >>> aa['A']
+        'ABCD'
+        >>> aa = a.remove(['X', 'Y'])
+        >>> aa.shape
+        (1, 5)
+
+        :param item: One of the following:
+
+            - A ``str``: a sequence's name.
+            - A pair ``(str, str)`` -- a name with the sequence itself.
+            - An iterable over sequence enames or pairs (not mixed!)
+        :param error_if_missing: Raise an error if any of the items are missing.
+        :param realign: Realign seqs after removal.
+        :param kwargs: passed to :attr:`align_method` if `realign` is ``True``.
+        :return: A new :class:`Alignment` object with the remaining sequences.
+        """
 
         if isinstance(item, (str, tuple)):
             items = [item]
@@ -144,9 +243,43 @@ class Alignment:
         return Alignment(seqs)
 
     def filter(self, fn: SeqFilter) -> Alignment:
+        """
+        Filter alignment sequences.
+
+        :param fn: A function accepting a sequence -- (name, seq) pair --
+            and returning a boolean.
+        :return: A new :class:`Alignment` object with filtered sequences.
+        """
         return Alignment(filter(fn, self.seqs))
 
     def filter_gaps(self, max_frac: float = 1.0, dim: int = 0) -> Alignment:
+        """
+        Filter sequences or alignment columns having >= `max_frac` of gaps.
+
+        >>> a = Alignment([('A', 'AB---'), ('X', 'XXXX-'), ('Y', 'YYYY-')])
+
+        By default, the `max_frac` gaps is 1.0, which would remove solely
+        gap-only sequences.
+
+        >>> aa = a.filter_gaps(dim=0)
+        >>> aa == a
+        True
+
+        Specifying `max_frac` removes sequences with over 50% gaps.
+
+        >>> aa = a.filter_gaps(dim=0, max_frac=0.5)
+        >>> 'A' not in aa
+        True
+
+        The last column is removed.
+
+        >>> a.filter_gaps(dim=1).shape
+        (3, 4)
+
+        :param max_frac: a maximum fraction of allowed gaps in a sequence or a column.
+        :param dim: ``0`` for sequences, ``1`` for columns.
+        :return: A new :class:`Alignment` object with filtered sequences or columns.
+        """
         if dim == 0:
             ids, _ = partition_gap_sequences(self.seqs, max_frac)
             return Alignment(
@@ -164,6 +297,16 @@ class Alignment:
             raise ValueError(f'Invalid dim {dim}')
 
     def map(self, fn: SeqMapper) -> Alignment:
+        """
+        Map a function to sequences.
+
+        >>> a = Alignment([('A', 'AB---')])
+        >>> a.map(lambda x: (x[0].lower(), x[1].replace('-', '*'))).seqs
+        [('a', 'AB***')]
+
+        :param fn: A callable accepting and returning a sequence.
+        :return: A new :class:`Alignment` object.
+        """
         return Alignment(map(fn, self.seqs))
 
     @classmethod
@@ -172,6 +315,19 @@ class Alignment:
              add_method: AddMethod = mafft_add,
              align_method: AlignMethod = mafft_align,
              **kwargs) -> Alignment:
+        """
+        Read sequences and create an alignment.
+
+        :param inp: A Path to aligned sequences, or a file handle,
+            or iterable over file lines.
+        :param read_method: A method accepting `inp` and returning an iterable over
+            pairs (header, seq). By default, it's :func:`read_fasta`. Hence, the default
+            expected format is fasta.
+        :param add_method: A sequence addition method for a new :class:`Alignment` object.
+        :param align_method: An alignment method for a new :class:`Alignment` object.
+        :param kwargs: passed to `read_method`
+        :return: An alignment with sequences read parsed from the provided input.
+        """
         return cls(read_method(inp, **kwargs),
                    add_method=add_method,
                    align_method=align_method)
@@ -182,6 +338,18 @@ class Alignment:
              add_method: AddMethod = mafft_add,
              align_method: AlignMethod = mafft_align,
              **kwargs) -> Alignment:
+        """
+        Create a new alignment from a collection of unaligned sequences.
+        For aligned sequences, please utilize :meth:`read`.
+
+        :param seqs: An iterable over (header, seq) objects.
+        :param method: A callable accepting unaligned sequences and returning
+            the aligned ones.
+        :param add_method: A sequence addition method for a new :class:`Alignment` object.
+        :param align_method: An alignment method for a new :class:`Alignment` object.
+        :param kwargs: Passed to `method`.
+        :return: An alignment created from aligned `seqs`.
+        """
         return cls(method(seqs, **kwargs),
                    add_method=add_method,
                    align_method=align_method)
@@ -192,67 +360,43 @@ class Alignment:
             read_method: SeqReader = read_fasta,
             add_method: AddMethod = mafft_add,
             align_method: AlignMethod = mafft_align,
-            **kwargs
+            kwargs_read: dict | None = None,
+            kwargs_align: dict | None = None,
     ) -> Alignment:
-        return cls(align_method(read_method(inp, **kwargs)),
+        """
+        A shortcut combining :meth:`read` and :meth:`make`.
+
+        It parses sequences from `inp`, aligns them and creates the :class:`Alignment` object.
+
+        :param inp: A Path to aligned sequences, or a file handle,
+            or iterable over file lines.
+        :param read_method: A method accepting `inp` and returning an iterable over
+            pairs (header, seq). By default, it's :func:`read_fasta`. Hence, the default
+            expected format is fasta.
+        :param add_method: A sequence addition method for a new :class:`Alignment` object.
+        :param align_method: An alignment method for a new :class:`Alignment` object.
+        :param kwargs_read: Passed to the `read_method`.
+        :param kwargs_align: Passed to the `align_method`.
+        :return: An alignment from parsed and aligned `inp` sequences.
+        """
+        kwargs_read = kwargs_read or {}
+        kwargs_align = kwargs_align or {}
+        return cls(align_method(read_method(inp, **kwargs_read), **kwargs_align),
                    add_method=add_method, align_method=align_method)
 
     def write(self, out: Path | SupportsWrite,
               write_method: SeqWriter = write_fasta,
-              **kwargs) -> None:
+              **kwargs) -> t.NoReturn:
+        """
+        Write an alignment.
+
+        :param out: Any object with the `write` method.
+        :param write_method: The writing function itself, accepting sequences and `out`.
+            By default, use `read_fasta` to write in fasta format.
+        :param kwargs: Passed to `write_method`.
+        :return: Nothing.
+        """
         write_method(self.seqs, out, **kwargs)
-
-    def map_seq_numbering(
-            self, seq,
-            seq_numbering: t.Sequence[int],
-            seq_added: bool = False,
-    ) -> t.Dict[int, int]:
-        # TODO: support matching seq by ID and sequence to avoid unneeded alignments
-        """
-        Map between a sequence's numbering to the alignment columns.
-
-        :param seq: A sequence whose numbering to map.
-        :param seq_numbering: Optional numbering of the provided seq.
-            Must be the same length as ``seq``.
-        :param seq_added: Do not call :meth:`add_sequences`,
-            assuming the sequence is already added.
-        :return: A dictionary mapping ``seq_numbering`` to alignment's columns indices.
-        """
-
-        raise NotImplementedError
-
-        # if not len(seq_numbering) == len(seq):
-        #     raise AmbiguousData(
-        #         f'Numbering length {len(seq_numbering)} does not match '
-        #         f'the sequence length {len(seq)}')
-        #
-        # LOGGER.debug(
-        #     f'Mapping between sequence {seq.id} (size {len(seq)}) '
-        #     f'and the alignment columns numbering.')
-        #
-        # if seq_added:
-        #     aligned_msa = seq
-        # else:
-        #     # add a sequence to the _seqs and extract it right away
-        #     _, aligned_msa = self.add_sequences([seq], False)
-        #     aligned_msa = aligned_msa[-1]
-        #     LOGGER.debug(
-        #         f'Aligned and extracted sequence {len(aligned_msa.id)} '
-        #         f'with size {len(aligned_msa)}')
-        #
-        # # align the extracted sequence and the original one
-        # # extract the (second time) aligned sequence
-        # aligned_ori = self.align_method([seq, aligned_msa])[-1]
-        # LOGGER.debug(f'Aligned MSA-extracted and original sequence '
-        #              f'to obtain a sequence {aligned_ori.id} '
-        #              f'with size {len(aligned_ori)}')
-        #
-        # # Obtain the filtered numbering with the sequence elements
-        # # really present in the MSA-aligned sequence
-        # ori2aligned = (i for i, c in zip(seq_numbering, aligned_ori) if c != '-')
-        #
-        # return {i: next(ori2aligned) for i, c in
-        #         enumerate(aligned_msa, start=1) if c != '-'}
 
 
 if __name__ == '__main__':
