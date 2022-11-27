@@ -12,17 +12,19 @@ def test_chainio(simple_structure, simple_chain_seq):
     fields, seq = simple_chain_seq
     struc = ChainStructure.from_structure(simple_structure)
     seq_child = seq.spawn_child(1, 2)
-    ch = Chain(seq, [struc], children={seq_child.id: Chain(seq_child)})
+    ch = Chain(seq, [struc], children=[Chain(seq_child)])
     io = ChainIO(tolerate_failures=False)
 
     # chain seq io
     with TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        io.write(seq, tmp)
+        consume(io.write(seq, tmp))
         files = get_files(tmp)
         assert DumpNames.sequence in files
         assert DumpNames.meta in files
-        s_r = io.read_chain_seq(tmp)
+        s_r = list(io.read_chain_seq(tmp))
+        assert len(s_r) == 1
+        s_r = s_r.pop()
         assert s_r.id == seq.id
 
         consume(io.write([seq, seq], tmp))
@@ -73,7 +75,9 @@ def test_chainio(simple_structure, simple_chain_seq):
         segm_dir = segm_paths.pop()
         assert segm_dir.name == seq_child.id
 
-        c_r = io.read_chain(tmp, search_children=True)
+        c_r = list(io.read_chain(tmp, search_children=True))
+        assert len(c_r) == 1
+        c_r = c_r.pop()
         assert isinstance(c_r, Chain)
         assert c_r.id == ch.id
         assert c_r.seq.id == ch.seq.id

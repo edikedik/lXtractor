@@ -2,7 +2,7 @@ import pytest
 
 from lXtractor.core.chain import Chain, ChainStructure
 from lXtractor.core.config import Sep, SeqNames
-from lXtractor.core.exceptions import NoOverlap, AmbiguousMapping
+from lXtractor.core.exceptions import NoOverlap
 from test.common import sample_chain
 
 
@@ -46,7 +46,7 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     assert len(child.seq) == 260
     assert len(child.structures) == 1
     assert len(child.structures[0].seq) == 260
-    assert 'child' in p.children
+    assert 'child' in [c.seq.name for c in p.children]
 
     # Using canonical seq numbering
     # +-----------------------|----|------------+
@@ -66,7 +66,9 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     assert s_num[-1] == 260
 
     child_of_child = child.spawn_child(256, 260, str_map_from=SeqNames.map_canonical)
-    assert child_of_child.seq.name in p.children[child.seq.name].children
+    children = list(p.iter_children())
+    assert len(children) == 2
+    assert child_of_child.seq.name in [c.seq.name for c in children[-1]]
 
     with pytest.raises(KeyError):
         _ = p.spawn_child(1, 4, 'child', keep=False, str_map_from=SeqNames.enum,

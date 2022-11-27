@@ -20,7 +20,7 @@ def test_init(simple_structure, four_chain_structure):
     pdb_id = 'xxxx'
     # no structure init
     s = ChainStructure(pdb_id, 'A', simple_structure)
-    assert s.seq is None
+    assert s.seq is not None
 
     # chain must match
     with pytest.raises(InitError):
@@ -107,7 +107,7 @@ def test_io(simple_chain_structure):
         assert s_r.pdb.chain == s.pdb.chain
 
         assert len(s_r.children) == 1
-        s_r_child = s_r.children[child1.seq.name]
+        s_r_child = s_r.children.pop()
         assert not s_r_child.seq.children
         assert s_r_child.seq.meta[MetaNames.pdb_id] == child1.pdb.id
         assert s_r_child.seq.meta[MetaNames.pdb_chain] == child1.pdb.chain

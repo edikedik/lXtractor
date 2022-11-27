@@ -11,8 +11,8 @@ def test_init():
     assert len(Segment(1, 2)) == 2
     assert len(Segment(1, 1)) == 1
     s = Segment(1, 5, 'A', parent=Segment(2, 3, 'B'))
-    assert s.parent.id == 'B:2-3'
-    assert s.id == 'A:1-5<-B:2-3'
+    assert s.parent.id == 'B|2-3'
+    assert s.id == 'A|1-5<-(B|2-3)'
 
     with pytest.raises(ValueError):
         Segment(1, 0)

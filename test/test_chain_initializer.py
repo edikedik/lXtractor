@@ -25,44 +25,42 @@ def mapping(chicken_src_str_path, chicken_src_seq_path, simple_structure):
     }
 
 
-def test_iterable(items):
-    io = ChainInitializer()
+def assert_iterable(io, items):
     res = list(io.from_iterable(items))
     assert len(res) == 6
     assert all([isinstance(r, (ChainSequence, ChainStructure, list)) for r in res])
+
+
+def test_iterable(items):
+    io = ChainInitializer()
+    assert_iterable(io, items)
 
 
 def test_iterable_parallel(items):
     io = ChainInitializer(num_proc=2)
-    res = list(io.from_iterable(items))
-    assert len(res) == 6
-    assert all([isinstance(r, (ChainSequence, ChainStructure, list)) for r in res])
+    assert_iterable(io, items)
+
+
+def assert_mapping(mapping, io):
+    chains = io.from_mapping(mapping)
+    assert len(chains) == 3
+    assert all([isinstance(x, Chain) for x in chains])
+    assert len(chains[0].structures) == 4
+    assert len(chains[1].structures) == 2
+    assert all(
+        [SeqNames.map_canonical in x.seq
+         for x in chain.from_iterable(c.structures for c in chains)]
+    )
 
 
 def test_mapping(mapping):
     io = ChainInitializer()
-    chains = io.from_mapping(mapping)
-    assert len(chains) == 3
-    assert all([isinstance(x, Chain) for x in chains])
-    assert len(chains[0].structures) == 4
-    assert len(chains[1].structures) == 2
-    assert all(
-        [SeqNames.map_canonical in x.seq
-         for x in chain.from_iterable(c.structures for c in chains)]
-    )
+    assert_mapping(mapping, io)
 
 
 def test_mapping_parallel(mapping):
     io = ChainInitializer(num_proc=2)
-    chains = io.from_mapping(mapping)
-    assert len(chains) == 3
-    assert all([isinstance(x, Chain) for x in chains])
-    assert len(chains[0].structures) == 4
-    assert len(chains[1].structures) == 2
-    assert all(
-        [SeqNames.map_canonical in x.seq
-         for x in chain.from_iterable(c.structures for c in chains)]
-    )
+    assert_mapping(mapping, io)
 
 
 def test_mapping_invalid_objects(simple_chain_seq):

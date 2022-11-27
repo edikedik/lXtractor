@@ -5,8 +5,8 @@ from lXtractor.core.segment import Segment
 
 
 @pytest.fixture
-def structure() -> ChainStructure:
-    return ChainStructure('1234', 'A')
+def structure(simple_structure) -> ChainStructure:
+    return ChainStructure('1234', 'A', simple_structure)
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ def test_basic(sample_chain_list, sequence, structure):
 
     assert sequence not in cl
     assert structure in cl
-    assert 'ChainStructure(None)' in cl
+    assert 'ChainStructure(1234:A|1-207)' in cl
 
     with pytest.raises(TypeError):
         cl.insert(1, 1)
@@ -60,6 +60,9 @@ def test_basic(sample_chain_list, sequence, structure):
     assert len(cl) == 3
     with pytest.raises(TypeError):
         cl += [sequence]
+
+    cl.remove(structure)
+    assert len(cl) == 2
 
     cl = sample_chain_list
     assert len(cl) == 2
@@ -92,27 +95,27 @@ def test_objects_retrieval(sample_chain_list):
     assert len(structures) == 2
 
 
-def test_filter(sample_chain_list):
+def test_filter_pos(sample_chain_list):
     cl = sample_chain_list
-    seqs = list(cl.filter(Segment(5, 7)))
+    seqs = cl.filter_pos(Segment(5, 7))
     assert all(isinstance(x, ChainSequence) for x in seqs)
     assert len(seqs) == 2
-    assert len(list(cl.filter(Segment(11, 12)))) == 0
-    assert len(list(cl.filter(Segment(1, 2), obj_type='struc'))) == 0
+    assert len(list(cl.filter_pos(Segment(11, 12)))) == 0
+    assert len(list(cl.filter_pos(Segment(1, 2), obj_type='struc'))) == 0
     children_it = cl.iter_children()
     l1 = next(children_it)
-    assert len(list(l1.filter(Segment(5, 9)))) == 4
-    assert len(list(l1.filter(Segment(6, 9)))) == 2
-    assert len(list(l1.filter(Segment(1, 2), obj_type='struc'))) == 2
+    assert len(list(l1.filter_pos(Segment(5, 9)))) == 4
+    assert len(list(l1.filter_pos(Segment(6, 9)))) == 2
+    assert len(list(l1.filter_pos(Segment(1, 2), obj_type='struc'))) == 2
 
     # the match is bounded by segment
-    assert len(list(l1.filter(Segment(1, 5), match_type='bounded'))) == 2
+    assert len(list(l1.filter_pos(Segment(1, 5), match_type='bounded'))) == 2
     # the match is bounding the segment
-    assert len(list(l1.filter(Segment(1, 5), match_type='bounding'))) == 4
+    assert len(list(l1.filter_pos(Segment(1, 5), match_type='bounding'))) == 4
 
     # match by positions
-    m = list(l1.filter([1, 2]))
+    m = list(l1.filter_pos([1, 2]))
     assert len(m) == 4
     assert m[0].name == 'c1'
-    assert len(list(l1.filter([1, 2, 6]))) == 2
-    assert len(list(l1.filter([1, 2, 6, 10]))) == 0
+    assert len(list(l1.filter_pos([1, 2, 6]))) == 2
+    assert len(list(l1.filter_pos([1, 2, 6, 10]))) == 0

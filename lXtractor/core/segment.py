@@ -89,7 +89,7 @@ class Segment(abc.Sequence):
             name: str | None = None,
             seqs: dict[str, abc.Sequence[t.Any]] | None = None,
             parent: Segment | None = None,
-            children: dict[str, Segment] | None = None,
+            children: abc.Sequence | None = None,
             meta: dict[str, t.Any] | None = None,
             variables: Variables | None = None
     ):
@@ -115,7 +115,7 @@ class Segment(abc.Sequence):
         self.end = end
         self.name = name
         self.parent = parent
-        self.children = children or {}
+        self.children = children or []
         self.meta = meta or {}
         self._seqs = seqs or {}
         self.variables: Variables = variables or Variables()

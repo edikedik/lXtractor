@@ -10,14 +10,10 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import numpy as np
-# from Bio import SeqIO
-# from Bio.Seq import Seq
-# from Bio.SeqRecord import SeqRecord as SeqRec
 from more_itertools import split_at, partition, split_before, tail
 
 from lXtractor.core.base import SupportsWrite, AlignMethod
 from lXtractor.core.exceptions import LengthMismatch, MissingData
-from lXtractor.core.segment import Segment
 from lXtractor.util.io import run_sp
 
 LOGGER = logging.getLogger(__name__)
@@ -186,7 +182,6 @@ def partition_gap_sequences(
     :param seqs: a collection of arbitrary sequences.
     :param max_fraction_of_gaps: a threshold specifying an upper bound
         on allowed fraction of gap characters within a sequence.
-    :param gap: a gap character.
     :return: a filtered list of sequences.
     """
 
@@ -377,11 +372,11 @@ def map_pairs_numbering(
         yield n1, n2
 
 
-def subset_by_idx(seq: SeqRec, idx: t.Sequence[int], start=1):
-    sub = ''.join(c for i, c in enumerate(seq, start=start) if i in idx)
-    start, end = idx[0], idx[-1]
-    new_id = f'{seq.id}/{start}-{end}'
-    return SeqRec(Seq(sub), new_id, new_id, new_id)
+# def subset_by_idx(seq: SeqRec, idx: t.Sequence[int], start=1):
+#     sub = ''.join(c for i, c in enumerate(seq, start=start) if i in idx)
+#     start, end = idx[0], idx[-1]
+#     new_id = f'{seq.id}/{start}-{end}'
+#     return SeqRec(Seq(sub), new_id, new_id, new_id)
 
 
 # def cut(

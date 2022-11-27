@@ -33,6 +33,7 @@ T = t.TypeVar('T')
 
 LOGGER = logging.getLogger(__name__)
 
+
 # TODO: introduce annotation categories: (optionally) non-overlapping sets of children
 # TODO: allow dot-based access for ChainSequence sequences
 
@@ -57,6 +58,7 @@ def topo_iter(
     :return: A generator yielding lists of objects obtained using `iterator` and
         representing topological levels with the root in `start_obj`.
     """
+
     def get_level(cs: abc.Iterable[T]) -> abc.Iterator[T]:
         return chain.from_iterable(map(iterator, cs))
 
@@ -67,6 +69,16 @@ def topo_iter(
         curr_level = list(get_level(curr_level))
         if not curr_level:
             return
+
+
+def _parse_children(children):
+    if children:
+        if not isinstance(children, ChainList):
+            return ChainList(children)
+        else:
+            return children
+    else:
+        return ChainList([])
 
 
 class ChainSequence(Segment):
@@ -110,7 +122,7 @@ class ChainSequence(Segment):
             and expanding such attributes over :class:`ChainSequence` instances
             within this attribute.
         """
-        return topo_iter(self, lambda x: iter(x.children.values()))
+        return topo_iter(self, lambda x: x.children)
 
     @property
     def fields(self) -> tuple[str, ...]:
@@ -160,6 +172,11 @@ class ChainSequence(Segment):
             return [d[x] for x in self.seq1]
         return self[SeqNames.seq3]
 
+    @property
+    def categories(self) -> list[str]:
+        cat = self.meta.get(MetaNames.category)
+        return cat.split(',') if cat else []
+
     def _setup_and_validate(self):
         super()._setup_and_validate()
 
@@ -176,6 +193,7 @@ class ChainSequence(Segment):
 
         self.meta[MetaNames.id] = self.id
         self.meta[MetaNames.name] = self.name
+        self.children: ChainList[ChainSequence] = _parse_children(self.children)
 
     def map_numbering(
             self, other: str | tuple[str, str] | ChainSequence | Alignment,
@@ -448,9 +466,8 @@ class ChainSequence(Segment):
         return self.as_df().values
 
     def spawn_child(
-            self, start: int, end: int, name: t.Optional[str] = None, *,
-            map_from: t.Optional[str] = None,
-            map_closest: bool = False,
+            self, start: int, end: int, name: str | None = None, category: str | None = None,
+            *, map_from: t.Optional[str] = None, map_closest: bool = False,
             deep_copy: bool = False, keep: bool = True
     ) -> ChainSequence:
         """
@@ -463,13 +480,8 @@ class ChainSequence(Segment):
         >>> s = ChainSequence(1, 4, 'CS', seqs={'seq1': 'ABCD', 'X': [5, 6, 7, 8]})
         >>> child1 = s.spawn_child(1, 3, 'Child1')
         >>> assert child1.id in s.children
-        >>> assert 'X' in child1
-        >>> child2 = s.spawn_child(6, 10, 'Child2', map_from='X', map_closest=True)
-        >>> assert child2['X'] == [6, 7, 8]
         >>> s.children
-        {'Child1|1-3<-(CS|1-4)': Child1|1-3<-(CS|1-4), 'Child2|2-4<-(CS|1-4)': Child2|2-4<-(CS|1-4)}
-        >>> child1.parent is s
-        True
+        [Child1|1-3<-(CS|1-4)]
 
         :param start: Start of the sub-sequence.
         :param end: End of the sub-sequence.
@@ -493,8 +505,11 @@ class ChainSequence(Segment):
         child.meta[MetaNames.name] = name
         child.meta[MetaNames.id] = child.id
 
+        if category:
+            add_category(child, category)
+
         if keep:
-            self.children[child.id] = child
+            self.children.append(child)
 
         return child
 
@@ -634,7 +649,7 @@ class ChainSequence(Segment):
                 child = ChainSequence.read(
                     path, dump_names=dump_names, search_children=True)
                 child.parent = seq
-                seq.children[child.name] = child
+                seq.children.append(child)
 
         return seq
 
@@ -682,7 +697,7 @@ class ChainSequence(Segment):
             if self.variables:
                 self.variables.write(base_dir / dump_names.variables)
         if write_children:
-            for c in self.children.values():
+            for c in self.children:
                 child_dir = base_dir / dump_names.segments_dir / c.name
                 c.write(child_dir, dump_names=dump_names, write_children=write_children)
 
@@ -693,9 +708,9 @@ class ChainStructure:
     def __init__(
             self, pdb_id: str, pdb_chain: str,
             pdb_structure: GenericStructure,
-            seq: t.Optional[ChainSequence] = None,
-            parent: t.Optional[ChainStructure] = None,
-            children: t.Optional[dict[str, ChainStructure]] = None,
+            seq: ChainSequence | None = None,
+            parent: ChainStructure | None = None,
+            children: abc.Sequence[ChainStructure] | ChainList[ChainStructure] | None = None,
             variables: t.Optional[Variables] = None,
     ):
         self.pdb = PDB_Chain(pdb_id, pdb_chain, pdb_structure)
@@ -703,7 +718,7 @@ class ChainStructure:
         self.seq = seq
         self.parent = parent
         self.variables = variables or Variables()
-        self.children = children or {}
+        self.children: ChainList[ChainStructure] = _parse_children(children)
 
         if self.seq is None:
             seq1, seq3, num = map(list, unzip(self.pdb.structure.get_sequence()))
@@ -721,7 +736,7 @@ class ChainStructure:
         return self.id
 
     def iter_children(self) -> abc.Generator[list[ChainStructure]]:
-        return topo_iter(self, lambda x: iter(x.children.values()))
+        return topo_iter(self, lambda x: x.children)
 
     @property
     def id(self) -> str:
@@ -730,6 +745,14 @@ class ChainStructure:
     @property
     def array(self) -> bst.AtomArray:
         return self.pdb.structure.array
+
+    @property
+    def meta(self) -> dict[str, str]:
+        return self.seq.meta
+
+    @property
+    def categories(self) -> list[str]:
+        return self.seq.categories
 
     @classmethod
     def from_structure(
@@ -822,7 +845,7 @@ class ChainStructure:
 
         child = ChainStructure(self.pdb.id, self.pdb.chain, structure, seq, self)
         if keep:
-            self.children[child.id] = child
+            self.children.append(child)
         return child
 
     @classmethod
@@ -842,7 +865,7 @@ class ChainStructure:
                             f'where "fmt" is supported structure format')
         structure = GenericStructure.read(base_dir / stems[bname])
 
-        seq = ChainSequence.read(base_dir, dump_names, search_children=False)
+        seq = ChainSequence.read(base_dir, dump_names=dump_names, search_children=False)
         pdb_id = seq.meta.get(MetaNames.pdb_id, 'UnkPDB')
         chain_id = seq.meta.get(MetaNames.pdb_chain, 'UnkChain')
 
@@ -855,12 +878,13 @@ class ChainStructure:
             for path in (base_dir / dump_names.segments_dir).iterdir():
                 child = ChainStructure.read(path, dump_names, search_children=True)
                 child.parent = cs
-                cs.children[path.name] = child
+                cs.children.append(child)
 
         return cs
 
     def write(
-            self, base_dir: Path, fmt: str = 'cif', dump_names: DumpNames = DumpNames, *,
+            self, base_dir: Path, fmt: str = 'cif', *,
+            dump_names: DumpNames = DumpNames,
             write_children: bool = False,
     ) -> t.NoReturn:
         # if base_dir.name != dump_names.structures_dir:
@@ -873,9 +897,9 @@ class ChainStructure:
             self.variables.write(base_dir / dump_names.variables)
 
         if write_children:
-            for child in self.children.values():
+            for child in self.children:
                 child_dir = base_dir / DumpNames.segments_dir / child.seq.name
-                child.write(child_dir, fmt, dump_names, write_children=True)
+                child.write(child_dir, fmt, dump_names=dump_names, write_children=True)
 
 
 class Chain(AbstractChain):
@@ -887,18 +911,26 @@ class Chain(AbstractChain):
 
     def __init__(
             self, seq: ChainSequence,
-            structures: t.Optional[t.List[ChainStructure]] = None,
-            parent: t.Optional[Chain] = None,
-            children: t.Optional[t.Dict[str, Chain]] = None,
+            structures: list[ChainStructure] | None = None,
+            parent: Chain | None = None,
+            children: abc.Sequence[Chain] | None = None,
     ):
         self.seq = seq
         self.structures = structures or []
         self.parent = parent
-        self.children = children or {}
+        self.children: ChainList[Chain] = _parse_children(children)
 
     @property
     def id(self) -> str:
         return self.seq.id
+
+    @property
+    def meta(self) -> dict[str, str]:
+        return self.seq.meta
+
+    @property
+    def categories(self) -> list[str]:
+        return self.seq.categories
 
     def __repr__(self) -> str:
         return self.id
@@ -906,19 +938,19 @@ class Chain(AbstractChain):
     def __str__(self) -> str:
         return self.id
 
-    def __getitem__(self, key: str | int) -> Chain:
-        if isinstance(key, str):
-            return self.children[key]
-        if isinstance(key, int):
-            return list(self.children.values())[key]
-        else:
-            raise TypeError('Wrong key type')
+    # def __getitem__(self, key: str | int) -> Chain:
+    #     if isinstance(key, str):
+    #         return self.children[key]
+    #     if isinstance(key, int):
+    #         return list(self.children.values())[key]
+    #     else:
+    #         raise TypeError('Wrong key type')
 
-    def __contains__(self, item: Chain) -> bool:
-        return item in self.children
+    # def __contains__(self, item: Chain) -> bool:
+    #     return item in self.children
 
     def iter_children(self) -> abc.Generator[list[CT]]:
-        return topo_iter(self, lambda x: iter(x.children.values()))
+        return topo_iter(self, lambda x: x.children)
 
     @classmethod
     def from_seq(
@@ -937,34 +969,34 @@ class Chain(AbstractChain):
             cls, path: Path, dump_names: DumpNames = DumpNames,
             *, search_children: bool = False
     ) -> Chain:
-        seq = ChainSequence.read(path, dump_names, search_children=False)
+        seq = ChainSequence.read(path, dump_names=dump_names, search_children=False)
 
         structures = [ChainStructure.read(p, dump_names)
                       for p in (path / dump_names.structures_dir).glob('*')]
-        protein = Chain(seq, structures)
+        c = Chain(seq, structures)
         if search_children:
             for child_path in (path / dump_names.segments_dir).glob('*'):
-                protein.children[child_path.name] = Chain.read(
-                    child_path, dump_names, search_children=True)
-        return protein
+                child = Chain.read(child_path, dump_names, search_children=True)
+                c.children.append(child)
+        return c
 
     def write(
-            self, base_dir: Path, dump_names: DumpNames = DumpNames,
-            *, str_fmt: str = 'cif', write_children: bool = True,
+            self, base_dir: Path, *, dump_names: DumpNames = DumpNames,
+            str_fmt: str = 'cif', write_children: bool = True,
     ) -> t.NoReturn:
 
         base_dir.mkdir(parents=True, exist_ok=True)
 
-        self.seq.write(base_dir, dump_names, write_children=False)
+        self.seq.write(base_dir, dump_names=dump_names, write_children=False)
 
         if self.structures:
             str_dir = base_dir / dump_names.structures_dir
             str_dir.mkdir(exist_ok=True)
             for s in self.structures:
-                s.write(str_dir / s.id, str_fmt, dump_names, write_children=False)
+                s.write(str_dir / s.id, str_fmt, dump_names=dump_names, write_children=False)
 
-        for name, prot in self.children.items():
-            prot.write(base_dir / dump_names.segments_dir / prot.id)
+        for c in self.children:
+            c.write(base_dir / dump_names.segments_dir / c.id)
 
     def add_structure(
             self, structure: ChainStructure, *, check_ids: bool = True,
@@ -988,8 +1020,9 @@ class Chain(AbstractChain):
     ) -> t.NoReturn:
         """Transfer sequence mapping to structure sequences"""
         for s in self.structures:
-            self.seq.relate(s.seq, map_name, link_map, link_map_points_to, map_name_in_other=map_name_in_other,
-                            **kwargs)
+            self.seq.relate(
+                s.seq, map_name, link_map, link_map_points_to,
+                map_name_in_other=map_name_in_other, **kwargs)
 
     def spawn_child(
             self, start: int, end: int, name: None | str = None, *,
@@ -1031,7 +1064,7 @@ class Chain(AbstractChain):
 
         child = Chain(seq, structures, self)
         if keep:
-            self.children[name] = child
+            self.children.append(child)
         return child
 
 
@@ -1040,11 +1073,34 @@ SS = t.TypeVar('SS', bound=ChainSequence | ChainStructure)
 ST = t.TypeVar('ST', bound=Segment)
 
 
+def add_category(c: CT, cat: str):
+    meta = c.seq.meta if isinstance(c, ChainStructure) else c.meta
+    field = MetaNames.category
+    if field not in meta:
+        meta[field] = cat
+    else:
+        existing = meta[field].split(',')
+        if cat not in existing:
+            meta[field] += f',{cat}'
+
+
 class ChainList(abc.MutableSequence[CT]):
     __slots__ = ('_chains', '_type')
 
-    def __init__(self, chains: abc.Iterable[CT]):
-        self._chains: list[CT] = list(chains)
+    def __init__(
+            self, chains: abc.Iterable[CT],
+            categories: abc.Iterable[str | abc.Iterable[str]] | None = None
+    ):
+        if not isinstance(chains, list):
+            chains = list(chains)
+        if categories is not None:
+            for c, cat in zip_equal(chains, categories):
+                if isinstance(cat, str):
+                    add_category(c, cat)
+                else:
+                    for _cat in cat:
+                        add_category(c, _cat)
+        self._chains: list[CT] = chains
         self._type = None
         self._check_match_and_set_type(self._infer_type(self._chains))
 
@@ -1069,6 +1125,10 @@ class ChainList(abc.MutableSequence[CT]):
     @property
     def type(self) -> str:
         return self._type
+
+    @property
+    def categories(self) -> abc.Set[str]:
+        return set(chain.from_iterable(map(lambda c: c.categories, self)))
 
     def _check_match_and_set_type(self, x: str) -> t.NoReturn:
         if self._type is not None:
@@ -1100,6 +1160,19 @@ class ChainList(abc.MutableSequence[CT]):
             case _:
                 raise TypeError(f'Incorrect index type {type(index)}')
 
+    def __getattr__(self, name: str):
+
+        if name == "__setstate__":
+            raise AttributeError(name)
+
+        if name.startswith('__'):
+            object.__getattribute__(self, name)
+
+        if name in self.categories:
+            return self.filter(lambda c: any(cat == name for cat in c.categories))
+
+        raise AttributeError
+
     def __setitem__(self, index: int, value: CT) -> t.NoReturn:
         _type = self._infer_type([value])
         if len(self) == 1 and index == 0:
@@ -1125,10 +1198,10 @@ class ChainList(abc.MutableSequence[CT]):
 
     def __add__(self, other: ChainList | abc.Iterable):
         match other:
-            case abc.Iterable():
-                return ChainList(self._chains + list(other))
             case ChainList():
                 return ChainList(self._chains + other._chains)
+            case abc.Iterable():
+                return ChainList(self._chains + list(other))
             case _:
                 raise TypeError(f'Unsupported type {type(other)}')
 
@@ -1138,7 +1211,8 @@ class ChainList(abc.MutableSequence[CT]):
     def __iter__(self) -> abc.Iterator[CT]:
         return iter(self._chains)
 
-    def index(self, value: CT, start: int = ..., stop: int = ...) -> int:
+    def index(self, value: CT, start: int = 0, stop: int | None = None) -> int:
+        stop = stop or len(self)
         return self._chains.index(value, start, stop)
 
     def insert(self, index: int, value: CT) -> t.NoReturn:
@@ -1323,11 +1397,10 @@ class ChainIO:
         _read = _read_obj(obj_type=obj_type, tolerate_failures=self.tolerate_failures, **kwargs)
 
         if DumpNames.segments_dir in dirs or not dirs and isinstance(path, Path):
-            return _read(path)
+            yield _read(path)
+            return
 
         dirs = dirs.values()
-
-        _read = _read_obj(obj_type=obj_type, tolerate_failures=self.tolerate_failures, **kwargs)
 
         if self.num_proc is None:
 
@@ -1509,6 +1582,8 @@ class ChainInitializer:
     ):
         """Initialize `ChainSequence` or `ChainStructure` objects from inputs."""
         if self.num_proc is not None:
+            # TODO: does not due to __getstate__ of a pickle being accessed through __getattribute__ of
+            # chain list and raising "No such category error".
             with ProcessPoolExecutor(self.num_proc) as executor:
                 futures = [
                     (x, executor.submit(

@@ -18,25 +18,23 @@ def test_init(simple_chain_seq):
     with pytest.raises(MissingData):
         ChainSequence(1, 2)
     fields, s = simple_chain_seq
-    assert fields.seq3 in s
-    assert fields.enum in s
-    assert len(s.seq1) == len(s.seq3) == len(s.numbering)
+    assert fields.seq1 in s
+    assert len(s) == 5
 
 
 def test_map_accession(simple_chain_seq):
     fields, s = simple_chain_seq
-    mapping = s.get_map(fields.enum)
+    mapping = s.get_map('i')
     assert mapping[1].seq1 == 'A'
     assert mapping[1].i == 1
-    assert s.get_item(fields.enum, 1).seq1 == mapping[1].seq1
 
 
 def test_convert(simple_chain_seq):
     fields, s = simple_chain_seq
     df = s.as_df()
     assert fields.seq1 in df.columns
-    assert fields.seq3 in df.columns
-    assert fields.enum in df.columns
+    # assert fields.seq3 in df.columns
+    # assert fields.enum in df.columns
     assert len(df) == len(s)
 
 
@@ -108,5 +106,4 @@ def test_io(simple_chain_seq):
         assert s_r.id == s.id
 
         assert len(s_r.children) == 1
-        sr_child = s_r.children[child.name]
-        assert child.id == sr_child.id
+        assert child.id == s_r.children.pop().id
