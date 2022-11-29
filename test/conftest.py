@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -104,8 +103,8 @@ def simple_fasta_path() -> Path:
     return path
 
 
-@pytest.fixture(scope='module')
-def _sample_chain_list(simple_structure) -> ChainList:
+@pytest.fixture(scope='function')
+def sample_chain_list(simple_structure) -> ChainList:
     chain_str = ChainStructure.from_structure(simple_structure)
     return ChainList([
         sample_chain(prefix='c', structure=chain_str),
@@ -113,9 +112,9 @@ def _sample_chain_list(simple_structure) -> ChainList:
     ])
 
 
-@pytest.fixture(scope='function')
-def sample_chain_list(_sample_chain_list) -> ChainList:
-    return deepcopy(_sample_chain_list)
+# @pytest.fixture(scope='function')
+# def sample_chain_list(_sample_chain_list) -> ChainList:
+#     return deepcopy(_sample_chain_list)
 
 
 @pytest.fixture(scope='module')

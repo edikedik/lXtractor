@@ -34,10 +34,6 @@ T = t.TypeVar('T')
 LOGGER = logging.getLogger(__name__)
 
 
-# TODO: introduce annotation categories: (optionally) non-overlapping sets of children
-# TODO: allow dot-based access for ChainSequence sequences
-
-
 def topo_iter(
         start_obj: T, iterator: abc.Callable[[T], abc.Iterator[T]]
 ) -> abc.Generator[list[T]]:
@@ -174,6 +170,12 @@ class ChainSequence(Segment):
 
     @property
     def categories(self) -> list[str]:
+        """
+        :return: A list of categories associated with this object.
+
+        Categories are kept under "category" field in :attr:`meta`
+        as a ","-separated list of strings. For instance, "domain,family_x".
+        """
         cat = self.meta.get(MetaNames.category)
         return cat.split(',') if cat else []
 
@@ -338,14 +340,14 @@ class ChainSequence(Segment):
         [9, 8, None, 6]
         >>> assert o['map_some'] == [9, 8, None, 6]
 
-        :param other: arbitrary chain sequence.
-        :param map_name: the name of the sequence to transfer.
-        :param link_name: the name of the "link" sequence that connects `self` and `other`.
-        :param link_points_to: values within this instance the "link" sequence points to.
-        :param save: store the obtained sequence within the `other`.
-        :param map_name_in_other: the name of the mapped sequence to store within the `other`.
+        :param other: An arbitrary chain sequence.
+        :param map_name: The name of the sequence to transfer.
+        :param link_name: The name of the "link" sequence that connects `self` and `other`.
+        :param link_points_to: Values within this instance the "link" sequence points to.
+        :param save: Store the obtained sequence within the `other`.
+        :param map_name_in_other: The name of the mapped sequence to store within the `other`.
             By default, the `map_name` is used.
-        :return: the mapped sequence.
+        :return: The mapped sequence.
         """
         mapping = self.get_map(link_points_to)
         mapped = list(map(
@@ -703,6 +705,26 @@ class ChainSequence(Segment):
 
 
 class ChainStructure:
+    """
+    A structure of a single chain.
+
+    Typical usage workflow:
+
+    1) Use :meth:`GenericStructure.read <lXtractor.core.structure.GenericStructure.read>` to parse the file.
+    2) Split into chains using :meth:`split_chains <lXtractor.core.structure.GenericStructure.split_chains>`.
+    3) Initialize :class:`ChainStructure` from each chain via :meth:`from_structure`.
+
+
+    .. code-block:: python
+
+        s = GenericStructure.read(Path("path/to/structure.cif"))
+        chain_structures = [ChainStructure.from_structure(c) for c in s.split_chains()]
+
+    Two main containers are:
+
+    1) :attr:`seq` -- a :class:`ChainSequence` of this structure, also containing meta info.
+    2) :attr:`pdb` -- a container with pdb id, pdb chain id, and the structure itself.
+    """
     __slots__ = ('pdb', 'seq', 'parent', 'variables', 'children')
 
     def __init__(
@@ -713,11 +735,36 @@ class ChainStructure:
             children: abc.Sequence[ChainStructure] | ChainList[ChainStructure] | None = None,
             variables: t.Optional[Variables] = None,
     ):
-        self.pdb = PDB_Chain(pdb_id, pdb_chain, pdb_structure)
+        """
+        `pdb_id`, `pdb_chain`, and `pdb_structure` are wrapped into a :attr:`pdb`: --
+        a :class:`PDB_Chain` container.
+
+        :param pdb_id: Four-letter PDB code.
+        :param pdb_chain: PDB Chain code.
+        :param pdb_structure: Parsed generic structure with a single chain.
+        :param seq: Chain sequence of a structure. If not provided, will be inferred using
+            :meth:`GenericStructure.get_sequence <lXtractor.core.structure.GenericStructure.get_sequence>`
+        :param parent: Specify parental structure.
+        :param children: Specify structures descended from this one. This contained is used to record
+            sub-structures obtained via :meth:`spawn_child`.
+        :param variables: Variables associated with this structure.
+        :raise InitError: If invalid (e.g., multi-chain structure) is provided.
+        """
+        #: A container with PDB ID, PDB Chain, and parsed structure.
+        self.pdb: PDB_Chain = PDB_Chain(pdb_id, pdb_chain, pdb_structure)
         validate_chain(self.pdb)
-        self.seq = seq
-        self.parent = parent
-        self.variables = variables or Variables()
+
+        #: Sequence of this structure.
+        self.seq: ChainSequence | None = seq
+
+        #: Parent of this structure.
+        self.parent: ChainStructure | None = parent
+
+        #: Variables assigned to this structure. Each should be of a
+        #: :class:`StructureVariable <lXtractor.variables.base.StructureVariable>`.
+        self.variables: Variables = variables or Variables()
+
+        #: Any sub-structures descended from this one, preferably using :meth:`spawn_child`.
         self.children: ChainList[ChainStructure] = _parse_children(children)
 
         if self.seq is None:
@@ -736,22 +783,39 @@ class ChainStructure:
         return self.id
 
     def iter_children(self) -> abc.Generator[list[ChainStructure]]:
+        """
+        Iterate :attr:`children` in topological order.
+
+        See :meth:`ChainSequence.iter_children` and :func:`topo_iter`.
+        """
         return topo_iter(self, lambda x: x.children)
 
     @property
     def id(self) -> str:
+        """
+        :return: Unique identifier of a structure.
+        """
         return f'{self.__class__.__name__}({self.seq})'
 
     @property
     def array(self) -> bst.AtomArray:
+        """
+        :return: The ``AtomArray`` object (a shortcut for ``.pdb.structure.array``).
+        """
         return self.pdb.structure.array
 
     @property
     def meta(self) -> dict[str, str]:
+        """
+        :return: Meta info of a :attr:`seq`.
+        """
         return self.seq.meta
 
     @property
     def categories(self) -> list[str]:
+        """
+        :return: A list of categories encapsulated within :attr:`ChainSequence.meta`.
+        """
         return self.seq.categories
 
     @classmethod
@@ -759,6 +823,13 @@ class ChainStructure:
             cls, structure: bst.AtomArray | GenericStructure,
             pdb_id: t.Optional[str] = None,
     ) -> ChainStructure:
+        """
+        :param structure: An `AtomArray` or `GenericStructure`,
+            corresponding to a single protein chain.
+        :param pdb_id: PDB identifier of a structure
+            (Chain ID will be inferred from the `AtomArray`).
+        :return: Initialized chain structure.
+        """
         if isinstance(structure, bst.AtomArray):
             structure = GenericStructure(structure)
 
@@ -776,7 +847,40 @@ class ChainStructure:
             map_name_self: str | None = None, map_name_other: str | None = None,
             mask_self: np.ndarray | None = None, mask_other: np.ndarray | None = None,
             inplace: bool = False, rmsd_to_meta: bool = True,
-    ):
+    ) -> tuple[ChainStructure, float, tuple[np.ndarray, np.ndarray, np.ndarray]]:
+        """
+        Superpose some other structure to this one.
+        It uses func:`biotite.structure.superimpose` internally.
+
+        The most important requirement is both structures (after all optional selections applied)
+        having the same number of atoms.
+
+        :param other: Other chain structure (mobile).
+        :param res_id: Residue positions within this or other chain structure. If ``None``, use
+            all available residues.
+        :param atom_names: Atom names to use for selected residues. Two options are available:
+
+            1) Sequence of sequences of atom names. In this case, atom names are given per selected
+            residue (`res_id`), and the external sequence's length must correspond to the number of
+            residues in the `res_id`. Note that if no `res_id` provided, the sequence must encompass
+            all available residues.
+
+            2) A sequence of atom names. In this case, it will be used to select atoms for each available
+            residues. For instance, use ``atom_names=["CA", "C", "N"]`` to select backbone atoms.
+
+        :param map_name_self: Use this map to map `res_id` to real numbering of this structure.
+        :param map_name_other: Use this map to map `res_id` to real numbering of the `other` structure.
+        :param mask_self: Per-atom boolean selection mask to pick fixed atoms within this structure.
+        :param mask_other: Per-atom boolean selection mask to pick mobile atoms within the `other` structure.
+            Note that `mask_self` and `mask_other` take precedence over other selection specifications.
+        :param inplace: Apply the transformation to the mobile structure inplace, mutating `other`.
+            Otherwise, make a new instance: same as `other`, but with transformed atomic coordinates of a
+            :attr:`pdb.structure`.
+        :param rmsd_to_meta: Write RMSD to the :attr:`meta` of `other` as "rmsd
+        :return: A tuple with (1) transformed chain structure, (2) transformation RMSD, and (3) transformation
+            matrices (see func:`biotite.structure.superimpose` for details).
+        """
+
         def _get_mask(c: ChainStructure, map_name: str) -> np.ndarray:
             if res_id is None:
                 return np.ones_like(c.array, bool)
@@ -814,6 +918,7 @@ class ChainStructure:
             )
 
         if rmsd_to_meta:
+            # TODO: Is this correct?
             map_name = map_name_other or other.seq.name
             other.seq.meta[f'rmsd_{map_name}'] = rmsd
 
@@ -827,6 +932,21 @@ class ChainStructure:
             keep: bool = True,
             deep_copy: bool = False
     ) -> ChainStructure:
+        """
+        Create a sub-structure from this one. `Start` and `end` have inclusive boundaries.
+
+        :param start: Start coordinate.
+        :param end: End coordinate.
+        :param name: The name of the spawned sub-structure.
+        :param map_from: Optionally, the map name the boundaries correspond to.
+        :param map_closest: Map to closest `start`, `end` boundaries (see :meth:`map_boundaries`).
+        :param keep_seq_child: Keep spawned sub-sequence within :attr:`ChainSequence.children`.
+            Beware that it's best to use a single object type for keeping parent-children relationships
+            to avoid duplicating information.
+        :param keep: Keep spawned substructure in :attr:`children`.
+        :param deep_copy: Deep copy spawned sub-sequence and sub-structure.
+        :return: New chain structure -- a sub-structure of the current one.
+        """
 
         if start > end:
             raise ValueError(f'Invalid boundaries {start, end}')
@@ -850,9 +970,19 @@ class ChainStructure:
 
     @classmethod
     def read(
-            cls, base_dir: Path, dump_names: DumpNames = DumpNames, *,
+            cls, base_dir: Path, *,
+            dump_names: DumpNames = DumpNames,
             search_children: bool = False,
     ) -> ChainStructure:
+        """
+        Read the chain structure from a file disk dump.
+
+        :param base_dir: An existing dir containing structure, structure sequence, meta info,
+            and (optionally) any sub-structure segments.
+        :param dump_names: File names container.
+        :param search_children: Recursively search for sub-segments and populate :attr:`children`.
+        :return: An initialized chain structure.
+        """
 
         files = get_files(base_dir)
         dirs = get_dirs(base_dir)
@@ -876,7 +1006,7 @@ class ChainStructure:
 
         if search_children and dump_names.segments_dir in dirs:
             for path in (base_dir / dump_names.segments_dir).iterdir():
-                child = ChainStructure.read(path, dump_names, search_children=True)
+                child = ChainStructure.read(path, dump_names=dump_names, search_children=True)
                 child.parent = cs
                 cs.children.append(child)
 
@@ -887,8 +1017,17 @@ class ChainStructure:
             dump_names: DumpNames = DumpNames,
             write_children: bool = False,
     ) -> t.NoReturn:
-        # if base_dir.name != dump_names.structures_dir:
-        #     base_dir /= dump_names.structures_dir
+        """
+        Dump chain structure to disk.
+
+        :param base_dir: A writable dir to save files to.
+        :param fmt: The format of the structure to use
+            -- any format supported by `biotite`.
+        :param dump_names: File names container.
+        :param write_children: Recursively write :attr:`children`.
+        :return: Nothing.
+        """
+
         base_dir.mkdir(exist_ok=True, parents=True)
 
         self.seq.write(base_dir)
@@ -904,32 +1043,82 @@ class ChainStructure:
 
 class Chain(AbstractChain):
     """
-    A mutable container, holding data associated with a singe (full) protein chain.
+    A container, encompassing a :class:`ChainSequence` and possibly many
+    :class:`ChainStructure`'s corresponding to a single protein chain.
+
+    A typical use case is when one wants to benefit from the connection
+    of structural and sequential data, e.g., using single full canonical sequence
+    as :attr:`seq` and all the associated structures within :attr:`structures`.
+    In this case, this data structure makes it easier to extract, annotate, and calculate
+    variables using canonical sequence mapped to the sequence of a structure.
+
+    Typical workflow:
+
+        1) Initialize from some canonical sequence.
+        2) Add structures and map their sequences.
+        3) ???
+        4) Do something useful, like calculate variables using canonical sequence's positions.
+
+    .. code-block:: python
+
+        c = Chain.from_sequence((header, seq))
+        for s in structures:
+            c.add_structure(s)
+
     """
 
     __slots__ = ('seq', 'structures', 'parent', 'children')
 
     def __init__(
             self, seq: ChainSequence,
-            structures: list[ChainStructure] | None = None,
+            structures: abc.Iterable[ChainStructure] | None = None,
             parent: Chain | None = None,
             children: abc.Sequence[Chain] | None = None,
     ):
-        self.seq = seq
-        self.structures = structures or []
+        """
+
+        :param seq: A chain sequence.
+        :param structures: Chain structures corresponding to a single protein chain
+            specified by `seq`.
+        :param parent: A parent chain this chain had descended from.
+        :param children: A collection of children.
+        """
+        #: A chain sequence.
+        self.seq: ChainSequence = seq
+
+        #: A collection of structures corresponding to :attr:`seq`.
+        if structures is None:
+            structures = ChainList([])
+        else:
+            if not isinstance(structures, ChainList):
+                structures = ChainList(structures)
+        self.structures: ChainList[ChainStructure] = structures
+
+        #: A parent chain this chain had descended from.
         self.parent = parent
+
+        #: A collection of children preferably obtained using :meth:`spawn_child`.
         self.children: ChainList[Chain] = _parse_children(children)
 
     @property
     def id(self) -> str:
+        """
+        :return: Unique identifier: same as :attr:`seq`'s id.
+        """
         return self.seq.id
 
     @property
     def meta(self) -> dict[str, str]:
+        """
+        :return: A :attr:`seq`'s :attr:`ChainSequence.meta`.
+        """
         return self.seq.meta
 
     @property
     def categories(self) -> list[str]:
+        """
+        :return: A list of categories from :attr:`seq`'s :attr:`ChainSequence.meta`.
+        """
         return self.seq.categories
 
     def __repr__(self) -> str:
@@ -949,34 +1138,75 @@ class Chain(AbstractChain):
     # def __contains__(self, item: Chain) -> bool:
     #     return item in self.children
 
-    def iter_children(self) -> abc.Generator[list[CT]]:
+    def iter_children(self) -> abc.Generator[list[Chain]]:
+        """
+        Iterate :attr:`children` in topological order.
+
+        See :meth:`ChainSequence.iter_children` and :func:`topo_iter`.
+
+        :return: Iterator over levels of a child tree.
+        """
         return topo_iter(self, lambda x: x.children)
+
+    @t.overload
+    def from_seq(
+            self, inp: Path | TextIOBase | abc.Iterable[str],
+            read_method: SeqReader = read_fasta
+    ) -> ChainList[Chain]:
+        ...
+
+    @t.overload
+    def from_seq(
+            self, inp: str | tuple[str, str],
+            read_method: SeqReader = read_fasta
+    ) -> Chain:
+        ...
 
     @classmethod
     def from_seq(
             cls, inp: str | tuple[str, str] | Path | TextIOBase | abc.Iterable[str],
             read_method: SeqReader = read_fasta
-    ) -> Chain | list[Chain]:
-        if isinstance(inp, str):
-            return cls(ChainSequence.from_string(inp))
-        elif isinstance(inp, tuple):
-            name, s = inp
-            return cls(ChainSequence.from_string(s, name=name))
-        return [cls(ChainSequence.from_string(seq, name=name)) for name, seq in read_method(inp)]
+    ) -> Chain | ChainList[Chain]:
+        """
+
+        :param inp: A string of with a sequence or a pair (header, seq).
+            Otherwise, something that the `read_method` accepts.
+        :param read_method: A callable accepting a path to a file or opened file
+            or an iterable over the file lines and returning pairs (header, seq).
+        :return: If a single sequence is provided as a string or pair,
+            return an initialized chain. Otherwise, use `read_method` to parse the
+            input and embed the resulting :class:`Chain`'s into a :class:`ChainList`.
+        """
+        match inp:
+            case str():
+                return cls(ChainSequence.from_string(inp))
+            case [header, seq]:
+                return cls(ChainSequence.from_string(seq, name=header))
+            case _:
+                return ChainList(
+                    cls(ChainSequence.from_string(seq, name=name))
+                    for name, seq in read_method(inp)
+                )
 
     @classmethod
     def read(
-            cls, path: Path, dump_names: DumpNames = DumpNames,
-            *, search_children: bool = False
+            cls, path: Path, *, dump_names: DumpNames = DumpNames,
+            search_children: bool = False
     ) -> Chain:
+        """
+        :param path: A path to a directory with at least sequence and metadata files.
+        :param dump_names: File names container.
+        :param search_children: Recursively search for child segments and populate :attr:`children`.
+        :return: An initialized chain.
+        """
         seq = ChainSequence.read(path, dump_names=dump_names, search_children=False)
 
-        structures = [ChainStructure.read(p, dump_names)
+        structures = [ChainStructure.read(p, dump_names=dump_names)
                       for p in (path / dump_names.structures_dir).glob('*')]
         c = Chain(seq, structures)
         if search_children:
             for child_path in (path / dump_names.segments_dir).glob('*'):
-                child = Chain.read(child_path, dump_names, search_children=True)
+                child = Chain.read(child_path, dump_names=dump_names, search_children=True)
                 c.children.append(child)
         return c
 
@@ -984,7 +1214,16 @@ class Chain(AbstractChain):
             self, base_dir: Path, *, dump_names: DumpNames = DumpNames,
             str_fmt: str = 'cif', write_children: bool = True,
     ) -> t.NoReturn:
+        """
+        Create a disk dump of this chain data.
+        Created dumps can be reinitialized via :meth:`read`.
 
+        :param base_dir: A writable dir to hold the data.
+        :param dump_names: A file names container.
+        :param str_fmt: A format to write :attr:`structures` in.
+        :param write_children: Recursively write :attr:`children`.
+        :return: Nothing.
+        """
         base_dir.mkdir(parents=True, exist_ok=True)
 
         self.seq.write(base_dir, dump_names=dump_names, write_children=False)
@@ -1003,6 +1242,20 @@ class Chain(AbstractChain):
             map_to_seq: bool = True, map_name: str = SeqNames.map_canonical,
             **kwargs
     ) -> t.NoReturn:
+        """
+        Add a structure to :attr:`structures`.
+
+        :param structure: A structure of a single chain corresponding ot :attr:`seq`.
+        :param check_ids: Check that existing :attr:`structures` don't encompass the structure 
+            with the same :meth:`id`.
+        :param map_to_seq: Align the structure sequence to the :attr:`seq` and create a mapping 
+            within the former.
+        :param map_name: If `map_to_seq` is ``True``, use this map name.
+        :param kwargs: Passed to :meth:`ChainSequence.map_numbering`.
+        :return: Mutates :attr:`structures` and returns nothing.
+        :raise ValueError: If `check_ids` is ``True`` and the structure id clashes 
+            with the existing ones.
+        """
         if check_ids:
             ids = [s.id for s in self.structures]
             if structure.id in ids:
@@ -1014,15 +1267,25 @@ class Chain(AbstractChain):
 
     def transfer_seq_mapping(
             self, map_name: str, link_map: str = SeqNames.map_canonical,
-            link_map_points_to: str = SeqNames.enum,
-            map_name_in_other: str | None = None,
+            link_map_points_to: str = 'i',
             **kwargs
     ) -> t.NoReturn:
-        """Transfer sequence mapping to structure sequences"""
+        """
+        Transfer sequence mapping to each :attr:`ChainStructure.seq` within :attr:`structures`.
+        
+        This method simply utilizes :meth:`ChainSequence.relate` to transfer some map from the
+        :attr:`seq` to each :attr:`ChainStructure.seq`.
+        Check :meth:`ChainSequence.relate` for an explanation of how this works.
+
+        :param map_name: The name of the map to transfer.
+        :param link_map: A name of the map existing within :attr:`ChainStructure.seq` of each
+            structure in :attr:`structures`.
+        :param link_map_points_to: Which sequence values of the `link_map` point to.
+        :param kwargs: Passed to :meth:`ChainSequence.relate`
+        :return: Nothing.
+        """
         for s in self.structures:
-            self.seq.relate(
-                s.seq, map_name, link_map, link_map_points_to,
-                map_name_in_other=map_name_in_other, **kwargs)
+            self.seq.relate(s.seq, map_name, link_map, link_map_points_to, **kwargs)
 
     def spawn_child(
             self, start: int, end: int, name: None | str = None, *,
@@ -1039,6 +1302,36 @@ class Chain(AbstractChain):
             str_keep_child: bool = False,
             str_seq_keep_child: bool = False,
     ) -> Chain:
+        """
+        Subset a :attr:`seq` and (optionally) each structure in :attr:`structures`
+        using the provided :attr:`seq` boundaries (inclusive).
+
+        :param start: Start coordinate.
+        :param end: End coordinate.
+        :param name: Name of a new chain.
+        :param subset_structures: If ``True``, subset each structure in :attr:`structures`.
+            If ``False``, structures are not inherited.
+        :param tolerate_failure: If ``True``, a failure to subset a structure doesn't
+            raise an error.
+        :param keep: Save created child to :attr:`children`.
+        :param seq_deep_copy: Deep copy potentially mutable sequences within :attr:`seq`.
+        :param seq_map_from: Use this map to obtain coordinates within :attr:`seq`.
+        :param seq_map_closest: Map to the closest matching coordinates of a :attr:`seq`.
+            See :meth:`ChainSequence.map_boundaries` and :meth:`ChainSequence.find_closest`.
+        :param seq_keep_child: Keep a spawned :class:`ChainSequence` as a child within :attr:`seq`.
+            Should be ``False`` if `keep` is ``True`` to avoid data duplication.
+        :param str_deep_copy: Deep copy each sub-structure.
+        :param str_map_from: Use this map to obtain coordinates within :attr:`ChainStructure.seq`
+            of each structure.
+        :param str_map_closest: Map to the closest matching coordinates of a :attr:`seq`.
+            See :meth:`ChainSequence.map_boundaries` and :meth:`ChainSequence.find_closest`.
+        :param str_keep_child: Keep a spawned sub-structure as a child in :attr:`ChainStructure.children`.
+            Should be ``False`` if `keep` is ``True`` to avoid data duplication.
+        :param str_seq_keep_child: Keep a sub-sequence of a spawned structure within the
+            :attr:`ChainSequence.children` of :attr:`ChainStructure.seq` of a spawned structure.
+            Should be ``False`` if `keep` or `str_keep_child` is ``True`` to avoid data duplication.
+        :return: A sub-chain with sub-sequence and (optionally) sub-structures.
+        """
 
         def subset_structure(structure: ChainStructure) -> t.Optional[ChainStructure]:
             try:
@@ -1085,12 +1378,73 @@ def add_category(c: CT, cat: str):
 
 
 class ChainList(abc.MutableSequence[CT]):
+    # TODO: consider implementing pattern-based search over whole sequence or sequence region.
+    # For the above, consider filtering to hits.
+    # It may be beneficial to implement this functionality for ChainSequence.
+    """
+    A mutable single-type collection holding either :class:`Chain`'s,
+    or :class:`ChainSequence`'s, or :class:`ChainStructure`'s.
+
+    Object's funtionality relies on this type purity.
+    Adding of / contatenating with objects of a different type shall raise an error.
+
+    It behaves like a regular list with additional functionality.
+
+    >>> s = ChainSequence.from_string('SEQUENCE', name='S')
+    >>> x = ChainSequence.from_string('XXX', name='X')
+    >>> x.meta['category'] = 'x'
+    >>> cl = ChainList([s, s, x])
+    >>> cl
+    [S|1-8, S|1-8, X|1-3]
+    >>> cl[0]
+    S|1-8
+    >>> cl['S']
+    [S|1-8, S|1-8]
+    >>> cl[:2]
+    [S|1-8, S|1-8]
+    >>> cl['1-3']
+    [X|1-3]
+
+    Adding/appending/removing objects of a similar type is easy and works
+    similar to a regular list.
+
+    >>> cl += [s]
+    >>> assert len(cl) == 4
+    >>> cl.remove(s)
+    >>> assert len(cl) == 3
+
+    Categories can be accessed as attributes or using ``[]`` syntax
+    (similar to the `Pandas.DataFrame` columns).
+
+    >>> cl.x
+    [X|1-3]
+    >>> cl['x']
+    [X|1-3]
+
+    While creating a chain list, using a `groups` parameter will assign
+    categories to sequences.
+    Note that such operations return a new :class:`ChainList` object.
+
+    >>> cl = ChainList([s, x], categories=['S', ['X1', 'X2']])
+    >>> cl.S
+    [S|1-8]
+    >>> cl.X2
+    [X|1-3]
+    >>> cl['X1']
+    [X|1-3]
+
+    """
     __slots__ = ('_chains', '_type')
 
     def __init__(
             self, chains: abc.Iterable[CT],
             categories: abc.Iterable[str | abc.Iterable[str]] | None = None
     ):
+        """
+        :param chains: An iterable over ``Chain*``-type objects.
+        :param categories: An optional list of categories.
+            If provided, they will be assigned to inputs' `meta` attributes.
+        """
         if not isinstance(chains, list):
             chains = list(chains)
         if categories is not None:
@@ -1101,11 +1455,22 @@ class ChainList(abc.MutableSequence[CT]):
                     for _cat in cat:
                         add_category(c, _cat)
         self._chains: list[CT] = chains
-        self._type = None
+        self._type: str | None = None
         self._check_match_and_set_type(self._infer_type(self._chains))
 
     @staticmethod
     def _infer_type(objs: abc.Sequence[T]) -> t.Optional[str]:
+        """
+        Infer a type of objs.
+        Populate :attr:`_type` with the inferred type if it's supported.
+        Otherwise, raise an error.
+
+        If objs do not belong to a single type, raise an error.
+
+        :param objs: Arbitrary sequence or arbitrary objects.
+        :return: One of ('chain', 'seq', and 'str') for
+            (:class:`Chain`, :class:`ChainSequence`, and :class:`ChainStructure`).
+        """
         types = set(map(type, objs))
         if len(types) > 1:
             raise TypeError(f'ChainList elements must have single type; got {types}')
@@ -1124,10 +1489,20 @@ class ChainList(abc.MutableSequence[CT]):
 
     @property
     def type(self) -> str:
+        """
+        A type of the contained elements.
+
+        :return: One of ('chain', 'seq', and 'str') for
+            (:class:`Chain`, :class:`ChainSequence`, and :class:`ChainStructure`).
+            None if the chain list is empty.
+        """
         return self._type
 
     @property
     def categories(self) -> abc.Set[str]:
+        """
+        :return: A set of categories inferred from `meta` of encompassed objects.
+        """
         return set(chain.from_iterable(map(lambda c: c.categories, self)))
 
     def _check_match_and_set_type(self, x: str) -> t.NoReturn:
@@ -1156,11 +1531,19 @@ class ChainList(abc.MutableSequence[CT]):
             case slice():
                 return ChainList(self._chains[index])
             case str():
+                if index in self.categories:
+                    return self.filter_category(index)
                 return self.filter(lambda x: index in x.id)
             case _:
                 raise TypeError(f'Incorrect index type {type(index)}')
 
     def __getattr__(self, name: str):
+        """
+        See the example in pandas:
+
+        https://github.com/pandas-dev/pandas/blob/61e0db25f5982063ba7bab062074d55d5e549586/
+        pandas/core/generic.py#L5811
+        """
 
         if name == "__setstate__":
             raise AttributeError(name)
@@ -1220,22 +1603,67 @@ class ChainList(abc.MutableSequence[CT]):
         self._chains.insert(index, value)
 
     def iter_children(self) -> abc.Generator[ChainList[CT]]:
-        levels = zip_longest(*map(lambda c: c.iter_children(), self._chains))
-        for level in levels:
-            yield ChainList(chain.from_iterable(level))
+        """
+        Simultaneously iterate over topological levels of children.
+
+        >>> s = ChainSequence.from_string('ABCDE', name='A')
+        >>> child1 = s.spawn_child(1, 4)
+        >>> child2 = child1.spawn_child(2, 3)
+        >>> x = ChainSequence.from_string('XXXX', name='X')
+        >>> child3 = x.spawn_child(1, 3)
+        >>> cl = ChainList([s, x])
+        >>> list(cl.iter_children())
+        [[A|1-4<-(A|1-5), X|1-3<-(X|1-4)], [A|2-3<-(A|1-4<-(A|1-5))]]
+
+        :return: An iterator over chain lists of children levels.
+        """
+        yield from map(
+            lambda xs: ChainList(chain.from_iterable(xs)),
+            zip_longest(
+                *map(lambda c: c.iter_children(), self._chains),
+                fillvalue=[]
+            ),
+        )
 
     def get_level(self, n: int) -> ChainList[CT]:
+        """
+        Get a specific level of a hierarchical tree starting from this list::
+
+            l0: this list
+            l1: children of each child of each object in l0
+            l2: children of each child of each object in l1
+            ...
+
+        :param n: The level index (0 indicates this list).
+            Other levels are obtained via :meth:`iter_children`.
+        :return: A chain list of object corresponding to a specific topological
+            level of a child tree.
+        """
         if n == 0:
             return self
         return nth(self.iter_children(), n - 1, default=ChainList([]))
 
-    def collapse_children(self) -> ChainList[CT] | list:
-        children = list(chain.from_iterable(self.iter_children()))
-        if children:
-            return ChainList(children)
-        return children
+    def collapse_children(self) -> ChainList[CT]:
+        """
+        Collapse all children of each object in this list into a single chain list.
+
+        >>> s = ChainSequence.from_string('ABCDE', name='A')
+        >>> child1 = s.spawn_child(1, 4)
+        >>> child2 = child1.spawn_child(2, 3)
+        >>> cl = ChainList([s]).collapse_children()
+        >>> assert isinstance(cl, ChainList)
+        >>> cl
+        [A|1-4<-(A|1-5), A|2-3<-(A|1-4<-(A|1-5))]
+
+        :return: A chain list of all children.
+
+        """
+        return ChainList(chain.from_iterable(self.iter_children()))
 
     def iter_sequences(self) -> abc.Generator[ChainSequence]:
+        """
+        :return: An iterator over :class:`ChainSequence`'s.
+        """
         match self._type:
             case 'chain' | 'str':
                 yield from (c.seq for c in self._chains)
@@ -1243,15 +1671,21 @@ class ChainList(abc.MutableSequence[CT]):
                 yield from iter(self._chains)
 
     def iter_structures(self) -> abc.Generator[ChainStructure]:
+        """
+        :return: An iterator over :class:`ChainStructure`'s.
+        """
         match self._type:
             case 'chain':
                 yield from chain.from_iterable(c.structures for c in self._chains)
             case 'str':
-                yield from iter(self._chains)
+                yield from iter(self)
             case _:
                 yield from iter([])
 
     def iter_structure_sequences(self) -> abc.Iterator[ChainSequence]:
+        """
+        :return: Iterate over :attr:`ChainStructure.seq` attributes.
+        """
         yield from (s.seq for s in self.iter_structures())
 
     @staticmethod
@@ -1324,29 +1758,75 @@ class ChainList(abc.MutableSequence[CT]):
 
     def filter_pos(
             self, s: Segment | abc.Collection[Ord], *,
-            obj_type: str = 'seq', match_type: str = 'overlap',
+            match_type: str = 'overlap',
             map_name: t.Optional[str] = None
     ) -> ChainList[SS]:
-        # Use cases:
-        # 1) search using Segment's start/end => good for matching canonical sequence
-        # 2) use map_name => overlapping with ref/aln/etc-based boundaries; esp. for structures
-        match obj_type[:3]:
-            case 'seq':
-                objs, fn, _type = self.iter_sequences(), self._filter_seqs, ChainSequence
-            case 'str':
-                objs, fn, _type = self.iter_structures(), self._filter_str, ChainStructure
-            case _:
-                raise ValueError(f'Unsupported object type {obj_type}')
+        """
+        Filter to objects encompassing certain consecutive position regions or arbitrary
+        positions' collections.
+
+        For :class:`Chain` and :class:`ChainStructure`, the filtering is over `seq` attributes.
+
+        :param s: What to search for:
+
+            1) ``s=Segment(start, end)`` to find all objects encompassing certain region.
+            2) ``[pos1, posX, posN]`` to find all objects encompassing the specified positions.
+
+        :param match_type: If `s` is `Segment`, this value determines the acceptable relationships
+            between `s` and each :class:`ChainSequence`:
+
+            1) "overlap" -- it's enough to overlap with `s`.
+            2) "bounding" -- object is accepted if it bounds `s`.
+            3) "bounded" -- object is accepted if it's bounded by `s`.
+
+        :param map_name: Use this map within to map positions of `s`. For instance, to each for
+            all elements encompassing region 1-5 of a canonical sequence, one would use::
+
+                chain_list.filter_pos(s=Segment(1, 5), match_type="bounding", map_name="map_canonical")
+
+        :return: A list of hits of the same type.
+        """
+
+        if self.type == 'seq':
+            objs, fn = iter(self), self._filter_seqs
+        elif self.type == 'chain':
+            objs, fn = self.iter_sequences(), self._filter_seqs
+        else:
+            objs, fn = iter(self), self._filter_str
+
         objs1, objs2 = tee(objs)
         mask = fn(objs1, match_type, s, map_name)
-        res: ChainList[_type] = ChainList(
+
+        return ChainList(
             map(op.itemgetter(1), filter(lambda x: x[0], zip(mask, objs2))))
-        return res
 
     def filter(self, pred: abc.Callable[[CT], bool]) -> ChainList[CT]:
+        """
+        >>> cl = ChainList([ChainSequence.from_string('AAAX', name='A'), ChainSequence.from_string('XXX', name='X')])
+        >>> cl.filter(lambda c: c.seq1[0] == 'A')
+        [A|1-4]
+
+        :param pred: Predicate callable for filtering.
+        :return: A filtered chain list (new object).
+        """
         return ChainList(filter(pred, self))
 
+    def filter_category(self, name: str) -> ChainList:
+        """
+        :param name: Category name.
+        :return: Filtered objects having this category within their ``meta["category"]``.
+        """
+        return self.filter(lambda c: any(cat == name for cat in c.categories))
+
     def apply(self, fn: abc.Callable[[CT, ...], CT], *args, **kwargs) -> ChainList[CT]:
+        """
+        Apply a function to each object and return a new chain list of results.
+
+        :param fn: A callable to apply.
+        :param args: Passed to a `fn`.
+        :param kwargs: Passed to a `fn`.
+        :return: A new chain list with application results.
+        """
         return ChainList([fn(c, *args, **kwargs) for c in self])
 
 
@@ -1374,14 +1854,31 @@ def _write_obj(obj: CT, path: Path, tolerate_failures: bool, **kwargs) -> Path:
 
 
 class ChainIO:
+    """
+    A class handling reading/writing collections of `Chain*` objects.
+    """
+
     # TODO: implement context manager
     def __init__(
             self, num_proc: None | int = None, verbose: bool = False,
             tolerate_failures: bool = False, dump_names: DumpNames = DumpNames,
     ):
+        """
+        :param num_proc: The number of parallel processes. Using more processes is especially
+            beneficial for :class:`ChainStructure`'s and :class:`Chain`'s with structures.
+            Otherwise, the increasing this number may not reduce or actually worsen the time
+            needed to read/write objects.
+        :param verbose: Output logging and progress bar.
+        :param tolerate_failures: Errors when reading/writing do not raise an exception.
+        :param dump_names: File names container.
+        """
+        #: The number of parallel processes
         self.num_proc = num_proc
+        #: Output logging and progress bar.
         self.verbose = verbose
+        #: Errors when reading/writing do not raise an exception.
         self.tolerate_failures = tolerate_failures
+        #: File names container.
         self.dump_names = dump_names
 
     def _read(
@@ -1425,8 +1922,18 @@ class ChainIO:
                     yield future.result()
 
     def write(
-            self, objs: CT | abc.Iterable[CT], base: Path, non_blocking: bool = False, **kwargs
+            self, objs: CT | abc.Iterable[CT], base: Path,
+            non_blocking: bool = False, **kwargs
     ) -> abc.Iterator[Future] | abc.Iterator[Path] | t.NoReturn:
+        """
+        :param objs: A single or multiple objects to write.
+            Each must have a `write` method accepting a directory.
+        :param base: A writable dir. If `objs` are many, dump into `id` directories.
+        :param non_blocking: If :attr:`num_proc` is >= 1, return `Future` objects
+            instead of waiting for the result.
+        :param kwargs: Passed to the `write` method of each object.
+        :return: Whatever `write` method returns.
+        """
         if isinstance(objs, (ChainSequence, ChainStructure, Chain)):
             objs.write(base)
         else:
@@ -1455,16 +1962,51 @@ class ChainIO:
     def read_chain(
             self, path: Path | abc.Iterable[Path], **kwargs
     ) -> t.Optional[Chain] | abc.Iterator[t.Optional[Chain]]:
+        """
+        Read :class:`Chain`'s from the provided path.
+
+        If `path` contains signature files and directories
+        (such as `sequence.tsv` and `segments`), it is assumed to contain a single object.
+        Otherwise, it is assumed to contain multiple :class:`Chain` objects.
+
+        :param path: Path to a dump or a dir of dumps.
+        :param kwargs: Passed to :meth:`Chain.read`
+        :return: An single chain or iterator over chain objects read sequentially or in parallel.
+        """
         return self._read(Chain, path, **kwargs)
 
     def read_chain_seq(
             self, path: Path | abc.Iterable[Path], **kwargs
     ) -> t.Optional[ChainSequence] | abc.Iterator[t.Optional[ChainSequence]]:
+        """
+        Read :class:`ChainSequence`'s from the provided path.
+
+        If `path` contains signature files and directories
+        (such as `sequence.tsv` and `segments`), it is assumed to contain a single object.
+        Otherwise, it is assumed to contain multiple :class:`ChainSequence` objects.
+
+        :param path: Path to a dump or a dir of dumps.
+        :param kwargs: Passed to :meth:`ChainSequence.read`
+        :return: An single chain sequence or iterator over :class:`ChainSequence` objects
+            read sequentially or in parallel.
+        """
         return self._read(ChainSequence, path, **kwargs)
 
     def read_chain_struc(
             self, path: Path | abc.Iterable[Path], **kwargs
     ) -> t.Optional[ChainStructure] | abc.Iterator[t.Optional[ChainStructure]]:
+        """
+        Read :class:`ChainStructure`'s from the provided path.
+
+        If `path` contains signature files and directories
+        (such as `structure.cif` and `segments`), it is assumed to contain a single object.
+        Otherwise, it is assumed to contain multiple :class:`ChainStructure` objects.
+
+        :param path: Path to a dump or a dir of dumps.
+        :param kwargs: Passed to :meth:`ChainSequence.read`
+        :return: An single chain sequence or iterator over :class:`ChainStructure` objects
+            read sequentially or in parallel.
+        """
         return self._read(ChainStructure, path, **kwargs)
 
 
@@ -1525,7 +2067,21 @@ def map_numbering_12many(
         obj_to_map: str | tuple[str, str] | ChainSequence | Alignment,
         seqs: abc.Iterable[ChainSequence],
         num_proc: t.Optional[int] = None,
-) -> abc.Iterator[list[int]]:
+) -> abc.Iterator[list[int | None]]:
+    """
+    Map numbering of a single sequence to many other sequences.
+
+    **This function does not save mapped numberings.**
+
+    .. seealso::
+        :meth:`ChainSequence.map_numbering`.
+
+    :param obj_to_map: Object whose numbering should be mapped to `seqs`.
+    :param seqs: Chain sequences to map the numbering to.
+    :param num_proc: A number of parallel processes to use.
+        If ``None``, run sequentially.
+    :return: An iterator over the mapped numberings.
+    """
     if num_proc:
         with ProcessPoolExecutor(num_proc) as executor:
             yield from executor.map(_map_numbering, seqs, repeat(obj_to_map))
@@ -1537,7 +2093,38 @@ def map_numbering_many2many(
         objs_to_map: abc.Sequence[str | tuple[str, str] | ChainSequence | Alignment],
         seq_groups: abc.Sequence[abc.Sequence[ChainSequence]],
         num_proc: t.Optional[int] = None, verbose: bool = False,
-):
+) -> abc.Iterator[list[list[int | None]]]:
+    """
+    Map numbering of each object `o` in `objs_to_map` to each sequence
+    in each group of the `seq_groups` ::
+
+        o1 -> s1_1 s1_1 s1_3 ...
+        o2 -> s2_1 s2_1 s2_3 ...
+                  ...
+
+    **This function does not save mapped numberings.**
+
+    For a single object-group pair, it's the same as :func:`map_numbering_12many`.
+    The benefit comes from parallelization of this functionality.
+
+    .. seealso::
+        :meth:`ChainSequence.map_numbering`.
+        :func:`map_numbering_12many`
+
+    :param objs_to_map: An iterable over objects whose numbering to map.
+    :param seq_groups: Group of objects to map numbering to.
+    :param num_proc: A number of processes to use. If ``None``, run sequentially.
+    :param verbose: Output a progress bar.
+    :return: An iterator over lists of lists with numeric mappings
+
+    ::
+
+         [[s1_1 map, s1_2 map, ...]
+          [s2_1 map, s2_2 map, ...]
+                    ...
+          ]
+
+    """
     if len(objs_to_map) != len(seq_groups):
         raise LengthMismatch(
             f'The number of objects to map {len(objs_to_map)} != '
@@ -1560,30 +2147,66 @@ def map_numbering_many2many(
 
 
 class ChainInitializer:
+    """
+    In contrast to :class:`ChainIO`, this object initializes new :class:`Chain`,
+    :class:`ChainStructure`, or :class:`Chain` objects from various input types.
+
+    To initialize :class:`Chain` objects, use :meth:`from_mapping`.
+
+    To initialize :class:`ChainSequence` or :class:`ChainStructure` objects, use
+    :meth:`from_iterable`.
+
+    """
+
     def __init__(
             self, num_proc: int | None = None, tolerate_failures: bool = False,
             verbose: bool = False):
+        """
+
+        :param num_proc: The number of processes to use.
+        :param tolerate_failures: Don't stop the execution if some object fails to initialize.
+        :param verbose: Output progress bars.
+        """
         self.num_proc = num_proc
         self.tolerate_failures = tolerate_failures
         self.verbose = verbose
 
     @property
     def supported_seq_ext(self) -> list[str]:
+        """
+        :return: Supported sequence file extensions.
+        """
         return ['.fasta']
 
     @property
     def supported_str_ext(self) -> list[str]:
+        """
+        :return: Supported structure file extensions.
+        """
         return ['.cif', '.pdb', '.pdbx', '.mmtf', '.npz']
 
     def from_iterable(
             self, it: abc.Iterable[
-                SS | Path | tuple[Path, abc.Sequence[str]] | tuple[str, str] | GenericStructure],
+                ChainSequence | ChainStructure | Path | tuple[Path, abc.Sequence[str]] |
+                tuple[str, str] | GenericStructure],
             callbacks: list[InitializerCallback] | None = None
-    ):
-        """Initialize `ChainSequence` or `ChainStructure` objects from inputs."""
+    ) -> abc.Generator[ChainSequence | ChainStructure]:
+        """
+        Initialize :class:`ChainSequence`s or/and :class:`ChainStructure`'s
+        from (possibly heterogeneous) iterable.
+
+        :param it:
+            Supported elements are:
+                1) Initialized objects (passed without any actions).
+                2) Path to a sequence or a structure file.
+                3) (Path to a structure file, list of target chains).
+                4) A pair (header, seq) to initialize a :class:`ChainSequence`.
+                5) A :class:`GenericStructure` with a single chain.
+
+        :param callbacks: A sequence of callables accepting and returning an initialized object.
+        :return: A generator yielding initialized chain sequences and structures parsed from the inputs.
+        """
         if self.num_proc is not None:
-            # TODO: does not due to __getstate__ of a pickle being accessed through __getattribute__ of
-            # chain list and raising "No such category error".
             with ProcessPoolExecutor(self.num_proc) as executor:
                 futures = [
                     (x, executor.submit(
@@ -1615,11 +2238,43 @@ class ChainInitializer:
                 abc.Sequence[
                     ChainStructure | GenericStructure | bst.AtomArray | Path |
                     tuple[Path, abc.Sequence[str]]]
-            ], key_callbacks: t.Optional[list[InitializerCallback]] = None,
+            ],
+            key_callbacks: t.Optional[list[InitializerCallback]] = None,
             val_callbacks: t.Optional[list[InitializerCallback]] = None,
             **kwargs
-    ):
-        """Initialize `Chain` objects from mapping between sequences and structures."""
+    ) -> list[Chain]:
+        """
+        Initialize :class:`Chain`'s from mapping between sequences and structures.
+
+        It will first initialize objects to which the elements of `m` refer (see below)
+        and then create maps between each sequence and associated structures, saving
+        these into structure :attr:`ChainStructure.seq`'s.
+
+        :param m:
+            A mapping of the form ``{seq => [structures]}``, where `seq` is one of:
+
+                1) Initialized :class:`ChainSequence`.
+                2) A pair (header, seq).
+                3) A path to a **fasta** file containing a single sequence.
+
+            While each structure is one of:
+
+                1) Initialized :class:`ChainStructure`.
+                2) :class:`GenericStructure` with a single chain.
+                3) :class:`biotite.AtomArray` corresponding to a single chain.
+                4) A path to a structure file.
+                5) (A path to a structure file, list of target chains).
+
+            In the latter two cases, the chains will be expanded and associated with
+            the same sequence.
+
+        :param key_callbacks: A sequence of callables accepting and returning
+            a :class:`ChainSequence`.
+        :param val_callbacks: A sequence of callables accepting and returning
+            a :class:`ChainStructure`.
+        :param kwargs: Passed to :meth:`Chain.add_structure`.
+        :return: A list of initialized chains.
+        """
         # Process keys and values
         keys = self.from_iterable(m, callbacks=key_callbacks)  # ChainSequences
         values_flattened = self.from_iterable(  # ChainStructures

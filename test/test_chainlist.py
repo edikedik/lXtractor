@@ -101,12 +101,12 @@ def test_filter_pos(sample_chain_list):
     assert all(isinstance(x, ChainSequence) for x in seqs)
     assert len(seqs) == 2
     assert len(list(cl.filter_pos(Segment(11, 12)))) == 0
-    assert len(list(cl.filter_pos(Segment(1, 2), obj_type='struc'))) == 0
+    # assert len(list(cl.filter_pos(Segment(1, 2), obj_type='struc'))) == 0
     children_it = cl.iter_children()
     l1 = next(children_it)
     assert len(list(l1.filter_pos(Segment(5, 9)))) == 4
     assert len(list(l1.filter_pos(Segment(6, 9)))) == 2
-    assert len(list(l1.filter_pos(Segment(1, 2), obj_type='struc'))) == 2
+    # assert len(list(l1.filter_pos(Segment(1, 2), obj_type='struc'))) == 2
 
     # the match is bounded by segment
     assert len(list(l1.filter_pos(Segment(1, 5), match_type='bounded'))) == 2
@@ -119,3 +119,28 @@ def test_filter_pos(sample_chain_list):
     assert m[0].name == 'c1'
     assert len(list(l1.filter_pos([1, 2, 6]))) == 2
     assert len(list(l1.filter_pos([1, 2, 6, 10]))) == 0
+
+
+def test_iter_children(sample_chain_list):
+    it = sample_chain_list.iter_children()
+    l1 = next(it)
+    assert len(l1) == 4
+    l2 = next(it)
+    assert len(l2) == 8
+    l3 = next(it)
+    assert len(l3) == 2
+    assert [x.seq.name for x in l3] == ['c1_2_1', 'k1_2_1']
+    with pytest.raises(StopIteration):
+        next(it)
+
+    # Unequal depth of a child tree
+    s = ChainSequence.from_string('ABCDE', name='A')
+    child1 = s.spawn_child(1, 4)
+    child1.spawn_child(2, 3)
+    x = ChainSequence.from_string('XXXX', name='X')
+    x.spawn_child(1, 3)
+    cl = ChainList([s, x])
+    l = list(cl.iter_children())
+    assert len(l) == 2
+    assert len(l[0]) == 2
+    assert len(l[1]) == 1
