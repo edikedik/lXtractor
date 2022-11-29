@@ -1,16 +1,19 @@
 name: Auto-testing with miniconda
 
-on: [push]
+on: [ push ]
 
 jobs:
   test:
-    name:
+    name: Testing lXtractor
     runs-on: ${{ matrix.os }}-latest
     strategy:
       max-parallel: 5
       fail-fast: false
       matrix:
-        os: ["ubuntu", "macos", "windows"]
+        os: [ "ubuntu", "macos", "windows" ]
+    defaults:
+      run:
+        shell: bash -l {0}
     steps:
       - name: Set up environment
       - uses: actions/checkout@v3
