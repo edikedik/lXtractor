@@ -13,9 +13,8 @@ jobs:
         os: ["ubuntu", "macos", "windows"]
 
     steps:
-      - name: Set up environment
+      - name: Set up environment and test
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v3
       - uses: conda-incubator/setup-miniconda@v2
         with:
           python-version: 3.10
@@ -24,6 +23,5 @@ jobs:
           channels-priority: true
           activate-environment: lXt-dev
           environment-file: environment.yml
-      - name: Test with pytest
         run: |
           pytest
