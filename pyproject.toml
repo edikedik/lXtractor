@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "sphinx", "nbsphinx"]
 build-backend = "hatchling.build"
 
 [project]
