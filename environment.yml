@@ -8,14 +8,14 @@ channels:
 dependencies:
   - biotite >= 0.35.0
   - joblib >= 1.1
-  - mafft >= 7.508
+  - mafft
   - more-itertools >= 9.0
   - networkx >= 2.8.6
   - numpy >= 1.23
   - toolz >= 0.12
   - tqdm >= 4.64
   - pandas >= 1.5
-  - pyhmmer >= 0.6.3
+  - pyhmmer
   - python >= 3.10
   - pytest >= 7.1.2
   - requests >= 2.28
