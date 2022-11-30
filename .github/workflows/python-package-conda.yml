@@ -29,5 +29,5 @@ jobs:
       - name: Run test
         run: |
           pytest
-          --ignore=//test//test_variables.py
-          --ignore=//test//test_manager.py
+          --ignore=test/test_variables.py
+          --ignore=test/test_manager.py
