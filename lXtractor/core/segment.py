@@ -13,6 +13,7 @@ from tqdm.auto import tqdm
 from lXtractor.core.base import Ord
 from lXtractor.core.config import Sep
 from lXtractor.core.exceptions import LengthMismatch, NoOverlap
+from lXtractor.util.misc import is_valid_field_name
 from lXtractor.variables.base import Variables
 
 _I = t.TypeVar('_I', bound=t.Union[int, slice])
@@ -209,6 +210,11 @@ class Segment(abc.Sequence):
         return self
 
     def _validate_seq(self, name: str, seq: t.Sequence):
+        if not is_valid_field_name(name):
+            raise ValueError(
+                f'Invalid field name {name}. '
+                f'Please use a valid variable name starting with a letter'
+            )
         if len(seq) != len(self):
             raise LengthMismatch(
                 f"Len({name})={len(seq)} doesn't match the segment's length {len(self)}")
@@ -216,6 +222,12 @@ class Segment(abc.Sequence):
     def _setup_and_validate(self):
         if self.start > self.end:
             raise ValueError(f'Invalid boundaries {self.start}, {self.end}')
+        for name in self._seqs:
+            if not is_valid_field_name(name):
+                raise ValueError(
+                    f'Invalid field name {name}. '
+                    f'Please use a valid variable name starting with a letter'
+                )
 
         for k, seq in self._seqs.items():
             if len(seq) != len(self):
@@ -230,6 +242,11 @@ class Segment(abc.Sequence):
         :return: returns nothing. This operation mutates `attr:`seqs`.
         :raise ValueError: If the `name` is reserved by another segment.
         """
+        if not is_valid_field_name(name):
+            raise ValueError(
+                f'Invalid field name {name}. '
+                f'Please use a valid variable name starting with a letter'
+            )
         if name not in self:
             self[name] = seq
         else:

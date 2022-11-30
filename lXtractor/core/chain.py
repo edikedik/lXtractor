@@ -34,9 +34,6 @@ T = t.TypeVar('T')
 LOGGER = logging.getLogger(__name__)
 
 
-# TODO: add name check when creating new maps for `ChainSequence` so it can be a field name
-
-
 def topo_iter(
         start_obj: T, iterator: abc.Callable[[T], abc.Iterator[T]]
 ) -> abc.Generator[list[T]]:
@@ -86,6 +83,9 @@ class ChainSequence(Segment):
 
     The sequences are stored internally as a dictionary `{seq_name => seq}`
     and must all have the same length.
+    Additionally, `seq_name` must be a valid field name: something one could use in namedtuples.
+    If unsure, please use :func:`lXtractor.util.misc.is_valid_field_name` for testing.
+
     A single gap-less primary sequence (:meth:`seq1`) is mandatory during the initialization.
     We refer to the sequences other than :meth:`seq1` as "maps."
     To view the standard sequence names supported by :class:`ChainSequence`,

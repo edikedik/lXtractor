@@ -1,5 +1,5 @@
 import typing as t
-from collections import UserDict
+from collections import UserDict, namedtuple
 from itertools import groupby
 from pathlib import Path
 
@@ -43,6 +43,14 @@ def parse_protein_path(path: Path) -> t.Tuple[str, str, str]:
     uni_id, pdb = path.name.split(Sep.uni_pdb)
     pdb_id, pdb_chain = pdb.split(Sep.chain)
     return uni_id, pdb_id, pdb_chain
+
+
+def is_valid_field_name(s: str) -> bool:
+    try:
+        namedtuple('x', [s])
+        return True
+    except ValueError:
+        return False
 
 
 if __name__ == '__main__':
