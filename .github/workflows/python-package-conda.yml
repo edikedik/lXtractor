@@ -26,8 +26,8 @@ jobs:
           channels: conda-forge, defaults, bioconda
           activate-environment: lXt-dev
           environment-file: environment.yml
-      - name: Run test
-        run: |
+      - name: Run tests
+        run: >
           pytest
           --ignore=test/test_variables.py
           --ignore=test/test_manager.py
