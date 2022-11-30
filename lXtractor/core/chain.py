@@ -34,6 +34,9 @@ T = t.TypeVar('T')
 LOGGER = logging.getLogger(__name__)
 
 
+# TODO: add name check when creating new maps for `ChainSequence` so it can be a field name
+
+
 def topo_iter(
         start_obj: T, iterator: abc.Callable[[T], abc.Iterator[T]]
 ) -> abc.Generator[list[T]]:
@@ -148,7 +151,7 @@ class ChainSequence(Segment):
         """
         if SeqNames.enum in self:
             return self[SeqNames.enum]
-        return list(range(1, len(self) + 1))
+        return list(range(self.start, self.end + 1))
 
     @property
     def seq1(self) -> str:
@@ -2135,7 +2138,7 @@ def map_numbering_many2many(
     if num_proc:
         objs, seqs = unzip(staged)
         with ProcessPoolExecutor(num_proc) as executor:
-            results = executor.map(_map_numbering, seqs, objs)
+            results = executor.map(_map_numbering, seqs, objs, chunksize=1)
             if verbose:
                 results = tqdm(results, desc='Mapping numberings')
             yield from split_into(results, group_sizes)
@@ -2241,6 +2244,7 @@ class ChainInitializer:
             ],
             key_callbacks: t.Optional[list[InitializerCallback]] = None,
             val_callbacks: t.Optional[list[InitializerCallback]] = None,
+            num_proc_map_numbering: int | None = None,
             **kwargs
     ) -> list[Chain]:
         """
@@ -2272,6 +2276,12 @@ class ChainInitializer:
             a :class:`ChainSequence`.
         :param val_callbacks: A sequence of callables accepting and returning
             a :class:`ChainStructure`.
+        :param num_proc_map_numbering: A number of processes to use for mapping between
+            numbering of sequences and structures. Generally, this should be as high as
+            possible for faster processing. In contrast to the other operations here,
+            this one seems more CPU-bound and less resource hungry (although, keep in mind
+            the size of the canonical sequence: if it's too high, the RAM usage will likely
+            explode). If ``None``, will default to :attr:`num_proc`.
         :param kwargs: Passed to :meth:`Chain.add_structure`.
         :return: A list of initialized chains.
         """
@@ -2289,7 +2299,9 @@ class ChainInitializer:
             )
         )
 
-        if self.num_proc is None:
+        num_proc = num_proc_map_numbering or self.num_proc
+
+        if num_proc is None or num_proc == 1:
             for c, ss in m_new.items():
                 for s in ss:
                     c.add_structure(s, **kwargs)
@@ -2302,7 +2314,7 @@ class ChainInitializer:
             # create numbering groups -- lists of lists with numberings for each structure in values
             numbering_groups = map_numbering_many2many(
                 [x.seq for x in m_new], [[x.seq for x in val] for val in m_new.values()],
-                num_proc=self.num_proc, verbose=self.verbose
+                num_proc=num_proc, verbose=self.verbose
             )
             for (c, ss), num_group in zip_equal(m_new.items(), numbering_groups):
                 if len(num_group) != len(ss):
