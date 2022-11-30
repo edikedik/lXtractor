@@ -3,19 +3,17 @@ from __future__ import annotations
 import logging
 from collections import abc
 from itertools import repeat
-from pathlib import Path
 
 import biotite.structure as bst
-import fastpdb
 import numpy as np
 from more_itertools import zip_equal
 
 LOGGER = logging.getLogger(__name__)
 
 
-def read_fast_pdb(path: Path, model: int = 1) -> bst.AtomArray:
-    file = fastpdb.PDBFile.read(str(path))
-    return file.get_structure(model=model)
+# def read_fast_pdb(path: Path, model: int = 1) -> bst.AtomArray:
+#     file = fastpdb.PDBFile.read(str(path))
+#     return file.get_structure(model=model)
 
 
 def calculate_dihedral(

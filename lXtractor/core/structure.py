@@ -13,7 +13,7 @@ import numpy as np
 from lXtractor.core.base import AminoAcidDict, AbstractStructure
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
 from lXtractor.core.segment import Segment
-from lXtractor.util.structure import read_fast_pdb, filter_selection
+from lXtractor.util.structure import filter_selection
 
 
 class GenericStructure(AbstractStructure):
@@ -25,17 +25,16 @@ class GenericStructure(AbstractStructure):
 
     @classmethod
     def read(cls, path: Path) -> GenericStructure:
-        loader = read_fast_pdb if path.suffix == '.pdb' else strio.load_structure
-        array = loader(str(path))
+        array = strio.load_structure(str(path))
         if isinstance(array, bst.AtomArrayStack):
             raise InitError(f'{path} is likely an NMR structure. '
                             f'NMR structures are not supported.')
         return cls(array, path.stem)
 
     def write(self, path: Path | PathLike | str | bytes):
-        if isinstance(path, (Path, PathLike)):
-            # TODO: this is temporary and should be fixed in biotite next versions
-            path = str(path)
+        # if isinstance(path, (Path, PathLike)):
+        #     # TODO: this is temporary and should be fixed in biotite next versions
+        #     path = str(path)
         strio.save_structure(path, self.array)
 
     def get_sequence(self) -> abc.Iterable[tuple[str, str, int]]:

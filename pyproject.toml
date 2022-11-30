@@ -30,7 +30,6 @@ maintainers = [
 ]
 dependencies = [
     "biotite>=0.35.0",
-    "fastpdb>=1.0",
     "joblib>=1.1.1",
     "more-itertools>=9.0",
     "networkx>=2.8.6",
