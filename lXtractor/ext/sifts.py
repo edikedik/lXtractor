@@ -11,7 +11,9 @@ corresponding regions in PDB structures, and allows us to:
 
 """
 import logging
+import os
 import typing as t
+from collections import abc
 from importlib import resources
 from itertools import chain, starmap
 from pathlib import Path
@@ -20,10 +22,10 @@ import joblib
 import pandas as pd
 from more_itertools import unzip
 
-from lXtractor.ext import resources as local
 from lXtractor.core.base import AbstractResource
-from lXtractor.core.segment import Segment
 from lXtractor.core.exceptions import MissingData, LengthMismatch, OverlapError
+from lXtractor.core.segment import Segment
+from lXtractor.ext import resources as local
 from lXtractor.util.io import download_to_file
 from lXtractor.util.misc import col2col
 
@@ -32,25 +34,11 @@ SIFTS_FTP = 'ftp://ftp.ebi.ac.uk/pub/databases/msd/sifts/flatfiles/csv/uniprot_s
 RAW_SEGMENTS = 'uniprot_segments_observed.csv.gz'
 ID_MAPPING = 'id_mapping.joblib'
 DF_SIFTS = 'sifts.tsv'
+RESOURCES = Path(__file__).parent / 'resources'
 
+# TODO: Current interface => local. (currently, FTP file can't be fetched)
+# TODO: Create a remote interface. (this may include segment-based mappings, although for many files it can be slow)
 
-try:
-    with resources.path(local, RAW_SEGMENTS) as __path:
-        if not __path.exists():
-            raise FileNotFoundError
-        SIFTS_PATH = __path
-
-except FileNotFoundError:
-
-    with resources.path(local, '') as __path:
-        SIFTS_PATH = Path(str(__path)) / RAW_SEGMENTS
-
-    if not SIFTS_PATH.exists():
-        LOGGER.info(
-            f'Found no SIFTS in resources. '
-            f'Starting to download SIFTS from {SIFTS_FTP}')
-        SIFTS_PATH = download_to_file(SIFTS_FTP, SIFTS_PATH)
-        LOGGER.info(f'Downloaded sifts to {SIFTS_PATH}')
 
 SIFTS_RENAMES = (
     ('PDB', 'PDB'),
@@ -129,7 +117,7 @@ class SIFTS(AbstractResource):
         else:
             self.id_mapping = (None if self.df is None else self._prepare_id_map(df))
 
-        resource_path = resource_path or SIFTS_PATH
+        resource_path = resource_path or RESOURCES / RAW_SEGMENTS
         self.renames = dict(SIFTS_RENAMES)
         super().__init__(resource_path, resource_name)
 
@@ -170,20 +158,32 @@ class SIFTS(AbstractResource):
 
     def parse(
             self, overwrite: bool = False,
-            store_to_resources: bool = True) -> pd.DataFrame:
+            store_to_resources: bool = True,
+            rm_raw: bool = True,
+    ) -> pd.DataFrame:
         """
         Prepare the resource to be used for mapping:
 
-            - remove records with empty chains
-            - select and rename key columns based on the
-              ``SIFTS_RENAMES`` constant
+            - remove records with empty chains.
+            - select and rename key columns based on the ``SIFTS_RENAMES`` constant.
             - create a `PDB_Chain` column to speed up the search.
 
-        :param overwrite: write the results into the ``df`` attribute.
-        :param store_to_resources: store parsed ``DataFrame`` and id mapping
-            in resources for further simplified access
-        :return: prepared `DataFrame`.
+        :param overwrite: Overwrite both :attr:`df` and existing id mapping and parsed segments.
+        :param store_to_resources: Store parsed `DataFrame` and id mapping
+            in resources for further simplified access.
+        :param rm_raw: After parsing is finished, remove raw SIFTS download.
+            **(!) If `store_to_resources` is ``False``, using SIFTS next time will require
+            downloading resource anew.**
+        :return: prepared `DataFrame` of Segment-wise mapping between UniProt and PDB sequences.
+            Mapping between IDs will be stored in :attr:`id_mapping`.
         """
+        if (RESOURCES / DF_SIFTS).exists() and (RESOURCES / ID_MAPPING).exists():
+            if not overwrite and store_to_resources:
+                raise RuntimeError('Resources was parsed. Pass overwrite if you wan\'t to overwrite.')
+
+        if not (RESOURCES / RAW_SEGMENTS).exists():
+            raise MissingData('Missing fetched SIFTS. Try calling `fetch` method first.')
+
         df = self.read(False)
         LOGGER.debug(f'Received {len(df)} records')
 
@@ -221,6 +221,9 @@ class SIFTS(AbstractResource):
         if store_to_resources:
             self._store()
 
+        if rm_raw:
+            os.remove(self.path)
+
         return df
 
     def dump(self, path: Path, **kwargs):
@@ -233,9 +236,19 @@ class SIFTS(AbstractResource):
             self.df.to_csv(path, **kwargs)
         raise RuntimeError('Nothing to dump')
 
-    def fetch(self, url: str):
-        # TODO: encapsulate downloading SIFTS in here
-        raise NotImplementedError
+    def fetch(self, url: str = SIFTS_FTP, overwrite: bool = False):
+        raw_path = RESOURCES / RAW_SEGMENTS
+        if raw_path.exists() and not overwrite:
+            LOGGER.info('Raw SIFTS download exists and will not be overwritten')
+            return raw_path
+
+        LOGGER.info(f'Fetching SIFTS to {raw_path}')
+
+        download_to_file(SIFTS_FTP, raw_path)
+
+        LOGGER.info(f'Downloaded sifts to {raw_path}')
+
+        return raw_path
 
     @staticmethod
     def _categorize(obj_id: str) -> str:
@@ -316,11 +329,11 @@ class SIFTS(AbstractResource):
         return {x for x in self.id_mapping if self._categorize(x) == 'PDB_Chain'}
 
 
-def wrap_into_segments(df: pd.DataFrame) -> t.Tuple[t.List[Segment], t.List[Segment]]:
+def wrap_into_segments(df: pd.DataFrame) -> tuple[list[Segment], list[Segment]]:
     """
-    :param df: ``DataFrame`` -- a subset of a ``SIFTS`` ``DataFrame`` corresponding to a unique
-        "UniProt_ID -- PDB_ID:Chain_ID" pair unto ``Segment`` objects
-    :return: two lists with the same length (1) UniProt segments, and (2) PDB segments,
+    :param df: A subset of a :attr:`Sifts.df` corresponding to a unique
+        "UniProt_ID -- PDB_ID:Chain_ID" pair.
+    :return: Two lists with the same length (1) UniProt segments, and (2) PDB segments,
         where segments correspond to each other.
     """
     ids = df['UniProt_ID'].unique()
@@ -341,19 +354,19 @@ def wrap_into_segments(df: pd.DataFrame) -> t.Tuple[t.List[Segment], t.List[Segm
 def map_segment_numbering(
         segments_from: t.Sequence[Segment],
         segments_to: t.Sequence[Segment],
-) -> t.Iterator[t.Tuple[int, int]]:
+) -> abc.Iterator[tuple[int, int]]:
     """
     Create a continuous mapping between the numberings of two segment collections.
-    Collections must contain the same number of equal length non-overlapping ``Segment`` objects.
-    Segments in the ``segments_from`` collection are considered to span a continuous sequence,
-    possibly interrupted due to discontinuities in a sequence represented by ``segments_to``'s segments.
-    Hence, the segments in ``segments_from`` form continuous numbering over which numberings
-    of ``segments_to`` segments are "stiched."
+    Collections must contain the same number of equal length non-overlapping segments.
+    Segments in the `segments_from` collection are considered to span a continuous sequence,
+    possibly interrupted due to discontinuities in a sequence represented by `segments_to`'s segments.
+    Hence, the segments in `segments_from` form continuous numbering over which numberings
+    of `segments_to` segments are joined.
 
-    :param segments_from: a sequence of segments to map from.
-    :param segments_to: a sequence of segments to map to.
-    :return: an iterable over (key, value) pairs. Keys correspond to numberings of
-        the ``segments_from``, values -- to numberings of ``segments_to``.
+    :param segments_from: A sequence of segments to map from.
+    :param segments_to: A sequence of segments to map to.
+    :return: An iterable over (key, value) pairs. Keys correspond to numberings of
+        the `segments_from`, values -- to numberings of `segments_to`.
     """
     if len(segments_to) != len(segments_from):
         raise LengthMismatch('Segment collections must be of the same length')
