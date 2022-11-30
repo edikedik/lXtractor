@@ -24,9 +24,10 @@ jobs:
           mamba-version: '*'
           use-mamba: true
           channels: conda-forge, defaults, bioconda
-          #          channels-priority: true
           activate-environment: lXt-dev
           environment-file: environment.yml
       - name: Run test
         run: |
           pytest
+          --ignore=//test//test_variables.py
+          --ignore=//test//test_manager.py
