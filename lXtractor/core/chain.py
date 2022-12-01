@@ -1838,6 +1838,7 @@ def _read_obj(path: Path, obj_type: t.Type[CT], tolerate_failures: bool, **kwarg
     try:
         return obj_type.read(path, **kwargs)
     except Exception as e:
+        LOGGER.warning(f'Failed to initialize {obj_type} from {path}')
         LOGGER.exception(e)
         if not tolerate_failures:
             raise e
@@ -1850,7 +1851,7 @@ def _write_obj(obj: CT, path: Path, tolerate_failures: bool, **kwargs) -> Path:
         obj.write(path, **kwargs)
         return path
     except Exception as e:
-        LOGGER.warning(f'Failed to initialize {obj} from {path}')
+        LOGGER.warning(f'Failed to write {obj} to {path}')
         LOGGER.exception(e)
         if not tolerate_failures:
             raise e
