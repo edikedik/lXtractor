@@ -122,7 +122,7 @@ def simple_chain_variables() -> tuple[PseudoDihedral, Dist, SeqEl]:
     return PseudoDihedral(1, 2, 3, 4), Dist(1, 40, 'CB', 'CB'), SeqEl(1)
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope='function')
 def simple_chain_seq() -> tuple[SeqNames, ChainSequence]:
     fields = ChainSequence.field_names()
     s = ChainSequence(1, 5, 'S', {fields.seq1: 'ABCDE'})

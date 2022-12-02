@@ -11,6 +11,7 @@ import biotite.structure as bst
 import numpy as np
 import pandas as pd
 
+from lXtractor.ext import resources
 from lXtractor.util.io import read_n_col_table
 
 AggFns = {'min': np.min, 'max': np.max, 'mean': np.mean, 'median': np.median}
@@ -54,8 +55,6 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
 
         init_params = inspect.signature(self.__init__).parameters
         args = ','.join(map(lambda x: f'{x}={parse_value(getattr(self, x))}', init_params))
-        # args = ','.join(f'{k}={parse_value(v)}'
-        #                 for k, v in vars(self).items() if k in init_params)
         return f'{self.__class__.__name__}({args})'
 
     @property
@@ -96,9 +95,7 @@ class StructureVariable(AbstractVariable[bst.AtomArray, RT]):
         raise NotImplementedError
 
 
-# TODO: sequence variable should accept any sequence.
-# Manager should allow to pulling sequence annotations by map_name
-class SequenceVariable(AbstractVariable[str, RT]):
+class SequenceVariable(AbstractVariable[abc.Sequence[t.Any], RT]):
     """
     A type of variable whose :meth:`calculate` method requires protein sequence.
     """
@@ -106,7 +103,7 @@ class SequenceVariable(AbstractVariable[str, RT]):
     __slots__ = ()
 
     @abstractmethod
-    def calculate(self, seq: str, mapping: t.Optional[MappingT] = None) -> RT:
+    def calculate(self, seq: abc.Sequence[t.Any], mapping: t.Optional[MappingT] = None) -> RT:
         raise NotImplementedError
 
 
@@ -277,6 +274,49 @@ class CalculatorProtocol(t.Protocol[OT, VT, RT]):
 #             self, chains: T | abc.MutableSequence[T], *,
 #             level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
 #     ) -> pd.DataFrame: ...
+
+class ProtFP:
+    """
+    ProtFP embeddings for amino acid residues.
+
+    >>> pfp = ProtFP()
+    >>> pfp[('G', 1)]
+    -5.7
+    >>> list(pfp['G'])
+    [-5.7, -8.72, 4.18, -1.35, -0.31]
+    >>> comp1 = pfp[1]
+    >>> assert len(comp1) == 20
+    >>> comp1[0]
+    -5.7
+    >>> comp1.index[0]
+    'G'
+
+    """
+    def __init__(self, path: Path = Path(resources.__file__).parent / 'PFP.csv'):
+        self._df = pd.read_csv(path).set_index('AA')
+
+    @t.overload
+    def __getitem__(self, item: tuple[str, int]) -> float:
+        ...
+
+    @t.overload
+    def __getitem__(self, item: str) -> np.ndarray:
+        ...
+
+    @t.overload
+    def __getitem__(self, item: int) -> pd.Series:
+        ...
+
+    def __getitem__(self, item: tuple[str, int] | str | int) -> float | np.ndarray | pd.Series:
+        match item:
+            case [c, i]:
+                return self._df.loc[c, str(i - 1)]
+            case str():
+                return self._df.loc[item].values
+            case int():
+                return self._df[str(item - 1)]
+            case _:
+                raise TypeError(f'Invalid index type {item}')
 
 
 if __name__ == '__main__':
