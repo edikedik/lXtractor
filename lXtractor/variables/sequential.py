@@ -124,18 +124,48 @@ class SliceTransformReduce(SequenceVariable, t.Generic[T, V, K]):
             step: int | None = None,
             seq_name: str = SeqNames.seq1
     ):
+        """
+        .. note::
+            `start` and `stop` have inclusive boundaries.
+
+        :param start: Start position
+        :param stop: Stop position.
+        :param step: Slicing step.
+        :param seq_name: Sequence name. Please use it in case a resulting variable
+            will be applied to seqs other than the primary sequence.
+        """
+        #: Start position.
         self.start = start
+        #: End position.
         self.stop = stop
+        #: Slicing step.
         self.step = step
+        #: Sequence name.
         self.seq_name = seq_name
 
     @staticmethod
     @abstractmethod
     def reduce(seq: abc.Iterable[T]) -> V:
+        """
+        Reduce the input iterable into the variable result.
+
+        :param seq: Some sort of iterable -- the results of the transform
+            (or slicing, if no transformation is used)
+        :return: An aggregated value  (e.g., float, string, etc.).
+        """
         raise NotImplementedError
 
     @staticmethod
     def transform(seq: abc.Iterator[K]) -> abc.Iterable[T]:
+        """
+        Optionally transform the slicing result.
+        If not used, it is the identity operation.
+
+        :param seq: The result of slicing operation. If no slicing is used,
+            it is just an ``iter(input_seq)``.
+        :return: Iterable over transformed elements (can have another type than
+            the input ones).
+        """
         return seq
 
     def calculate(self, seq: abc.Iterable[K], mapping: t.Optional[MappingT] = None) -> V:
@@ -208,7 +238,7 @@ def make_str(
         as long as they are supported by the `reduce`.
     :param reduce_name: The name of the reduce operation.
         Please provide it in case using ``lambda``.
-    :param transform_name:The name of the transform operation.
+    :param transform_name: The name of the transform operation.
         Please provide it in case using ``lambda``.
     :return: An uninitialized subclass of :class:`SliceTransformReduce` encapsulating the provided
         operations within the :meth:`SliceTransformReduce.calculate`.
