@@ -54,8 +54,9 @@ def download_to_file(
     if not fpath.parent.exists():
         raise ValueError(f'Directory {fpath.parent} must exist')
     if not text or url.startswith('ftp'):
-        with urllib.request.urlopen(url) as r, fpath.open('wb') as f:
-            copyfileobj(r, f)
+        urllib.request.urlretrieve(url, fpath)
+        # with urllib.request.urlopen(url) as r, fpath.open('wb') as f:
+        #     copyfileobj(r, f)
     else:
         text = download_text(url, decode=True)
         with fpath.open('w') as f:

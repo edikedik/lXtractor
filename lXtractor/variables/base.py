@@ -279,6 +279,9 @@ class ProtFP:
     """
     ProtFP embeddings for amino acid residues.
 
+    ProtFP is a coding scheme derived from
+    the PCA analysis of the AAIndex database :cite:`pfp1,pfp2`.
+
     >>> pfp = ProtFP()
     >>> pfp[('G', 1)]
     -5.7
@@ -290,6 +293,8 @@ class ProtFP:
     -5.7
     >>> comp1.index[0]
     'G'
+
+    .. bibliography::
 
     """
     def __init__(self, path: Path = Path(resources.__file__).parent / 'PFP.csv'):

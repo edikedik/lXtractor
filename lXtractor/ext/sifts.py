@@ -213,7 +213,7 @@ class SIFTS(AbstractResource):
         )
         LOGGER.debug(f'Finished parsing df: records={len(df)}')
 
-        if overwrite:
+        if overwrite or self.df is None:
             self.df = df
 
         self._prepare_id_map(df)
@@ -362,6 +362,14 @@ def map_segment_numbering(
     possibly interrupted due to discontinuities in a sequence represented by `segments_to`'s segments.
     Hence, the segments in `segments_from` form continuous numbering over which numberings
     of `segments_to` segments are joined.
+
+    .. figure:: fig/segments.png
+       :scale: 50 %
+       :alt: segments
+
+       Mapping from PDB segments to UniProt segments accounting for discontinuities.
+
+    This is the caption of the figure (a simple paragraph).
 
     :param segments_from: A sequence of segments to map from.
     :param segments_to: A sequence of segments to map to.

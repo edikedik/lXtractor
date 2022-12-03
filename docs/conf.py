@@ -24,8 +24,13 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.viewcode',
     # 'sphinx.ext.napoleon',
-    'nbsphinx'
+    'nbsphinx',
+    'sphinxcontrib.bibtex'
 ]
+
+bibtex_bibfiles = ['ref.bib']
+bibtex_default_style = 'unsrt'
+bibtex_reference_style = 'author_year'
 
 # To include __init__ docs
 autoclass_content = 'class'
@@ -35,11 +40,9 @@ autodoc_typehints = 'description'
 autodoc_typehints_description_target = 'documented_params'
 
 autodoc_default_options = {
-    # 'members': 'var1, var2',
     'member-order': 'groupwise',
     'special-members': '__init__, __call__',
     'undoc-members': True,
-    # 'exclude-members': '__weakref__'
 }
 
 templates_path = ['_templates']
@@ -47,11 +50,6 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 language = 'en'
 
-# -- Options for HTML output -------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
-
-# html_theme = 'readable'
-# html_theme_path = [sphinx_readable_theme.get_html_theme_path()]
 html_static_path = ['_static']
 
 # Required theme setup
@@ -88,8 +86,5 @@ html_theme_options = {
     # If True, show hidden TOC entries
     'globaltoc_includehidden': False,
 }
-
-# -- Options for todo extension ----------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/extensions/todo.html#configuration
 
 todo_include_todos = True

@@ -1,7 +1,7 @@
 import pytest
 from toolz import curry
 
-from lXtractor.variables.sequential import SeqEl, PFP, make_rmr
+from lXtractor.variables.sequential import SeqEl, PFP, make_str
 from lXtractor.core.exceptions import FailedCalculation
 
 
@@ -24,6 +24,7 @@ def test_seq_el(simple_chain_seq):
 
 def test_prot_fp(simple_chain_seq):
     _, s = simple_chain_seq
+    # 1st component of A and 5th component of E
     assert (
         PFP(1, 1).calculate(s.seq1), PFP(5, 5).calculate(s.seq1) ==
         -0.1, -2.14
@@ -41,13 +42,11 @@ def test_prot_fp(simple_chain_seq):
 
 
 def test_range_map_reduce_factory():
-    v = make_rmr(sum, float)()
+    v = make_str(sum, float)()
     assert v.id == "SliceSum(start=None,stop=None,step=None,seq_name='seq1')"
     assert v.rtype is float
 
-    v = make_rmr(
-        sum, int, reduce_fn_name='Summer',
-        map_fn=lambda _: 'whatever', map_fn_name='whatever')
+    v = make_str(sum, int, transform=lambda _: 'whatever', reduce_name='Summer', transform_name='whatever')
     assert v.__name__ == 'SliceWhateverSummer'
 
 
@@ -59,14 +58,10 @@ def count_char(seq: str, c: str):
 def test_range_map_reduce(simple_chain_seq):
     _, s = simple_chain_seq
     s.add_seq('X', [1, 2, 3, 2, 1])
-    v = make_rmr(sum, float)(start=1, stop=2)
+    v = make_str(sum, float)(start=1, stop=2)
     assert v.calculate(s['X']) == 3
-    v = make_rmr(count_char(c='A'), int, reduce_fn_name='CounterA')()
+    v = make_str(count_char(c='A'), int, reduce_name='CounterA')()
     assert v.calculate(s.seq1) == 1
-    v = make_rmr(
-        count_char(c='e'), int,
-        map_fn=lambda x: "".join(x).lower(),
-        reduce_fn_name='counter',
-        map_fn_name='lower'
-    )()
+    v = make_str(count_char(c='e'), int, transform=lambda x: "".join(x).lower(), reduce_name='counter',
+                 transform_name='lower')()
     assert v.calculate(s.seq1) == 1

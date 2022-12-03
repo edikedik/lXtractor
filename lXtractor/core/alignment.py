@@ -301,7 +301,7 @@ class Alignment:
         Map a function to sequences.
 
         >>> a = Alignment([('A', 'AB---')])
-        >>> a.map(lambda x: (x[0].lower(), x[1].replace('-', '*'))).seqs
+        >>> a.transform(lambda x: (x[0].lower(), x[1].replace('-', '*'))).seqs
         [('a', 'AB***')]
 
         :param fn: A callable accepting and returning a sequence.

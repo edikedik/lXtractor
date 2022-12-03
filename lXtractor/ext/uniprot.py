@@ -1,26 +1,8 @@
-"""
-This module comprises utils for fetching data from UniProt and parsing the results.
-The core functionality is presented via sinlge ``UniProt`` class.
-"""
 import logging
-import re
 import typing as t
-from io import StringIO
-from itertools import filterfalse
 from urllib.parse import urlencode
 
-import numpy as np
-import pandas as pd
-# from Bio import SeqIO
-# from Bio.Seq import Seq
-from more_itertools import flatten
-from toolz import groupby, curry
-
-from lXtractor.core.base import _Fetcher, _Getter
-from lXtractor.core.exceptions import MissingData
-from lXtractor.core.chain import Chain
-from lXtractor.util.io import try_fetching_until, download_text, fetch_iterable
-# from lXtractor.util.seq import subset_by_idx
+from lXtractor.util.io import download_text, fetch_iterable
 
 T = t.TypeVar('T')
 LOGGER = logging.getLogger(__name__)
