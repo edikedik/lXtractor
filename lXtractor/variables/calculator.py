@@ -63,7 +63,7 @@ class ParallelCalculator(AbstractCalculator):
 
     def __init__(
             self, num_proc: int | None, verbose: bool = True,
-            valid_exceptions: abc.Sequence[Exception] = (FailedCalculation,)
+            valid_exceptions: abc.Sequence[t.Type[Exception]] = (FailedCalculation,)
     ):
         self.num_proc = num_proc
         self.verbose = verbose
