@@ -3,6 +3,7 @@ import pytest
 
 from lXtractor.core.chain import ChainStructure
 from lXtractor.core.config import SeqNames
+from lXtractor.core.exceptions import MissingData
 from lXtractor.core.structure import GenericStructure
 from lXtractor.protocols import filter_selection_extended, subset_to_matching
 
@@ -37,6 +38,17 @@ def test_extended_selection_filter(src_str):
         exclude_hydrogen=True)
     assert m.sum() == 3
     assert set(child.array[m].atom_name) == {'N', 'C', 'CA'}
+
+    with pytest.raises(MissingData):
+        filter_selection_extended(
+            child, pos=[10], atom_names=['N', 'C', 'CA'], map_name='X',
+            exclude_hydrogen=True)
+
+    m = filter_selection_extended(
+        child, pos=[10], atom_names=['N', 'C', 'CA'], map_name='X',
+        exclude_hydrogen=True, tolerate_missing=True)
+
+    assert m.sum() == 0
 
 
 def test_subset_to_matching(abl_str, src_str):

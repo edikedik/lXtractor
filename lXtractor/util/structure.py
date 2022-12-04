@@ -6,7 +6,7 @@ from itertools import repeat, starmap
 
 import biotite.structure as bst
 import numpy as np
-from more_itertools import zip_equal, unzip
+from more_itertools import unzip
 
 from lXtractor.core.exceptions import LengthMismatch
 
@@ -73,6 +73,15 @@ def filter_selection(
         array: bst.AtomArray, res_id: abc.Sequence[int] | None,
         atom_names: abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None = None
 ) -> np.ndarray:
+    """
+    Filter :class:`AtomArray` by residue numbers and atom names.
+
+    :param array: Arbitrary structure.
+    :param res_id: A sequence of residue numbers.
+    :param atom_names: A sequence of atom names (broadcasted to each position in `res_id`)
+        or an iterable over such sequences for each position in `res_id`.
+    :return:
+    """
 
     if res_id is None:
         res_id, _ = bst.get_residues(array)

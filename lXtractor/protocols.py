@@ -1,6 +1,7 @@
 """
 A sandbox module to encapsulate high-level operations based on core lXtractor's functionality.
 """
+import logging
 from collections import abc
 from itertools import islice
 
@@ -10,17 +11,18 @@ from more_itertools import unzip
 
 from lXtractor.core.chain import ChainStructure
 from lXtractor.core.config import SeqNames
+from lXtractor.core.exceptions import MissingData
 from lXtractor.util.structure import filter_selection, filter_to_common_atoms
 
 
-# Select longest consecutive list of residues?
-# Use sequence alignment to select common residues?
+LOGGER = logging.getLogger(__name__)
 
 
 def filter_selection_extended(
         c: ChainStructure, pos: abc.Sequence[int] | None = None,
         atom_names: abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None = None,
         map_name: str | None = None, exclude_hydrogen: bool = False,
+        tolerate_missing: bool = False
 ) -> np.ndarray:
     """
     Get mask for certain positions and atoms of a chain structure.
@@ -30,9 +32,8 @@ def filter_selection_extended(
 
     :param c: Arbitrary chain structure.
     :param pos: A sequence of positions.
-    :param atom_names: A sequence of atom names. Or Iterable over such sequences.
-        In this case, the number of elements in the latter must match the number
-        of positions.
+    :param atom_names: A sequence of atom names (broadcasted to each position in `res_id`)
+        or an iterable over such sequences for each position in `res_id`.
     :param map_name: A map name to map from `pos` to
         :meth:`numbering <lXtractor.core.Chain.ChainSequence.numbering>`
     :param exclude_hydrogen: For convenience, exclude hydrogen atoms.
@@ -41,7 +42,19 @@ def filter_selection_extended(
     """
     if pos is not None and map_name:
         _map = c.seq.get_map(map_name)
-        pos = [_map[p].numbering for p in pos]
+
+        pos = [(p, _map.get(p, None)) for p in pos]
+
+        if not tolerate_missing:
+            for p, p_mapped in pos:
+                if p_mapped is None:
+                    raise MissingData(f'Position {p} failed to map')
+
+        pos = [x[1].numbering for x in pos if x[1] is not None]
+
+        if len(pos) == 0:
+            LOGGER.warning('No positions were selected.')
+            return np.zeros_like(c.array, dtype=bool)
 
     m = filter_selection(c.array, pos, atom_names)
 
@@ -94,14 +107,15 @@ def superpose_pair(
         fixed: ChainStructure,
         mobile: ChainStructure,
         pos: abc.Sequence[int] | None = None,
-        atom_names: abc.Sequence[str] | None = None,
+        atom_names: abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None = None,
         map_name: str | None = None,
         exclude_hydrogen: bool = False,
         allow_residue_mismatch: bool = False,
 ):
     m_fixed, m_mobile = map(
-        lambda x: filter_selection_extended(x, pos=pos, atom_names=atom_names, map_name=map_name,
-                                            exclude_hydrogen=exclude_hydrogen),
+        lambda x: filter_selection_extended(
+            x, pos=pos, atom_names=atom_names, map_name=map_name,
+            exclude_hydrogen=exclude_hydrogen),
         [fixed, mobile]
     )
     m_fixed, m_mobile = filter_to_common_atoms(
