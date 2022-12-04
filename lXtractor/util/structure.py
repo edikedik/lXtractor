@@ -70,12 +70,15 @@ def check_backbone_bond_continuity(
 
 
 def filter_selection(
-        array: bst.AtomArray, res_id: abc.Iterable[int],
-        atom_names: abc.Iterable[abc.Sequence[str]] | None
+        array: bst.AtomArray, res_id: abc.Sequence[int],
+        atom_names: abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None = None
 ) -> np.ndarray:
     if atom_names is None:
         staged = zip(res_id, repeat(None))
     else:
+        if isinstance(atom_names, abc.Sequence):
+            atom_names = repeat(atom_names, len(res_id))
+
         staged = zip(res_id, atom_names, strict=True)
 
     mask = np.zeros_like(array, bool)
