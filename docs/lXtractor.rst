@@ -8,3 +8,4 @@ lXtractor package
    lXtractor.ext
    lXtractor.util
    lXtractor.variables
+   lXtractor.protocols

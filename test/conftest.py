@@ -65,6 +65,7 @@ def pkinase_hmm_path() -> Path:
     return path
 
 
+@pytest.fixture(scope='module')
 def human_abl_str_path() -> Path:
     path = DATA / '5hu9.cif'
     assert path.exists()
@@ -87,11 +88,16 @@ def chicken_src_str(chicken_src_str_path) -> GenericStructure:
 
 
 @pytest.fixture(scope='module')
+def human_abl_str(human_abl_str_path) -> GenericStructure:
+    return GenericStructure.read(human_abl_str_path)
+
+
+@pytest.fixture()
 def chicken_src_seq(chicken_src_seq_path) -> tuple[str, str]:
     return next(read_fasta(chicken_src_seq_path))
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture()
 def human_src_seq(human_src_seq_path) -> tuple[str, str]:
     return next(read_fasta(human_src_seq_path))
 
@@ -103,7 +109,7 @@ def simple_fasta_path() -> Path:
     return path
 
 
-@pytest.fixture(scope='function')
+@pytest.fixture()
 def sample_chain_list(simple_structure) -> ChainList:
     chain_str = ChainStructure.from_structure(simple_structure)
     return ChainList([
