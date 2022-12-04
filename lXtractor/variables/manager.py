@@ -1,3 +1,4 @@
+import logging
 import typing as t
 from collections import abc, defaultdict
 from concurrent.futures import ProcessPoolExecutor
@@ -20,6 +21,8 @@ StagedSeq: t.TypeAlias = tuple[
 StagedStr: t.TypeAlias = tuple[
     ChainStructure, bst.AtomArray, list[StructureVariable], abc.Mapping[int, int] | None]
 C = t.Union[ChainSequence, ChainStructure]
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _update_variables(vs: Variables, upd: abc.Iterable[VT]) -> Variables:
@@ -139,7 +142,7 @@ class Manager:
                 ChainStructure | ChainSequence, SequenceVariable | StructureVariable, bool, t.Any]],
             vs_to_cols: bool = True, replace_errors: bool = True,
             replace_errors_with: t.Any = np.NaN,
-    ):
+    ) -> pd.DataFrame | dict:
         d = defaultdict(list)
         if self.verbose:
             results = tqdm(results, 'Aggregating variables')
@@ -164,7 +167,12 @@ class Manager:
                 d['VariableCalculated'].append(is_calculated)
                 d['VariableResult'].append(
                     replace_errors_with if replace_errors and not is_calculated else calc_res)
-        return pd.DataFrame(d)
+        try:
+            return pd.DataFrame(d)
+        except ValueError as e:
+            LOGGER.error(f'Failed to convert to a DataFrame (stacktrace below)')
+            LOGGER.exception(e)
+            return d
 
     def stage_calculations(
             self, chains: CT | ChainList, vs: abc.Sequence[VT] | None, *, missing: bool = True,
