@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import logging
 from collections import abc
-from itertools import repeat
+from itertools import repeat, starmap
 
 import biotite.structure as bst
 import numpy as np
-from more_itertools import zip_equal
+from more_itertools import zip_equal, unzip
+
+from lXtractor.core.exceptions import LengthMismatch
 
 LOGGER = logging.getLogger(__name__)
+
+_BASIC_COMPARISON_ATOMS = {'N', 'CA', 'C', 'CB'}
 
 
 # def read_fast_pdb(path: Path, model: int = 1) -> bst.AtomArray:
@@ -72,7 +76,7 @@ def filter_selection(
     if atom_names is None:
         staged = zip(res_id, repeat(None))
     else:
-        staged = zip_equal(res_id, atom_names)
+        staged = zip(res_id, atom_names, strict=True)
 
     mask = np.zeros_like(array, bool)
 
@@ -82,6 +86,68 @@ def filter_selection(
             mask_local &= np.isin(array.atom_name, a_names)
         mask |= mask_local
     return mask
+
+
+def filter_to_common_atoms(
+        a1: bst.AtomArray, a2: bst.AtomArray,
+        allow_residue_mismatch: bool = False
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Filter to atoms common between residues of atom arrays a1 and a2.
+
+    :param a1: Arbitrary atom array.
+    :param a2: Arbitrary atom array.
+    :param allow_residue_mismatch: If ``True``, when residue names mismatch, the common atoms
+        are derived from the intersection ``a1.atoms & a2.atoms & {"C", "N", "CA", "CB"}``.
+    :return: A pair of masks for a1 and a2, ``True`` if the atoms match.
+    :raises ValueError: (1) If `a1` and `a2` have different number of residues.
+        (2) If the selection for some residue produces different number of atoms.
+
+    .. note::
+        If residues match, :func:`biotite.filter_intersection` is used.
+
+    """
+
+    def preprocess_array(a: bst.AtomArray):
+        num_res = bst.get_residue_count(a)
+        r_it = bst.residue_iter(a)
+        return num_res, r_it
+
+    def process_pair(r1: bst.AtomArray, r2: bst.AtomArray) -> tuple[np.ndarray, np.ndarray]:
+        r1_name, r2_name = r1.res_name[0], r2.res_name[0]
+        if r1_name != r2_name:
+            if not allow_residue_mismatch:
+                raise ValueError(
+                    f'Residue names must match. Got {r1_name} from the first array and {r2_name} '
+                    f'from the second one. Use `allow_residue_mismatch` to allow name mismatches.'
+                )
+            atom_names = set(r1.atom_name) & set(r2.atom_name) & _BASIC_COMPARISON_ATOMS
+            m1, m2 = map(lambda r: np.isin(r.atom_name, list(atom_names)), [r1, r2])
+            if m1.sum() != m2.sum():
+                raise ValueError(
+                    f'Obtained different sets of atoms {atom_names}. '
+                    f'Residue 1: {r1[m1]}. Residue 2: {r2[m2]}'
+                )
+        else:
+            m1 = bst.filter_intersection(r1, r2)
+            m2 = bst.filter_intersection(r2, r1)
+
+        return m1, m2
+
+    (a1_l, a1_it), (a2_l, a2_it) = map(preprocess_array, [a1, a2])
+
+    if a1_l != a2_l:
+        raise LengthMismatch(
+            'The number of residues must match between structures. '
+            f'Got {a1_l} for `a1` and {a2_l} for `a2`.'
+        )
+
+    mask1, mask2 = map(
+        lambda x: np.concatenate(list(x)),
+        unzip(starmap(process_pair, zip(a1_it, a2_it, strict=True)))
+    )
+
+    return mask1, mask2
 
 
 if __name__ == '__main__':
