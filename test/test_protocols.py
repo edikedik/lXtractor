@@ -69,10 +69,9 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
     res = list(superpose_pairwise([abl_str, abl_str]))
     assert len(res) == 1
     res = res.pop()
-    assert len(res) == 4
-    id1, id2, rmsd, matrix = res
-    assert id1 == id2
-    assert rmsd < 0.001
+    assert len(res) == 5
+    assert res.ID1 == res.ID2
+    assert res.RmsdSuperpose < 0.001 and res.RmsdTarget < 0.001
 
     src_seq = ChainSequence.from_string(human_src_seq[1], name=human_src_seq[0])
     abl_str.seq.map_numbering(src_seq, name='REF')
@@ -86,9 +85,9 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
         map_name='REF',
     ))
     assert len(res) == 1
-    id1, id2, rmsd, matrix = res.pop()
-    assert id1 == abl_str.id and id2 == src_str.id
-    assert rmsd <= 1
+    res = res.pop()
+    assert res.ID1 == abl_str.id and res.ID2 == src_str.id
+    assert res.RmsdSuperpose <= 1 and res.RmsdTarget < 1
 
     # Trying to do the same in parallel
     res = list(superpose_pairwise(
@@ -121,7 +120,7 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
             map_name='REF', strict=False
         ))
 
-    assert len(res) == 5
+    assert len(res) == 6
     diff = res[-1]
 
     assert diff.SeqSuperposeFixed == diff.SeqSuperposeMobile == 0

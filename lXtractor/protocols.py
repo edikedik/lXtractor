@@ -30,12 +30,19 @@ _StagedSupInpStrict: t.TypeAlias = tuple[str, bst.AtomArray, bst.AtomArray]
 _StagedSupInpFlex: t.TypeAlias = tuple[str, ChainStructure, ChainStructure]
 _StagedSupInp = t.TypeVar('_StagedSupInp', _StagedSupInpStrict, _StagedSupInpFlex)
 
-_SupOutputStrict: t.TypeAlias = tuple[
-    str, str, float, tuple[np.ndarray, np.ndarray, np.ndarray]
+_SupOutputStrict = namedtuple(
+    'OutputStrict', ['ID1', 'ID2', 'RmsdSuperpose', 'RmsdTarget', 'Transformation']
+)
+_SupOutputStrictT: t.TypeAlias = tuple[
+    str, str, float, float, tuple[np.ndarray, np.ndarray, np.ndarray]
 ]
-_SupOutputFlex: t.TypeAlias = tuple[
-    str, str, float, tuple[np.ndarray, np.ndarray, np.ndarray], _Diff
+_SupOutputFlex = namedtuple(
+    'OutputFlex', ['ID1', 'ID2', 'RmsdSuperpose', 'RmsdTarget', 'Transformation', 'Diff']
+)
+_SupOutputFlexT: t.TypeAlias = tuple[
+    str, str, float, float, tuple[np.ndarray, np.ndarray, np.ndarray], _Diff
 ]
+_SupOutputT = t.TypeVar('_SupOutputT', _SupOutputStrict, _SupOutputFlex)
 
 
 def filter_selection_extended(
@@ -87,7 +94,9 @@ def filter_selection_extended(
 
 def subset_to_matching(
         reference: ChainStructure, c: ChainStructure,
-        map_name: str | None = None, **kwargs
+        map_name: str | None = None,
+        skip_if_match: str = SeqNames.seq1,
+        **kwargs
 ) -> tuple[ChainStructure, ChainStructure]:
     """
     Subset both chain structures to aligned residues using **sequence alignment**.
@@ -99,9 +108,23 @@ def subset_to_matching(
     :param c: A chain structure to align.
     :param map_name: If provided, `c` is considered "pre-aligned" to the `reference`, and
         `reference` possessed the numbering under `map_name`.
+    :param skip_if_match: Two options:
+
+        1. Sequence/Map name, e.g., "seq1" -- if sequences under this name match exactly,
+        skip alignment and return original chain structures.
+
+        2. "len" -- if sequences have equal length, skip alignment and return original chain
+        structures.
     :return: A pair of new structures having the same number of residues that were
         successfully matched during the alignment.
     """
+    if skip_if_match == 'len':
+        if len(reference.seq) == len(c.seq):
+            return reference, c
+    else:
+        if reference.seq[skip_if_match] == c.seq[skip_if_match]:
+            return reference, c
+
     if not map_name:
         pos2 = reference.seq.map_numbering(c.seq, **kwargs)
         pos1 = reference.seq[SeqNames.enum]
@@ -124,7 +147,7 @@ def subset_to_matching(
     return c1_new, c2_new
 
 
-def superpose(fs: _StagedSupInpStrict, ms: _StagedSupInpStrict) -> _SupOutputStrict:
+def superpose(fs: _StagedSupInpStrict, ms: _StagedSupInpStrict) -> _SupOutputStrictT:
     """
     A lower-level function performing superposition and rmsd calculation of already
     prepared :class:`AtomArray`'s.
@@ -153,10 +176,12 @@ def superpose(fs: _StagedSupInpStrict, ms: _StagedSupInpStrict) -> _SupOutputStr
     superposed, transformation = bst.superimpose(fs_sup, ms_sup)
 
     ms_rmsd = bst.superimpose_apply(ms_rmsd, transformation)
+    ms_sup = bst.superimpose_apply(ms_sup, transformation)
 
-    rmsd = bst.rmsd(fs_rmsd, ms_rmsd)
+    rmsd_sup = bst.rmsd(fs_sup, ms_sup)
+    rmsd_target = bst.rmsd(fs_rmsd, ms_rmsd)
 
-    return f_id, m_id, rmsd, transformation
+    return f_id, m_id, rmsd_sup, rmsd_target, transformation
 
 
 @curry
@@ -212,16 +237,20 @@ def _yield_staged_pairs(
                 yield fs, ms
 
 
-def _align_and_superpose(fs: _StagedSupInpFlex, ms: _StagedSupInpFlex):
+@curry
+def _align_and_superpose(
+        fs: _StagedSupInpFlex, ms: _StagedSupInpFlex, skip_aln_if_match: str
+) -> _SupOutputFlexT:
     def subset_to_common(c1, c2):
         m1, m2 = filter_to_common_atoms(c1.array, c2.array, allow_residue_mismatch=True)
         c1_sub, c2_sub = c1.array[m1], c2.array[m2],
         return c1_sub, c2_sub, len(c1_sub) / len(c1.array), len(c2_sub) / len(c2.array)
 
     (id1, c_sup1, c_rmsd1), (id2, c_sup2, c_rmsd2) = fs, ms
-    # print('\n', len(c_sup1.array), len(c_rmsd1.array), len(c_sup2.array), len(c_rmsd2.array))
-    c_sup1_aligned, c_sup2_aligned = subset_to_matching(c_sup1, c_sup2, name='Mobile')
-    c_rmsd1_aligned, c_rmsd2_aligned = subset_to_matching(c_rmsd1, c_rmsd2, name='Mobile')
+    c_sup1_aligned, c_sup2_aligned = subset_to_matching(
+        c_sup1, c_sup2, skip_if_match=skip_aln_if_match, name='Mobile')
+    c_rmsd1_aligned, c_rmsd2_aligned = subset_to_matching(
+        c_rmsd1, c_rmsd2, skip_if_match=skip_aln_if_match, name='Mobile')
 
     a_sup1, a_sup2, sup1_diff, sup2_diff = subset_to_common(c_sup1_aligned, c_sup2_aligned)
     a_rmsd1, a_rmsd2, rmsd1_diff, rmsd2_diff = subset_to_common(c_rmsd1_aligned, c_rmsd2_aligned)
@@ -235,9 +264,10 @@ def _align_and_superpose(fs: _StagedSupInpFlex, ms: _StagedSupInpFlex):
     )
     diff_atoms = (sup1_diff, rmsd1_diff, sup2_diff, rmsd2_diff)
 
-    _, _, rmsd, matrix = superpose(('', a_sup1, a_rmsd1), ('', a_sup2, a_rmsd2))
+    id1, id2, rmsd_sup, rsmd_target, transformation = superpose(
+        (id1, a_sup1, a_rmsd1), (id2, a_sup2, a_rmsd2))
 
-    return id1, id2, rmsd, matrix, _Diff(*diff_seqs, *diff_atoms)
+    return id1, id2, rmsd_sup, rsmd_target, transformation, _Diff(*diff_seqs, *diff_atoms)
 
 
 def superpose_pairwise(
@@ -250,9 +280,9 @@ def superpose_pairwise(
             abc.Sequence[int] | None,
             abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None] = (None, None),
         map_name: str | None = None,
-        exclude_hydrogen: bool = False, strict: bool = True,
+        exclude_hydrogen: bool = False, strict: bool = True, skip_aln_if_match: str = 'len',
         verbose: bool = False, num_proc: int | None = None,
-) -> abc.Generator[_SupOutputStrict]:
+) -> abc.Generator[_SupOutputT]:
     """
 
     Superpose pairs of structures.
@@ -299,6 +329,7 @@ def superpose_pairwise(
         :class:`Alignment <lXtractor.core.alignment.Alignment>`.
     :param exclude_hydrogen: Exclude all hydrogen atoms during selection.
     :param strict: Enable/disable the "strict" protocol. See the explanation above.
+    :param skip_aln_if_match: Skip the sequence alignment if this field matches.
     :param verbose: Display progress bar.
     :param num_proc: The number of parallel processes. For large selections, may consume a
         lot of RAM, so caution advised.
@@ -312,17 +343,18 @@ def superpose_pairwise(
         map_name=map_name, exclude_hydrogen=exclude_hydrogen, to_array=strict,
     )
     pairs = _yield_staged_pairs(fixed, mobile, stage)
+    wrapper = lambda res: _SupOutputStrict(*res) if strict else _SupOutputFlex(*res)
 
     if verbose:
         pairs = tqdm(pairs, desc='Superposing pairs')
 
-    fn = superpose if strict else _align_and_superpose
+    fn = superpose if strict else _align_and_superpose(skip_aln_if_match=skip_aln_if_match)
 
     if num_proc is not None and num_proc > 1:
         with ProcessPoolExecutor(num_proc) as executor:
-            yield from executor.map(fn, *unzip(pairs), chunksize=1)
+            yield from map(wrapper, executor.map(fn, *unzip(pairs), chunksize=1, timeout=10))
     else:
-        yield from starmap(fn, pairs)
+        yield from map(wrapper, starmap(fn, pairs))
 
 
 if __name__ == '__main__':
