@@ -1,25 +1,10 @@
 import biotite.structure as bst
 import pytest
 
-from lXtractor.core.chain import ChainStructure, ChainSequence
+from lXtractor.core.chain import ChainSequence
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData
-from lXtractor.core.structure import GenericStructure
-from lXtractor.protocols import filter_selection_extended, subset_to_matching, superpose_pairwise_strict
-
-
-def get_fst_chain(s: GenericStructure) -> ChainStructure:
-    return ChainStructure.from_structure(next(s.split_chains()))
-
-
-@pytest.fixture()
-def abl_str(human_abl_str):
-    return get_fst_chain(human_abl_str)
-
-
-@pytest.fixture()
-def src_str(chicken_src_str):
-    return get_fst_chain(chicken_src_str)
+from lXtractor.protocols import filter_selection_extended, subset_to_matching, superpose_pairwise
 
 
 def test_extended_selection_filter(src_str):
@@ -75,9 +60,13 @@ def test_subset_to_matching(abl_str, src_str):
     assert len(abl_sub.seq) == len(src_sub.seq), 'Same number of residues'
 
 
-def test_strict_superposition(abl_str, src_str, human_src_seq):
+def test_superpose_pairwise(abl_str, src_str, human_src_seq):
+
+    # 1. Strict
+    # =========
+
     # no arguments
-    res = list(superpose_pairwise_strict([abl_str, abl_str]))
+    res = list(superpose_pairwise([abl_str, abl_str]))
     assert len(res) == 1
     res = res.pop()
     assert len(res) == 4
@@ -90,7 +79,7 @@ def test_strict_superposition(abl_str, src_str, human_src_seq):
     src_str.seq.map_numbering(src_seq, name='REF')
 
     # Align using backbone atoms, then calculate rmsd using all atoms
-    res = list(superpose_pairwise_strict(
+    res = list(superpose_pairwise(
         [abl_str], [src_str],
         selection_superpose=([407, 408, 409], ['CA', 'C', 'N']),
         selection_rmsd=([407, 408], None),
@@ -102,10 +91,41 @@ def test_strict_superposition(abl_str, src_str, human_src_seq):
     assert rmsd <= 1
 
     # Trying to do the same in parallel
-    res = list(superpose_pairwise_strict(
+    res = list(superpose_pairwise(
         [abl_str, src_str], [src_str, abl_str],
         selection_superpose=([407, 408, 409], ['CA', 'C', 'N']),
         selection_rmsd=([407, 408], None),
         map_name='REF', num_proc=2
     ))
     assert len(res) == 4
+
+    # 2. Flexible
+    # ===========
+
+    # Using XHRDX motif
+    # In Abl, it's VHRDL
+    # in Src, it's IHRDL
+    pos = [386, 387, 388, 389, 390]
+
+    # Strict should fail since the first residues have different numbers of atoms
+    with pytest.raises(ValueError):
+        next(superpose_pairwise(
+            [abl_str], [src_str],
+            selection_superpose=(pos, None),
+            map_name='REF'
+        ))
+
+    res = next(superpose_pairwise(
+            [abl_str], [src_str],
+            selection_superpose=(pos, None),
+            map_name='REF', strict=False
+        ))
+
+    assert len(res) == 5
+    diff = res[-1]
+
+    assert diff.SeqSuperposeFixed == diff.SeqSuperposeMobile == 0
+    assert diff.SeqRmsdFixed == diff.SeqRmsdMobile == 0
+    assert diff.AtomsSuperposeFixed == diff.AtomsRmsdFixed
+    assert diff.AtomsSuperposeMobile == diff.AtomsRmsdMobile
+    assert res[2] < 1

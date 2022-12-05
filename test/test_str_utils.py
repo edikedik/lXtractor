@@ -56,7 +56,6 @@ def test_common_atoms_filter(ala, gly, phe, abl_str, src_str):
 
     for i, pair in enumerate(zip(bst.residue_iter(a1), bst.residue_iter(a2))):
         r1, r2 = pair
-        print(r1, r2)
         if i == 0:
             assert len(r1) == len(r2) == 4
         else:

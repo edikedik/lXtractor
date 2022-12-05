@@ -119,12 +119,9 @@ def filter_to_common_atoms(
     :raises ValueError: (1) If `a1` and `a2` have different number of residues.
         (2) If the selection for some residue produces different number of atoms.
 
-    .. note::
-        If residues match, :func:`biotite.filter_intersection` is used.
-
     """
 
-    def preprocess_array(a: bst.AtomArray):
+    def preprocess_array(a: bst.AtomArray) -> tuple[int, bst.AtomArray]:
         num_res = bst.get_residue_count(a)
         r_it = bst.residue_iter(a)
         return num_res, r_it
@@ -147,10 +144,6 @@ def filter_to_common_atoms(
                 f'Obtained different sets of atoms {atom_names}. '
                 f'Residue 1: {r1[m1]}. Residue 2: {r2[m2]}'
             )
-        #
-        # else:
-        #     m1 = bst.filter_intersection(r1, r2)
-        #     m2 = bst.filter_intersection(r2, r1)
 
         return m1, m2
 
