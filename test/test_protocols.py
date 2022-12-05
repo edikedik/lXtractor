@@ -1,11 +1,11 @@
 import biotite.structure as bst
 import pytest
 
-from lXtractor.core.chain import ChainStructure
+from lXtractor.core.chain import ChainStructure, ChainSequence
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData
 from lXtractor.core.structure import GenericStructure
-from lXtractor.protocols import filter_selection_extended, subset_to_matching
+from lXtractor.protocols import filter_selection_extended, subset_to_matching, superpose_pairwise_strict
 
 
 def get_fst_chain(s: GenericStructure) -> ChainStructure:
@@ -73,3 +73,39 @@ def test_subset_to_matching(abl_str, src_str):
     abl_str.seq.map_numbering(src_str.seq, name='SRC')
     abl_sub, src_sub = subset_to_matching(abl_str, src_str, map_name='SRC')
     assert len(abl_sub.seq) == len(src_sub.seq), 'Same number of residues'
+
+
+def test_strict_superposition(abl_str, src_str, human_src_seq):
+    # no arguments
+    res = list(superpose_pairwise_strict([abl_str, abl_str]))
+    assert len(res) == 1
+    res = res.pop()
+    assert len(res) == 4
+    id1, id2, rmsd, matrix = res
+    assert id1 == id2
+    assert rmsd < 0.001
+
+    src_seq = ChainSequence.from_string(human_src_seq[1], name=human_src_seq[0])
+    abl_str.seq.map_numbering(src_seq, name='REF')
+    src_str.seq.map_numbering(src_seq, name='REF')
+
+    # Align using backbone atoms, then calculate rmsd using all atoms
+    res = list(superpose_pairwise_strict(
+        [abl_str], [src_str],
+        selection_superpose=([407, 408, 409], ['CA', 'C', 'N']),
+        selection_rmsd=([407, 408], None),
+        map_name='REF',
+    ))
+    assert len(res) == 1
+    id1, id2, rmsd, matrix = res.pop()
+    assert id1 == abl_str.id and id2 == src_str.id
+    assert rmsd <= 1
+
+    # Trying to do the same in parallel
+    res = list(superpose_pairwise_strict(
+        [abl_str, src_str], [src_str, abl_str],
+        selection_superpose=([407, 408, 409], ['CA', 'C', 'N']),
+        selection_rmsd=([407, 408], None),
+        map_name='REF', num_proc=2
+    ))
+    assert len(res) == 4
