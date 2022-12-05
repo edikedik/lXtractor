@@ -2,6 +2,7 @@ import typing as t
 
 from lXtractor.core.chain import Chain, ChainStructure, ChainSequence
 from lXtractor.core.config import SeqNames
+from lXtractor.core.structure import GenericStructure
 
 
 def basic_chain_seq(start=1, end=10, fill='A', name='chain') -> ChainSequence:
@@ -28,6 +29,10 @@ def sample_chain(prefix: str = 'c', structure: t.Optional[ChainStructure] = None
                 Chain(basic_chain_seq(name=f'{prefix}2_2', start=8, end=9))
             ])
     ])
+
+
+def get_fst_chain(s: GenericStructure) -> ChainStructure:
+    return ChainStructure.from_structure(next(s.split_chains()))
 
 
 if __name__ == '__main__':

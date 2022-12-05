@@ -3,6 +3,8 @@
 # Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
 
 docs/notebooks
+lXtractor/ext/resources
+tok.txt
 
 # User-specific stuff
 .idea/**/workspace.xml

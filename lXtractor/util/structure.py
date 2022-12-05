@@ -80,7 +80,7 @@ def filter_selection(
     :param res_id: A sequence of residue numbers.
     :param atom_names: A sequence of atom names (broadcasted to each position in `res_id`)
         or an iterable over such sequences for each position in `res_id`.
-    :return:
+    :return: A binary mask that is ``True`` for filtered atoms.
     """
 
     if res_id is None:
@@ -131,22 +131,26 @@ def filter_to_common_atoms(
 
     def process_pair(r1: bst.AtomArray, r2: bst.AtomArray) -> tuple[np.ndarray, np.ndarray]:
         r1_name, r2_name = r1.res_name[0], r2.res_name[0]
+        atom_names = set(r1.atom_name) & set(r2.atom_name)
+
         if r1_name != r2_name:
             if not allow_residue_mismatch:
                 raise ValueError(
                     f'Residue names must match. Got {r1_name} from the first array and {r2_name} '
                     f'from the second one. Use `allow_residue_mismatch` to allow name mismatches.'
                 )
-            atom_names = set(r1.atom_name) & set(r2.atom_name) & _BASIC_COMPARISON_ATOMS
-            m1, m2 = map(lambda r: np.isin(r.atom_name, list(atom_names)), [r1, r2])
-            if m1.sum() != m2.sum():
-                raise ValueError(
-                    f'Obtained different sets of atoms {atom_names}. '
-                    f'Residue 1: {r1[m1]}. Residue 2: {r2[m2]}'
-                )
-        else:
-            m1 = bst.filter_intersection(r1, r2)
-            m2 = bst.filter_intersection(r2, r1)
+            atom_names &= _BASIC_COMPARISON_ATOMS
+
+        m1, m2 = map(lambda r: np.isin(r.atom_name, list(atom_names)), [r1, r2])
+        if m1.sum() != m2.sum():
+            raise ValueError(
+                f'Obtained different sets of atoms {atom_names}. '
+                f'Residue 1: {r1[m1]}. Residue 2: {r2[m2]}'
+            )
+        #
+        # else:
+        #     m1 = bst.filter_intersection(r1, r2)
+        #     m2 = bst.filter_intersection(r2, r1)
 
         return m1, m2
 

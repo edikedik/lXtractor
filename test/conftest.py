@@ -10,7 +10,7 @@ from lXtractor.core.structure import GenericStructure
 from lXtractor.util.seq import read_fasta
 from lXtractor.variables.sequential import SeqEl
 from lXtractor.variables.structural import Dist, PseudoDihedral
-from test.common import sample_chain
+from test.common import sample_chain, get_fst_chain
 
 DATA = Path(__file__).parent / 'data'
 EPS = 10e-5
@@ -116,6 +116,16 @@ def sample_chain_list(simple_structure) -> ChainList:
         sample_chain(prefix='c', structure=chain_str),
         sample_chain(prefix='k', structure=chain_str)
     ])
+
+
+@pytest.fixture()
+def abl_str(human_abl_str):
+    return get_fst_chain(human_abl_str)
+
+
+@pytest.fixture()
+def src_str(chicken_src_str):
+    return get_fst_chain(chicken_src_str)
 
 
 # @pytest.fixture(scope='function')
