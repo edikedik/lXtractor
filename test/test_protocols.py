@@ -120,11 +120,11 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
             map_name='REF', strict=False
         ))
 
-    assert len(res) == 6
-    diff = res[-1]
+    assert len(res) == 7
+    diff_seq, diff_atoms = res[-2:]
 
-    assert diff.SeqSuperposeFixed == diff.SeqSuperposeMobile == 0
-    assert diff.SeqRmsdFixed == diff.SeqRmsdMobile == 0
-    assert diff.AtomsSuperposeFixed == diff.AtomsRmsdFixed
-    assert diff.AtomsSuperposeMobile == diff.AtomsRmsdMobile
+    assert diff_seq.SuperposeFixed == diff_seq.SuperposeMobile == 0
+    assert diff_seq.RmsdFixed == diff_seq.RmsdMobile == 0
+    assert diff_atoms.SuperposeFixed == diff_atoms.RmsdFixed
+    assert diff_atoms.SuperposeMobile == diff_atoms.RmsdMobile
     assert res[2] < 1

@@ -22,8 +22,7 @@ LOGGER = logging.getLogger(__name__)
 
 _Diff = namedtuple(
     'SubsetDiff', [
-        'SeqSuperposeFixed', 'SeqRmsdFixed', 'SeqSuperposeMobile', 'SeqRmsdMobile',
-        'AtomsSuperposeFixed', 'AtomsRmsdFixed', 'AtomsSuperposeMobile', 'AtomsRmsdMobile'
+        'SuperposeFixed', 'RmsdFixed', 'SuperposeMobile', 'RmsdMobile',
     ]
 )
 _StagedSupInpStrict: t.TypeAlias = tuple[str, bst.AtomArray, bst.AtomArray]
@@ -37,10 +36,11 @@ _SupOutputStrictT: t.TypeAlias = tuple[
     str, str, float, float, tuple[np.ndarray, np.ndarray, np.ndarray]
 ]
 _SupOutputFlex = namedtuple(
-    'OutputFlex', ['ID1', 'ID2', 'RmsdSuperpose', 'RmsdTarget', 'Transformation', 'Diff']
+    'OutputFlex', ['ID1', 'ID2', 'RmsdSuperpose', 'RmsdTarget', 'Transformation', 'DiffSeq', 'DiffAtoms']
 )
 _SupOutputFlexT: t.TypeAlias = tuple[
-    str, str, float, float, tuple[np.ndarray, np.ndarray, np.ndarray], _Diff
+    str, str, float, float, tuple[np.ndarray, np.ndarray, np.ndarray],
+    tuple[float, float, float, float], tuple[float, float, float, float]
 ]
 _SupOutputT = t.TypeVar('_SupOutputT', _SupOutputStrict, _SupOutputFlex)
 
@@ -193,9 +193,8 @@ def _stage_inp(
         selection_rmsd: tuple[
             abc.Sequence[int] | None,
             abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None],
-        map_name: str | None,
-        exclude_hydrogen: bool,
-        to_array: bool,
+        map_name: str | None, exclude_hydrogen: bool, to_array: bool,
+        tolerate_missing: bool
 ) -> _StagedSupInpStrict | _StagedSupInpFlex:
     pos_sup, atoms_sup = selection_superpose
     pos_rmsd, atoms_rmsd = selection_rmsd
@@ -205,12 +204,20 @@ def _stage_inp(
 
     mask_sup = filter_selection_extended(
         c, pos=pos_sup, atom_names=atoms_sup, map_name=map_name,
-        exclude_hydrogen=exclude_hydrogen)
+        exclude_hydrogen=exclude_hydrogen, tolerate_missing=tolerate_missing
+    )
     mask_rmsd = filter_selection_extended(
         c, pos=pos_rmsd, atom_names=atoms_rmsd, map_name=map_name,
-        exclude_hydrogen=exclude_hydrogen)
+        exclude_hydrogen=exclude_hydrogen, tolerate_missing=tolerate_missing
+    )
 
     a_sup, a_rmsd = c.array[mask_sup], c.array[mask_rmsd]
+
+    if len(a_sup) == 0:
+        raise MissingData(f'Empty selection for superposition atoms in structure {c}')
+
+    if len(a_rmsd) == 0:
+        raise MissingData(f'Empty selection for RMSD atoms in structure {c}')
 
     if to_array:
         return c.id, a_sup, a_rmsd
@@ -225,13 +232,13 @@ def _stage_inp(
 def _yield_staged_pairs(
         fixed: abc.Iterable[ChainStructure],
         mobile: abc.Iterable[ChainStructure] | None,
-        stager: abc.Callable[[ChainStructure], _StagedSupInp]
+        stage: abc.Callable[[ChainStructure], _StagedSupInp]
 ) -> abc.Generator[_StagedSupInp, _StagedSupInp]:
-    _fixed = map(stager, fixed)
+    _fixed = map(stage, fixed)
     if mobile is None:
         yield from combinations(_fixed, 2)
     else:
-        _mobile = list(map(stager, mobile))
+        _mobile = list(map(stage, mobile))
         for fs in _fixed:
             for ms in _mobile:
                 yield fs, ms
@@ -267,7 +274,7 @@ def _align_and_superpose(
     id1, id2, rmsd_sup, rsmd_target, transformation = superpose(
         (id1, a_sup1, a_rmsd1), (id2, a_sup2, a_rmsd2))
 
-    return id1, id2, rmsd_sup, rsmd_target, transformation, _Diff(*diff_seqs, *diff_atoms)
+    return id1, id2, rmsd_sup, rsmd_target, transformation, diff_seqs, diff_atoms
 
 
 def superpose_pairwise(
@@ -338,23 +345,41 @@ def superpose_pairwise(
         It can be used directly with :func:`biotite.structure.superimpose_apply`.
     """
 
+    def wrap_output(res):
+        if strict:
+            return _SupOutputStrict(*res)
+        id1, id2, rmsd_sup, rmsd_tar, tr, diff_seq, diff_atoms = res
+        return _SupOutputFlex(id1, id2, rmsd_sup, rmsd_tar, tr, _Diff(*diff_seq), _Diff(*diff_atoms))
+
     stage = _stage_inp(
         selection_superpose=selection_superpose, selection_rmsd=selection_rmsd,
         map_name=map_name, exclude_hydrogen=exclude_hydrogen, to_array=strict,
+        tolerate_missing=not strict,
     )
     pairs = _yield_staged_pairs(fixed, mobile, stage)
-    wrapper = lambda res: _SupOutputStrict(*res) if strict else _SupOutputFlex(*res)
 
     if verbose:
-        pairs = tqdm(pairs, desc='Superposing pairs')
+        if isinstance(fixed, abc.Sized):
+            if isinstance(mobile, abc.Sized):
+                n = len(fixed) * len(mobile)
+            else:
+                n = int(len(fixed) * (len(fixed) - 1) / 2)
+        else:
+            n = None
 
     fn = superpose if strict else _align_and_superpose(skip_aln_if_match=skip_aln_if_match)
 
     if num_proc is not None and num_proc > 1:
         with ProcessPoolExecutor(num_proc) as executor:
-            yield from map(wrapper, executor.map(fn, *unzip(pairs), chunksize=1, timeout=10))
+            results = map(wrap_output, executor.map(fn, *unzip(pairs)))
+            if verbose:
+                results = tqdm(results, desc='Superposing pairs', total=n)
+            yield from results
     else:
-        yield from map(wrapper, starmap(fn, pairs))
+        results = map(wrap_output, starmap(fn, pairs))
+        if verbose:
+            results = tqdm(results, desc='Superposing pairs', total=n)
+        yield from results
 
 
 if __name__ == '__main__':
