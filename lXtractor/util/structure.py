@@ -173,11 +173,25 @@ def iter_canonical(a: bst.AtomArray) -> abc.Generator[bst.AtomArray | None]:
             yield None
 
 
-def get_missing_atoms(a: bst.AtomArray) -> abc.Generator[list[str | None]]:
+def _exclude(a, names, elements):
+    if names:
+        a = a[~np.isin(a.atom_name, names)]
+    if elements:
+        a = a[~np.isin(a.element, elements)]
+    return a
+
+
+def get_missing_atoms(
+        a: bst.AtomArray,
+        excluding_names: abc.Sequence[str] | None = ('OXT',),
+        excluding_elements: abc.Sequence[str] | None = ('H',)
+) -> abc.Generator[list[str | None]]:
     """
     For each residue, compare with the one stored in CCD, and find missing atoms.
 
     :param a: Non-empty atom array.
+    :param excluding_names: A sequence of atom names to exclude for calculation.
+    :param excluding_elements: A sequence of element names to exclude for calculation.
     :return: A generator of lists of missing atoms (excluding hydrogens)
         per residue in `a` or ``None`` if not such residue was found in CCD.
     """
@@ -187,16 +201,22 @@ def get_missing_atoms(a: bst.AtomArray) -> abc.Generator[list[str | None]]:
         if r_can is None:
             yield None
         else:
-            r_can = r_can[r_can.element != 'H']
+            r_can = _exclude(r_can, excluding_names, excluding_elements)
             m_can, _ = filter_to_common_atoms(r_can, r_obs)
             yield list(r_can[~m_can].atom_name)
 
 
-def get_observed_atoms_frac(a: bst.AtomArray) -> abc.Generator[list[str | None]]:
+def get_observed_atoms_frac(
+        a: bst.AtomArray,
+        excluding_names: abc.Sequence[str] | None = ('OXT',),
+        excluding_elements: abc.Sequence[str] | None = ('H',)
+) -> abc.Generator[list[str | None]]:
     """
     Find fractions of observed atoms compared to canonical residue versions stored in CCD.
 
     :param a: Non-empty atom array.
+    :param excluding_names: A sequence of atom names to exclude for calculation.
+    :param excluding_elements: A sequence of element names to exclude for calculation.
     :return: A generator of observed atom fractions per residue in `a` or ``None``
         if a residue was not found in CCD.
     """
@@ -206,7 +226,7 @@ def get_observed_atoms_frac(a: bst.AtomArray) -> abc.Generator[list[str | None]]
         if r_can is None:
             yield None
         else:
-            r_can = r_can[r_can.element != 'H']
+            r_can = _exclude(r_can, excluding_names, excluding_elements)
             _, m_obs = filter_to_common_atoms(r_can, r_obs)
             yield m_obs.sum() / len(r_can)
 

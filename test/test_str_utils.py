@@ -86,7 +86,7 @@ def test_observed_atoms_fraction(gly, ala):
     assert len(res) == 1
     assert res.pop() == 1.0
 
-    gly_size = len(gly[gly.element != 'H'])
+    gly_size = len(gly[(gly.element != 'H') & (gly.atom_name != 'OXT')])
     gly = gly[gly.atom_name != 'CA']
     expected_frac = (gly_size - 1) / gly_size
     res = next(get_observed_atoms_frac(gly))
