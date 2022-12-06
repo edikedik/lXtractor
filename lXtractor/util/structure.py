@@ -47,29 +47,6 @@ def calculate_dihedral(
     return np.arctan2(y, x)
 
 
-def check_bond_continuity(
-        array: bst.AtomArray | np.ndarray,
-        min_len: float = 1.0, max_len: float = 2.0
-):
-    if isinstance(array, bst.AtomArray):
-        array = array.coord
-
-    dist = np.linalg.norm(np.diff(array, axis=0), axis=1)
-    mask = (dist < min_len) | (dist > max_len)
-
-    return np.where(mask)[0] + 1
-
-
-def check_backbone_bond_continuity(
-        array: bst.AtomArray,
-        min_len: float = 1.0, max_len: float = 2.0
-):
-    backbone_idx = np.where(bst.filter_backbone(array))[0]
-    discont_idx = check_bond_continuity(array, min_len, max_len)
-
-    return discont_idx[np.isin(discont_idx, backbone_idx)]
-
-
 def filter_selection(
         array: bst.AtomArray, res_id: abc.Sequence[int] | None,
         atom_names: abc.Sequence[abc.Sequence[str]] | abc.Sequence[str] | None = None

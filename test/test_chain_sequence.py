@@ -11,7 +11,7 @@ from lXtractor.core.chain import ChainSequence
 from lXtractor.core.config import DumpNames
 from lXtractor.core.exceptions import MissingData
 from lXtractor.util.io import get_files, get_dirs
-from lXtractor.util.seq import read_fasta
+from lXtractor.util.seq import read_fasta, biotite_align
 
 
 def test_init(simple_chain_seq):
@@ -58,7 +58,7 @@ def test_closest_and_boundaries():
     assert b1.i == b2.i == 5
 
 
-def test_map(simple_fasta_path):
+def test_map(simple_fasta_path, chicken_src_seq, human_src_seq):
     s1, s2 = read_fasta(simple_fasta_path)
     aln = Alignment.make([s1, s2])
 
@@ -73,6 +73,13 @@ def test_map(simple_fasta_path):
 
     mapping = s2.map_numbering(aln, save=True, name='map_aln')
     assert mapping == [3, 4, 5, 6, 7]
+
+    s1 = ChainSequence.from_string(chicken_src_seq[1])
+    s2 = ChainSequence.from_string(human_src_seq[1])
+
+    mapping = s2.map_numbering(
+        s1, save=False, align_method=biotite_align)
+    assert len(mapping) >= len(s2)
 
 
 def test_map_transfer(simple_chain_seq):

@@ -10,7 +10,9 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import numpy as np
-from more_itertools import split_at, partition, split_before, tail
+import biotite.sequence as bseq
+import biotite.sequence.align as balign
+from more_itertools import split_at, partition, split_before, tail, take
 
 from lXtractor.core.base import SupportsWrite, AlignMethod
 from lXtractor.core.exceptions import LengthMismatch, MissingData
@@ -123,6 +125,23 @@ def mafft_align(
         filename = handle.name
     cmd = f'{mafft} --anysymbol --thread {thread} --inputorder {filename}'
     return read_fasta(StringIO(run_sp(cmd).stdout))
+
+
+def biotite_align(seqs: abc.Iterable[tuple[str, str]]) -> tuple[tuple[str, str], tuple[str, str]]:
+
+    (h1, seq1), (h2, seq2) = take(2, seqs)
+
+    if not isinstance(seq1, bseq.ProteinSequence):
+        seq1 = bseq.ProteinSequence(seq1)
+    if not isinstance(seq2, bseq.ProteinSequence):
+        seq2 = bseq.ProteinSequence(seq2)
+
+    alignments = balign.align_optimal(
+        seq1, seq2, balign.SubstitutionMatrix.std_protein_matrix())
+
+    seq1a, seq2a = alignments[0].get_gapped_sequences()
+
+    return (h1, seq1a), (h2, seq2a)
 
 
 # def hmmer_align(
