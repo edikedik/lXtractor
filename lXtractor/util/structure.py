@@ -162,7 +162,7 @@ def filter_to_common_atoms(
 def iter_canonical(a: bst.AtomArray) -> abc.Generator[bst.AtomArray | None]:
     """
     :param a: Arbitrary atom array.
-    :return: Generator over canonical versions of residues in `a` or ``None``
+    :return: Generator of canonical versions of residues in `a` or ``None``
         if no such residue found in CCD.
     """
     for name in bst.get_residues(a)[1]:
@@ -178,8 +178,8 @@ def get_missing_atoms(a: bst.AtomArray) -> abc.Generator[list[str | None]]:
     For each residue, compare with the one stored in CCD, and find missing atoms.
 
     :param a: Non-empty atom array.
-    :return: A generator with lists of missing atoms (excluding hydrogens)
-        per residue in `a` or ``None`` for residues not found in CCD.
+    :return: A generator of lists of missing atoms (excluding hydrogens)
+        per residue in `a` or ``None`` if not such residue was found in CCD.
     """
     if len(a) == 0:
         raise MissingData('Array is empty')
@@ -197,7 +197,7 @@ def get_observed_atoms_frac(a: bst.AtomArray) -> abc.Generator[list[str | None]]
     Find fractions of observed atoms compared to canonical residue versions stored in CCD.
 
     :param a: Non-empty atom array.
-    :return: A generator observed atom fractions per residue in `a` or ``None``
+    :return: A generator of observed atom fractions per residue in `a` or ``None``
         if a residue was not found in CCD.
     """
     if len(a) == 0:
