@@ -5,10 +5,11 @@ from collections import abc
 from itertools import repeat, starmap
 
 import biotite.structure as bst
+import biotite.structure.info as bstinfo
 import numpy as np
 from more_itertools import unzip
 
-from lXtractor.core.exceptions import LengthMismatch
+from lXtractor.core.exceptions import LengthMismatch, MissingData
 
 LOGGER = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ def check_backbone_bond_continuity(
 
 def filter_selection(
         array: bst.AtomArray, res_id: abc.Sequence[int] | None,
-        atom_names: abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None = None
+        atom_names: abc.Sequence[abc.Sequence[str]] | abc.Sequence[str] | None = None
 ) -> np.ndarray:
     """
     Filter :class:`AtomArray` by residue numbers and atom names.
@@ -86,17 +87,12 @@ def filter_selection(
     if res_id is None:
         res_id, _ = bst.get_residues(array)
 
-    if atom_names is None:
-        staged = zip(res_id, repeat(None))
-    else:
-        if isinstance(atom_names, abc.Sequence):
-            atom_names = repeat(atom_names, len(res_id))
-
-        staged = zip(res_id, atom_names, strict=True)
+    if atom_names is None or isinstance(atom_names[0], str):
+        atom_names = repeat(atom_names, len(res_id))
 
     mask = np.zeros_like(array, bool)
 
-    for r_id, a_names in staged:
+    for r_id, a_names in zip(res_id, atom_names, strict=True):
         mask_local = array.res_id == r_id
         if a_names is not None:
             mask_local &= np.isin(array.atom_name, a_names)
@@ -115,7 +111,7 @@ def filter_to_common_atoms(
     :param a2: Arbitrary atom array.
     :param allow_residue_mismatch: If ``True``, when residue names mismatch, the common atoms
         are derived from the intersection ``a1.atoms & a2.atoms & {"C", "N", "CA", "CB"}``.
-    :return: A pair of masks for a1 and a2, ``True`` if the atoms match.
+    :return: A pair of masks for a1 and a2, ``True`` for matching atoms.
     :raises ValueError: (1) If `a1` and `a2` have different number of residues.
         (2) If the selection for some residue produces different number of atoms.
 
@@ -161,6 +157,58 @@ def filter_to_common_atoms(
     )
 
     return mask1, mask2
+
+
+def iter_canonical(a: bst.AtomArray) -> abc.Generator[bst.AtomArray | None]:
+    """
+    :param a: Arbitrary atom array.
+    :return: Generator over canonical versions of residues in `a` or ``None``
+        if no such residue found in CCD.
+    """
+    for name in bst.get_residues(a)[1]:
+        try:
+            r_can = bstinfo.residue(name)
+            yield r_can
+        except KeyError:
+            yield None
+
+
+def get_missing_atoms(a: bst.AtomArray) -> abc.Generator[list[str | None]]:
+    """
+    For each residue, compare with the one stored in CCD, and find missing atoms.
+
+    :param a: Non-empty atom array.
+    :return: A generator with lists of missing atoms (excluding hydrogens)
+        per residue in `a` or ``None`` for residues not found in CCD.
+    """
+    if len(a) == 0:
+        raise MissingData('Array is empty')
+    for r_can, r_obs in zip(iter_canonical(a), bst.residue_iter(a)):
+        if r_can is None:
+            yield None
+        else:
+            r_can = r_can[r_can.element != 'H']
+            m_can, _ = filter_to_common_atoms(r_can, r_obs)
+            yield list(r_can[~m_can].atom_name)
+
+
+def get_observed_atoms_frac(a: bst.AtomArray) -> abc.Generator[list[str | None]]:
+    """
+    Find fractions of observed atoms compared to canonical residue versions stored in CCD.
+
+    :param a: Non-empty atom array.
+    :return: A generator observed atom fractions per residue in `a` or ``None``
+        if a residue was not found in CCD.
+    """
+    if len(a) == 0:
+        raise MissingData('Array is empty')
+    for r_can, r_obs in zip(iter_canonical(a), bst.residue_iter(a)):
+        if r_can is None:
+            yield None
+        else:
+            r_can = r_can[r_can.element != 'H']
+            _, m_obs = filter_to_common_atoms(r_can, r_obs)
+            yield m_obs.sum() / len(r_can)
 
 
 if __name__ == '__main__':

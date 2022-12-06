@@ -1,8 +1,9 @@
 import biotite.structure as bst
 import biotite.structure.info as bstinfo
+import numpy as np
 import pytest
 
-from lXtractor.util.structure import filter_to_common_atoms
+from lXtractor.util.structure import filter_to_common_atoms, get_missing_atoms, get_observed_atoms_frac
 
 
 @pytest.fixture()
@@ -61,3 +62,32 @@ def test_common_atoms_filter(ala, gly, phe, abl_str, src_str):
         else:
             print(r1, r2)
             assert len(r1) == len(r2) > 4
+
+
+def test_missing_atoms_getter(gly, ala):
+    res = list(get_missing_atoms(gly))
+    assert len(res) == 1
+    res = res.pop()
+    assert len(res) == 0
+
+    gly = gly[gly.atom_name != 'CA']
+    res = list(get_missing_atoms(bst.array([*gly, *ala])))
+    assert len(res) == 2
+    assert len(res[0]) == 1 and len(res[1]) == 0
+    assert res[0][0] == 'CA'
+
+    gly.res_name = np.array(['?'] * len(gly))
+    res = list(get_missing_atoms(gly))
+    assert len(res) == 1 and res[0] is None
+
+
+def test_observed_atoms_fraction(gly, ala):
+    res = list(get_observed_atoms_frac(gly))
+    assert len(res) == 1
+    assert res.pop() == 1.0
+
+    gly_size = len(gly[gly.element != 'H'])
+    gly = gly[gly.atom_name != 'CA']
+    expected_frac = (gly_size - 1) / gly_size
+    res = next(get_observed_atoms_frac(gly))
+    assert res == expected_frac
