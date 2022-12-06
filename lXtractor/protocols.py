@@ -16,6 +16,7 @@ from tqdm.auto import tqdm
 from lXtractor.core.chain import ChainStructure
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData, LengthMismatch
+from lXtractor.util.seq import biotite_align
 from lXtractor.util.structure import filter_selection, filter_to_common_atoms
 
 LOGGER = logging.getLogger(__name__)
@@ -170,7 +171,7 @@ def superpose(fs: _StagedSupInpStrict, ms: _StagedSupInpStrict) -> _SupOutputStr
     if len(fs_rmsd) != len(ms_rmsd):
         raise LengthMismatch(
             'For RMSD calculation, expected fixed and mobile array to have '
-            f'the same number of atoms, but {len(fs_sup)} != {len(ms_sup)}'
+            f'the same number of atoms, but {len(fs_rmsd)} != {len(ms_rmsd)}'
         )
 
     superposed, transformation = bst.superimpose(fs_sup, ms_sup)
@@ -255,14 +256,16 @@ def _align_and_superpose(
 
     (id1, c_sup1, c_rmsd1), (id2, c_sup2, c_rmsd2) = fs, ms
     c_sup1_aligned, c_sup2_aligned = subset_to_matching(
-        c_sup1, c_sup2, skip_if_match=skip_aln_if_match, name='Mobile')
+        c_sup1, c_sup2, skip_if_match=skip_aln_if_match,
+        align_method=biotite_align, name='Mobile')
     c_rmsd1_aligned, c_rmsd2_aligned = subset_to_matching(
-        c_rmsd1, c_rmsd2, skip_if_match=skip_aln_if_match, name='Mobile')
+        c_rmsd1, c_rmsd2, skip_if_match=skip_aln_if_match,
+        align_method=biotite_align, name='Mobile')
 
     a_sup1, a_sup2, sup1_diff, sup2_diff = subset_to_common(c_sup1_aligned, c_sup2_aligned)
     a_rmsd1, a_rmsd2, rmsd1_diff, rmsd2_diff = subset_to_common(c_rmsd1_aligned, c_rmsd2_aligned)
 
-    # warp into namedtuples later
+    # wrap into namedtuples later
     diff_seqs = (
         len(c_sup1.seq) - len(c_sup1_aligned.seq),
         len(c_rmsd1.seq) - len(c_rmsd1_aligned.seq),
@@ -288,7 +291,7 @@ def superpose_pairwise(
             abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None] = (None, None),
         map_name: str | None = None,
         exclude_hydrogen: bool = False, strict: bool = True, skip_aln_if_match: str = 'len',
-        verbose: bool = False, num_proc: int | None = None,
+        verbose: bool = False, num_proc: int | None = None, **kwargs
 ) -> abc.Generator[_SupOutputT]:
     """
 
@@ -340,6 +343,8 @@ def superpose_pairwise(
     :param verbose: Display progress bar.
     :param num_proc: The number of parallel processes. For large selections, may consume a
         lot of RAM, so caution advised.
+    :param kwargs: Passed to :meth:`ProcessPoolExecutor.map`. Useful for controlling `chunksize`
+        and `timeout` parameters.
     :return: A generator over tuples (id_fixed, id_mobile, rmsd, transformation) where
         transformation is a set of vectors and matrices used to superpose the mobile structure.
         It can be used directly with :func:`biotite.structure.superimpose_apply`.
@@ -371,7 +376,7 @@ def superpose_pairwise(
 
     if num_proc is not None and num_proc > 1:
         with ProcessPoolExecutor(num_proc) as executor:
-            results = map(wrap_output, executor.map(fn, *unzip(pairs)))
+            results = map(wrap_output, executor.map(fn, *unzip(pairs), **kwargs))
             if verbose:
                 results = tqdm(results, desc='Superposing pairs', total=n)
             yield from results
