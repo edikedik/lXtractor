@@ -55,8 +55,8 @@ def test_superpose(chicken_src_str):
 
     _, rmsd, _ = a.superpose(
         a_cp, res_id_self=[256, 257, 258], res_id_other=[257, 258, 259],
-        atom_names_self=repeat(bb_atoms, 3),
-        atom_names_other=repeat(bb_atoms, 3),
+        atom_names_self=bb_atoms,
+        atom_names_other=bb_atoms,
     )
     assert rmsd < EPS
 

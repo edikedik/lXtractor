@@ -28,7 +28,6 @@ def test_iter():
     s = Segment(1, 3)
     assert list(iter(s)) == [1, 2, 3]
     s = Segment(1, 3, seqs={'a': ['one', 'two', 'three'], 'b': '123'})
-    print(s.item_type._fields)
     assert list(map(tuple, iter(s))) == [(1, 'one', '1'), (2, 'two', '2'), (3, 'three', '3')]
 
 

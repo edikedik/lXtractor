@@ -60,7 +60,6 @@ def test_common_atoms_filter(ala, gly, phe, abl_str, src_str):
         if i == 0:
             assert len(r1) == len(r2) == 4
         else:
-            print(r1, r2)
             assert len(r1) == len(r2) > 4
 
 
