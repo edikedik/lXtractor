@@ -14,7 +14,7 @@ from pathlib import Path
 import biotite.structure as bst
 import numpy as np
 import pandas as pd
-from more_itertools import unzip, first_true, split_into, zip_equal, collapse, nth
+from more_itertools import unzip, first_true, split_into, collapse, nth
 from toolz import curry, keyfilter, keymap, valmap
 from tqdm.auto import tqdm
 
@@ -1451,7 +1451,7 @@ class ChainList(abc.MutableSequence[CT]):
         if not isinstance(chains, list):
             chains = list(chains)
         if categories is not None:
-            for c, cat in zip_equal(chains, categories):
+            for c, cat in zip(chains, categories, strict=True):
                 if isinstance(cat, str):
                     add_category(c, cat)
                 else:
@@ -2317,7 +2317,7 @@ class ChainInitializer:
                 [x.seq for x in m_new], [[x.seq for x in val] for val in m_new.values()],
                 num_proc=num_proc, verbose=self.verbose
             )
-            for (c, ss), num_group in zip_equal(m_new.items(), numbering_groups):
+            for (c, ss), num_group in zip(m_new.items(), numbering_groups, strict=True):
                 if len(num_group) != len(ss):
                     raise LengthMismatch(
                         f'The number of mapped numberings {len(num_group)} must match '

@@ -7,7 +7,7 @@ from copy import deepcopy, copy
 from itertools import islice, combinations, filterfalse
 
 import networkx as nx
-from more_itertools import zip_equal, nth, always_reversible, powerset, take
+from more_itertools import nth, always_reversible, powerset, take
 from tqdm.auto import tqdm
 
 from lXtractor.core.base import Ord
@@ -159,7 +159,7 @@ class Segment(abc.Sequence):
         if self._seqs:
             items = (
                 item_type(i, *x) for i, x in
-                zip_equal(items, zip(*self._seqs.values())))
+                zip(items, zip(*self._seqs.values()), strict=True))
         yield from items
 
     def __getitem__(self, idx: slice | int | str) -> (

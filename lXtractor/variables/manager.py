@@ -7,7 +7,7 @@ from itertools import chain, groupby, repeat, starmap, tee
 import biotite.structure as bst
 import numpy as np
 import pandas as pd
-from more_itertools import partition, unzip, zip_equal
+from more_itertools import partition, unzip
 from tqdm.auto import tqdm
 
 from lXtractor.core.chain import ChainList, SS, ChainSequence, ChainStructure, CT
@@ -194,7 +194,7 @@ class Manager:
             else:
                 to = seq[map_to]
 
-            return dict(filter(lambda x: x[0] is not None, zip_equal(fr, to)))
+            return dict(filter(lambda x: x[0] is not None, zip(fr, to, strict=True)))
 
         def get_vs(obj: SS) -> list[VT]:
             if missing:
@@ -266,9 +266,9 @@ class Manager:
         if self.verbose:
             calculated = tqdm(calculated, desc='Calculating variables')
 
-        for obj, vs, results in zip_equal(objs, variables2, calculated):
+        for obj, vs, results in zip(objs, variables2, calculated, strict=True):
             try:
-                for v, (is_calculated, res) in zip_equal(vs, results):
+                for v, (is_calculated, res) in zip(vs, results, strict=True):
                     if save:
                         if is_calculated:
                             obj.variables[v] = res

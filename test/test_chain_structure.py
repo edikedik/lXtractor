@@ -93,7 +93,7 @@ def test_io(simple_chain_structure):
         s.write(tmp_path, write_children=True)
 
         files = get_files(tmp_path)
-        dirs = get_dirs(Path(tmp))
+        dirs = get_dirs(tmp_path)
 
         assert f'{DumpNames.structure_base_name}.cif' in files
         assert DumpNames.sequence in files
