@@ -6,39 +6,68 @@ from pathlib import Path
 
 from more_itertools import peekable
 from pyhmmer.easel import DigitalSequence, TextSequence
-from pyhmmer.plan7 import HMMFile, Pipeline, TopHits, Alignment, Domain
+from pyhmmer.plan7 import HMM, HMMFile, Pipeline, TopHits, Alignment, Domain
 
 from lXtractor.core.chain import ChainSequence, CT, ChainStructure, Chain
 from lXtractor.core.exceptions import MissingData
 
 LOGGER = logging.getLogger(__name__)
 HMM_DEFAULT_NAME = 'HMM'
+_ChainT: t.TypeAlias = Chain | ChainStructure | ChainSequence
+_HmmInpT: t.TypeAlias = HMM | HMMFile | Path | str
+
+
+# TODO: verify non-domain HMM types (e.g., Motif, Family) get valid Domain hits
 
 
 class PyHMMer:
     """
     A basis pyhmmer interface aimed at domain extraction.
     It works with a single hmm model and pipeline instance.
+
+    `The original documentation <https://pyhmmer.readthedocs.io/en/stable/>`.
     """
 
-    def __init__(self, hmm: HMMFile | Path | str, **kwargs):
-        match hmm:
-            case HMMFile():
-                self.hmm = hmm
-            case _:
-                with HMMFile(hmm) as f:
-                    self.hmm = next(f)
+    def __init__(self, hmm: _HmmInpT, **kwargs):
+        """
+        :param hmm: An :class:`HMMFile` handle or path as string or `Path`
+            object to a file containing a single HMM model. In case of multiple
+            models, only the first one will be taken
+        :param kwargs: Passed to :class:`Pipeline`. The `alphabet` argument
+            is derived from the supplied `hmm`.
+        """
+        try:
+            #: HMM instance
+            self.hmm = next(_iter_hmm(hmm))
+        except (StopIteration, EOFError):
+            raise MissingData(f'Invalid input {hmm}')
+        #: Pipeline to use for HMM searches
         self.pipeline: Pipeline = self.init_pipeline(**kwargs)
-        self.hits: TopHits | None = None
+        #: Hits resulting from the most recent HMM search
+        self.hits_: TopHits | None = None
+
+    @classmethod
+    def from_multiple(cls, hmm: _HmmInpT, **kwargs) -> abc.Generator['PyHMMer']:
+        yield from (cls(inp, **kwargs) for inp in _iter_hmm(hmm))
 
     def init_pipeline(self, **kwargs) -> Pipeline:
+        """
+        :param kwargs: Passed to :class:`Pipeline` during initialization.
+        :return: Initialized pipeline, also saved to :attr:`pipeline`.
+        """
         self.pipeline = Pipeline(self.hmm.alphabet, **kwargs)
         return self.pipeline
 
-    def convert_seq(self, obj: CT | str) -> DigitalSequence:
+    def convert_seq(self, obj: _ChainT | str) -> DigitalSequence:
+        """
+        :param obj: A `Chain*`-type object or string. A sequence of this
+            object must be compatible with the alphabet of the HMM model.
+        :return: A digitized sequence compatible with PyHMMer.
+        """
         match obj:
             case str():
-                accession, name, text = hash(obj), None, obj
+                _id = str(hash(obj))
+                accession, name, text = _id, _id, obj
             case ChainSequence():
                 accession, name, text = obj.id, obj.name, obj.seq1
             case ChainStructure() | Chain():
@@ -51,19 +80,26 @@ class PyHMMer:
         ).digitize(self.hmm.alphabet)
 
     def search(
-            self, seqs: abc.Iterable[str | CT | DigitalSequence]
+            self, seqs: abc.Iterable[_ChainT | DigitalSequence]
     ) -> TopHits:
+        """
+        Run the :attr:`pipeline` to search for :attr:`hmm`.
+
+        :param seqs: Iterable over digital sequences or objects accepted by
+            :meth:`convert_seq`.
+        :return: Top hits resulting from the search.
+        """
         if self.pipeline is None:
             self.init_pipeline()
         seqs = map(
             lambda s: self.convert_seq(s) if not isinstance(s, DigitalSequence) else s,
             seqs)
-        self.hits = self.pipeline.search_hmm(self.hmm, seqs)
-        return self.hits
+        self.hits_ = self.pipeline.search_hmm(self.hmm, seqs)
+        return self.hits_
 
     def annotate(
-            self, objs: abc.Iterable[CT] | CT,
-            new_map_name: t.Optional[str] = None,
+            self, objs: abc.Iterable[_ChainT] | _ChainT,
+            new_map_name: str | None = None,
             min_score: float | None = None,
             min_size: int | None = None,
             min_cov_hmm: float | None = None,
@@ -71,6 +107,27 @@ class PyHMMer:
             domain_filter: abc.Callable[[Domain], bool] | None = None,
             **kwargs
     ) -> abc.Generator[CT, None, None]:
+        """
+        Annotate provided objects by domain hits resulting from the HMM search.
+
+        An annotation is the creation of a child object via :meth:`spawn_child` method
+        (e.g., :meth:`lXtractor.core.chain.ChainSequence.spawn_child`).
+
+        :param objs: A single one or an iterable over `Chain*`-type objects.
+        :param new_map_name: A name for a child
+            :class:`ChainSequence <lXtractor.core.chain.ChainSequence` to hold the mapping
+            to the hmm numbering.
+        :param min_score: Min hit score.
+        :param min_size: Min hit size.
+        :param min_cov_hmm: Min HMM model coverage -- a fraction of mapped / total nodes.
+        :param min_cov_seq: Min coverage of a sequence by the HMM model nodes -- a fraction
+            of mapped nodes to the sequence's length.
+        :param domain_filter: A callable to filter domain hits.
+        :param kwargs: Passed to the `spawn_child` method. **Hint:** if you don't want to
+            keep spawned children, pass ``keep=False`` here.
+        :return: A generator over spawned children yielded sequentially
+            for each input object and valid domain hit.
+        """
 
         def accept_domain(d: Domain, cov_hmm: float, cov_seq: float) -> bool:
             acc_cov_hmm = min_cov_hmm is None or cov_hmm >= min_cov_hmm
@@ -80,23 +137,26 @@ class PyHMMer:
                     d.alignment.target_to - d.alignment.target_from >= min_size)
             return all([acc_cov_hmm, acc_cov_seq, acc_score, acc_size])
 
-        if not isinstance(objs, abc.Iterable):
+        if isinstance(objs, _ChainT):
             objs = [objs]
         else:
             peeking = peekable(objs)
-            if not peeking.peek(False):
+            fst = peeking.peek(False)
+            if not fst:
                 raise MissingData('No sequences provided')
+            if not isinstance(fst, _ChainT):
+                raise TypeError(f'Unsupported type {fst}')
 
         if new_map_name is None:
             try:
-                new_map_name = self.hmm.accession.decode('utf-8')
+                new_map_name = self.hmm.accession.decode('utf-8').split('.')[0]
             except ValueError:
                 try:
                     new_map_name = self.hmm.name.decode(
                         'utr-8').replace(' ', '_').replace('-', '_')
                 except ValueError:
                     LOGGER.warning(
-                        'new_map_name was not provided, and neither `accession` nor `name` '
+                        '`new_map_name` was not provided, and neither `accession` nor `name` '
                         f'attribute exist: falling back to default name: {HMM_DEFAULT_NAME}')
                     new_map_name = HMM_DEFAULT_NAME
 
@@ -104,12 +164,12 @@ class PyHMMer:
 
         self.search(objs_by_id.values())
 
-        for hit in self.hits:
+        for hit_i, hit in enumerate(self.hits_, start=1):
             obj = objs_by_id[hit.accession.decode('utf-8')]
 
             for dom_i, dom in enumerate(hit.domains, start=1):
                 aln = dom.alignment
-                num = [hmm_i for seq_i, hmm_i in enumerate_numbering(aln) if seq_i]
+                num = [hmm_i for seq_i, hmm_i in _enumerate_numbering(aln) if seq_i]
                 n = sum(1 for x in num if x is not None)
                 cov_seq = n / len(num)
                 cov_hmm = n / self.hmm.M
@@ -132,7 +192,20 @@ class PyHMMer:
                 yield sub
 
 
-def enumerate_numbering(a: Alignment) -> abc.Generator[tuple[int | None, int | None], None, None]:
+def _iter_hmm(hmm: _HmmInpT) -> abc.Generator[HMM]:
+    match hmm:
+        case HMMFile():
+            yield from hmm
+        case HMM():
+            yield hmm
+        case _:
+            with HMMFile(hmm) as f:
+                yield from f
+
+
+def _enumerate_numbering(
+        a: Alignment
+) -> abc.Generator[tuple[int | None, int | None], None, None]:
     hmm_pool, seq_pool = count(a.hmm_from), count(a.target_from)
     for hmm_c, seq_c in zip(a.hmm_sequence, a.target_sequence):
         hmm_i = None if hmm_c == '.' else next(hmm_pool)
