@@ -103,7 +103,7 @@ def fetch_iterable(
 
 def try_fetching_until(
         it: V,
-        fetcher: abc.Callable[V, T],
+        fetcher: abc.Callable[[V], T],
         get_remaining: abc.Callable[[T, V], V],
         max_trials: int,
         verbose: bool = False,
