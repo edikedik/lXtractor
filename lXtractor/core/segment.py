@@ -4,7 +4,7 @@ import logging
 import typing as t
 from collections import namedtuple, abc
 from copy import deepcopy, copy
-from itertools import islice, combinations, filterfalse
+from itertools import islice, combinations, filterfalse, chain
 
 import networkx as nx
 from more_itertools import nth, always_reversible, powerset, take
@@ -12,7 +12,7 @@ from tqdm.auto import tqdm
 
 from lXtractor.core.base import Ord
 from lXtractor.core.config import Sep
-from lXtractor.core.exceptions import LengthMismatch, NoOverlap
+from lXtractor.core.exceptions import LengthMismatch, NoOverlap, OverlapError
 from lXtractor.util.misc import is_valid_field_name
 from lXtractor.variables.base import Variables
 
@@ -490,6 +490,51 @@ def resolve_overlaps(
                 overlapping_subsets,
                 key=lambda xs: sum(map(value_fn, xs))
             )
+
+
+def map_segment_numbering(
+        segments_from: t.Sequence[Segment],
+        segments_to: t.Sequence[Segment],
+) -> abc.Iterator[tuple[int, int]]:
+    """
+    Create a continuous mapping between the numberings of two segment collections.
+    Collections must contain the same number of equal length non-overlapping segments.
+    Segments in the `segments_from` collection are considered to span a continuous sequence,
+    possibly interrupted due to discontinuities in a sequence represented by `segments_to`'s segments.
+    Hence, the segments in `segments_from` form continuous numbering over which numberings
+    of `segments_to` segments are joined.
+
+    :param segments_from: A sequence of segments to map from.
+    :param segments_to: A sequence of segments to map to.
+    :return: An iterable over (key, value) pairs. Keys correspond to numberings of
+        the `segments_from`, values -- to numberings of `segments_to`.
+    """
+    if len(segments_to) != len(segments_from):
+        raise LengthMismatch('Segment collections must be of the same length')
+    for s1, s2 in zip(segments_from, segments_to):
+        if len(s1) != len(s2):
+            raise LengthMismatch(f'Lengths of segments must match. '
+                                 f'Got len({s1})={len(s1)}, len({s2})={len(s2)}')
+    for s1, s2 in zip(segments_from, segments_from[1:]):
+        if s2.overlaps(s1):
+            raise OverlapError(f'Segments {s1},{s2} in `segments_from` overlap')
+    for s1, s2 in zip(segments_to, segments_to[1:]):
+        if s2.overlaps(s1):
+            raise OverlapError(f'Segments {s1},{s2} in `segments_to` overlap')
+
+    hole_sizes = chain(
+        ((s2.start - s1.end) for s1, s2 in zip(
+            segments_to, segments_to[1:])),
+        (0,))
+
+    return zip(
+        range(segments_from[0].start, segments_from[-1].end + 1),
+        chain.from_iterable(
+            chain(
+                range(s.start, s.end + 1),
+                (None for _ in range(s.end + 1, h + s.end)))
+            for s, h in zip(segments_to, hole_sizes))
+    )
 
 
 if __name__ == '__main__':
