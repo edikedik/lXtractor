@@ -1,7 +1,7 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from lXtractor.ext.pdb import PDB
+from lXtractor.ext.pdb_ import PDB
 
 
 def test_fetch():
