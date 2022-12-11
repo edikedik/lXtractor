@@ -18,10 +18,10 @@ lXtractor.ext.hmm module
    :undoc-members:
    :show-inheritance:
 
-lXtractor.ext.pdb module
-------------------------
+lXtractor.ext.pdb\_ module
+--------------------------
 
-.. automodule:: lXtractor.ext.pdb
+.. automodule:: lXtractor.ext.pdb_
    :members:
    :undoc-members:
    :show-inheritance:
