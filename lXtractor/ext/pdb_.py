@@ -60,7 +60,7 @@ class PDB:
             (empty if all were fetched successfully).
         """
 
-        def fetcher(chunk: t.Iterable[str]) -> list[Path]:
+        def fetcher(chunk: abc.Iterable[str]) -> list[Path]:
             chunk = peekable(chunk)
             if not chunk.peek(False):
                 return []
@@ -74,7 +74,7 @@ class PDB:
             return list(chain.from_iterable(fetched))
 
         def get_remaining(
-                fetched: abc.Iterable[Path], _remaining: t.Sequence[str]
+                fetched: abc.Iterable[Path], _remaining: list[str]
         ) -> list[str]:
             _current = {x.stem for x in fetched}
             return list(set(_remaining) - _current)
@@ -113,7 +113,7 @@ class PDB:
         :return: List of dictionaries -- parsed json outputs.
         """
 
-        def fetcher(chunk: t.Iterable[str]) -> list[dict]:
+        def fetcher(chunk: abc.Iterable[str]) -> list[dict]:
             chunk = peekable(chunk)
             if not chunk.peek(False):
                 return []
@@ -126,7 +126,7 @@ class PDB:
             return list(map(json.loads, chain.from_iterable(fetched)))
 
         def get_remaining(
-                fetched: abc.Iterable[dict], _remaining: t.Sequence[str]
+                fetched: abc.Iterable[dict], _remaining: list[str]
         ) -> list[str]:
             _current = {x['entry']['id'] for x in fetched}
             return list(set(_remaining) - _current)

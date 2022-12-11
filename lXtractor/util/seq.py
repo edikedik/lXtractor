@@ -25,7 +25,14 @@ GAP_CHARS = ('-',)
 
 def read_fasta(
         inp: Path | TextIOBase | abc.Iterable[str], strip_id: bool = True
-) -> abc.Iterator[tuple[str, str]]:
+) -> abc.Generator[tuple[str, str]]:
+    """
+    Simple lazy fasta reader.
+
+    :param inp: Path or opened file or an iterable over lines.
+    :param strip_id: Strip ID to the first consecutive (spaceless) string.
+    :return: A generator of (header, seq) pairs.
+    """
     def _yield_seqs(buffer):
         buffer = filterfalse(lambda x: not x or x == '\n', buffer)
         items = split_before(map(str.rstrip, buffer), lambda x: x[0] == '>')
@@ -45,6 +52,13 @@ def read_fasta(
 
 
 def write_fasta(inp: abc.Iterable[tuple[str, str]], out: Path | SupportsWrite) -> None:
+    """
+    Simple fasta writer.
+
+    :param inp: Iterable over (header, seq) pairs.
+    :param out: Something that supports `.write` method.
+    :return: Nothing.
+    """
     data = '\n'.join(f'>{header}\n{seq}' for header, seq in inp)
     if isinstance(out, Path):
         out.write_text(data)
