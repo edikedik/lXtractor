@@ -109,6 +109,9 @@ def _verify_consecutive(positions: abc.Iterable[int]) -> None:
 
 
 class Dist(StructureVariable):
+    """
+    A distance between two atoms.
+    """
     __slots__ = ('p1', 'p2', 'a1', 'a2', 'com')
 
     def __init__(
@@ -116,11 +119,16 @@ class Dist(StructureVariable):
             a1: t.Optional[str] = None,
             a2: t.Optional[str] = None,
             com: bool = False):
-        self.p1 = p1
-        self.p2 = p2
-        self.a1 = a1
-        self.a2 = a2
-        self.com = com
+        #: Position 1.
+        self.p1: int = p1
+        #: Position 2.
+        self.p2: int = p2
+        #: Atom name 1.
+        self.a1: str = a1
+        #: Atom name 2.
+        self.a2: str = a2
+        #: Use center of mass instead of concrete atoms.
+        self.com: bool = com
 
         if any((not com and a1 is None, not com and a2 is None)):
             raise ValueError(
@@ -146,15 +154,35 @@ class Dist(StructureVariable):
 
 
 class AggDist(StructureVariable):
+    """
+    Aggregated distance between two residues.
+
+    It will return ``agg_fn(pdist)`` where ``pdist`` is an array of
+    all pairwise distances between atoms of `p1` and `p2`.
+    """
     __slots__ = ('p1', 'p2', 'key')
 
     def __init__(self, p1: int, p2: int, key: str = 'min'):
+        """
+        :param p1: Position 1.
+        :param p2:  Position 2.
+        :param key: Agg function name.
+
+        Available aggregator functions are:
+
+        >>> print(list(AggFns))
+        ['min', 'max', 'mean', 'median']
+
+        """
         if key not in AggFns:
             raise InitError(
                 f'Wrong key {key}. '
                 f'Available aggregators: {list(AggFns)}')
+        #: Agg function name.
         self.key = key
+        #: Position 1.
         self.p1 = p1
+        #: Position 2.
         self.p2 = p2
 
     @property
@@ -170,56 +198,62 @@ class AggDist(StructureVariable):
         return _agg_dist(res1, res2, AggFns[self.key])
 
 
-class AllDist(StructureVariable):
-    __slots__ = ('key',)
-
-    def __init__(self, key: str = 'min'):
-        if key not in AggFns:
-            raise ValueError(
-                f'Wrong key {key}. '
-                f'Available aggregators: {list(AggFns)}')
-        self.key = key
-
-    @property
-    def rtype(self) -> t.Type[float]:
-        return float
-
-    def calculate(
-            self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
-    ) -> t.List[t.Tuple[int, int, float]]:
-        raise NotImplementedError
-
-        # residues = array.get_residues()
-        # if mapping:
-        #     residues = filter(
-        #         lambda r: r.get_id()[1] in mapping.values(),
-        #         residues)
-        # cs = combinations(residues, 2)
-        # ds = starmap(
-        #     lambda r1, r2: (
-        #         r1.get_id()[1],
-        #         r2.get_id()[1],
-        #         agg_dist(r1, r2, AggFns[self.key])),
-        #     cs)
-        # if mapping:
-        #     m_rev = {v: k for k, v in mapping.items()}
-        #     ds = starmap(
-        #         lambda r1_id, r2_id, d: (
-        #             m_rev[r1_id], m_rev[r2_id], d),
-        #         ds)
-        # return list(ds)
+# class AllDist(StructureVariable):
+#     __slots__ = ('key',)
+#
+#     def __init__(self, key: str = 'min'):
+#         if key not in AggFns:
+#             raise ValueError(
+#                 f'Wrong key {key}. '
+#                 f'Available aggregators: {list(AggFns)}')
+#         self.key = key
+#
+#     @property
+#     def rtype(self) -> t.Type[float]:
+#         return float
+#
+#     def calculate(
+#             self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+#     ) -> t.List[t.Tuple[int, int, float]]:
+#         raise NotImplementedError
+#
+#         residues = array.get_residues()
+#         if mapping:
+#             residues = filter(
+#                 lambda r: r.get_id()[1] in mapping.values(),
+#                 residues)
+#         cs = combinations(residues, 2)
+#         ds = starmap(
+#             lambda r1, r2: (
+#                 r1.get_id()[1],
+#                 r2.get_id()[1],
+#                 agg_dist(r1, r2, AggFns[self.key])),
+#             cs)
+#         if mapping:
+#             m_rev = {v: k for k, v in mapping.items()}
+#             ds = starmap(
+#                 lambda r1_id, r2_id, d: (
+#                     m_rev[r1_id], m_rev[r2_id], d),
+#                 ds)
+#         return list(ds)
 
 
 class Dihedral(StructureVariable):
+    """
+    Dihedral angle involving four different atoms.
+    """
     __slots__ = ('p1', 'p2', 'p3', 'p4', 'a1', 'a2', 'a3', 'a4', 'name')
 
     def __init__(
             self,
             p1: int, p2: int, p3: int, p4: int,
             a1: str, a2: str, a3: str, a4: str,
-            name: str = 'Dihedral'):
-        self.name = name
+            name: str = 'GenericDihedral'):
+        #: Used to designate special kinds of dihedrals.
+        self.name: str = name
+        #: Position.
         self.p1, self.p2, self.p3, self.p4 = p1, p2, p3, p4
+        #: Atom name.
         self.a1, self.a2, self.a3, self.a4 = a1, a2, a3, a4
 
     @property
@@ -228,10 +262,16 @@ class Dihedral(StructureVariable):
 
     @property
     def positions(self) -> list[int]:
+        """
+        :return: A list of positions `p1-p4`.
+        """
         return [self.p1, self.p2, self.p3, self.p4]
 
     @property
     def atoms(self) -> list[str]:
+        """
+        :return: A list of atoms `a1-a4`.
+        """
         return [self.a1, self.a2, self.a3, self.a4]
 
     def calculate(
@@ -249,13 +289,18 @@ class Dihedral(StructureVariable):
 
 
 class PseudoDihedral(Dihedral):
+    """
+    Pseudo-dihedral angle -
+    "the torsion angle between planes defined by 4 consecutive alpha-carbon atoms."
+
+    """
     __slots__ = ()
 
     def __init__(self, p1: int, p2: int, p3: int, p4: int):
         super().__init__(
             p1, p2, p3, p4,
             'CA', 'CA', 'CA', 'CA',
-            name='Pseudo Dihedral')
+            name='PseudoDihedral')
 
 
 class Phi(Dihedral):
@@ -292,9 +337,14 @@ class Omega(Dihedral):
 
 
 class CompositeDihedral(StructureVariable):
+    """
+    An abstract class that defines a dihedral angle s.t. the atoms are within a single
+    residue but the atom names may vary depending on the residue type.
+    """
     __slots__ = ('p',)
 
     def __init__(self, p: int):
+        #: Position
         self.p = p
 
     @property
@@ -304,6 +354,15 @@ class CompositeDihedral(StructureVariable):
     @staticmethod
     @abstractmethod
     def get_dihedrals(pos: int) -> abc.Iterable[Dihedral]:
+        """
+        Implemented by child classes.
+
+        :param pos: Position to create :class:`Dihedral` instances.
+        :return: An iterable over :class:`Dihedral`'s.
+            The :meth:`calculate` will try calculating dihedrals in the provided order
+            until the first successful calculation. If no calculations were successful,
+            will raise :class:`FailedCalculation` error.
+        """
         raise NotImplementedError('Must be implemented by the subclass')
 
     def calculate(
@@ -354,6 +413,12 @@ class Chi2(CompositeDihedral):
 
 
 class SASA(StructureVariable):
+    """
+    Solvent-accessible surface area of a residue or a specific atom.
+
+    The SASA is calculated for the whole array, and subset to all or a single atoms of a residue
+    (so atoms are taken into account for calculation).
+    """
     __slots__ = ('p', 'a')
 
     def __init__(self, p: int, a: str | None = None):

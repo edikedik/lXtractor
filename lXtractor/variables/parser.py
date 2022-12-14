@@ -8,7 +8,7 @@ from lXtractor.core.exceptions import FormatError
 from lXtractor.util.misc import split_validate
 from lXtractor.variables.base import AggFns
 from lXtractor.variables.sequential import SeqEl
-from lXtractor.variables.structural import Dist, AggDist, AllDist, Dihedral, PseudoDihedral, Phi, Psi, Omega
+from lXtractor.variables.structural import Dist, AggDist, Dihedral, PseudoDihedral, Phi, Psi, Omega
 
 LOGGER = logging.getLogger(__name__)
 

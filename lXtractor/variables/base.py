@@ -5,6 +5,7 @@ import logging
 import typing as t
 from abc import abstractmethod, ABCMeta
 from collections import UserDict, abc
+from itertools import filterfalse
 from pathlib import Path
 
 import biotite.structure as bst
@@ -16,6 +17,7 @@ from lXtractor.util.io import read_n_col_table
 
 AggFns = {'min': np.min, 'max': np.max, 'mean': np.mean, 'median': np.median}
 LOGGER = logging.getLogger(__name__)
+
 MappingT: t.TypeAlias = abc.Mapping[int, t.Optional[int]]
 RT = t.TypeVar('RT')  # return type
 OT = t.TypeVar('OT', abc.Sequence, bst.AtomArray)  # object type
@@ -115,9 +117,13 @@ class Variables(UserDict):
     """
     A subclass of :class:`dict` holding variables (:class:`AbstractVariable` subclasses).
 
-    The keys are the :class:`AbstractVariable` subclasses' instances (since these are hashable objects),
-    and values are calculation results.
+    The keys are the :class:`AbstractVariable` subclasses' instances
+    (hashed by :meth::class:`id <AbstractVariable.id>`), and values are calculation results.
     """
+    def __getitem__(self, item: str | AbstractVariable):
+        if isinstance(item, str):
+            return super().__getitem__(hash(item))
+        return super().__getitem__(item)
 
     @property
     def structure(self) -> Variables:
@@ -179,19 +185,21 @@ class Variables(UserDict):
 
     def write(
             self, path: Path,
-            skip_if_contains: t.Collection[str] = ('ALL',)
+            skip_if_contains: t.Collection[str] | None = None
     ) -> None:
         """
         :param path: Path to a file.
-        :param skip_if_contains: Skip if variable ID contains any the provided strings.
-            By defaults, skips all `ALL`-containing variables as these are expected to
-            be pairwise distance matrices.
+        :param skip_if_contains: Skip if a variable ID contains any of the provided strings.
         """
-        items = (f'{v.id}\t{r}' for v, r in self.items()
-                 if all(x not in v.id for x in skip_if_contains))
+        items = (f'{v.id}\t{r}' for v, r in self.items())
+        if skip_if_contains:
+            items = filterfalse(lambda it: any(x in it for x in skip_if_contains), items)
         path.write_text('\n'.join(items))
 
     def as_df(self) -> pd.DataFrame:
+        """
+        :return: A table with two columns: VariableID and VariableResult.
+        """
         if not len(self):
             return pd.DataFrame()
         return pd.DataFrame({
