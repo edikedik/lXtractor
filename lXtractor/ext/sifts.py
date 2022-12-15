@@ -193,10 +193,8 @@ class SIFTS(AbstractResource):
             self.df.to_csv(df_path, sep='\t', index=False)
             LOGGER.debug(f'Saved df to {df_path}')
 
-
     def __getitem__(self, item: str):
         return self.map_id(item)
-
 
     def read(
             self, overwrite: bool = True
