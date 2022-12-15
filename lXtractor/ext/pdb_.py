@@ -1,16 +1,54 @@
+import inspect
 import json
 import logging
+import operator as op
 import typing as t
 from collections import abc
 from itertools import chain
 from pathlib import Path
 
-from more_itertools import flatten, peekable
+from more_itertools import peekable, unzip
 from toolz import curry
 
+from lXtractor.core.base import UrlGetter
 from lXtractor.util.io import try_fetching_until, fetch_iterable, download_to_file, download_text
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _url_getters() -> dict[str, UrlGetter]:
+
+    def _url_getter_factory(name, *args):
+        args_fn = ', '.join(args)
+        args_url = '/'.join(f'{{{x}}}' for x in args)
+        fn = f'lambda {args_fn}: f"{base}/{name}/{args_url}"'
+        return eval(fn)
+
+    base = 'https://data.rcsb.org/rest/v1/core'
+
+    staged = [
+        # Single argument group
+        ('chem_comp', 'comp_id'), ('drugbank', 'comp_id'),
+        ('entry', 'entry_id'), ('pubmed', 'entry_id'),
+        ('entry_groups', 'group_id'), ('polymer_entity_groups', 'group_id'),
+        ('group_provenance', 'group_provenance_id'),
+        # Two arguments group
+        ('assembly', 'entry_id', 'assembly_id'),
+        ('branched_entity', 'entry_id', 'entity_id'),
+        ('nonpolymer_entity', 'entry_id', 'entity_id'),
+        ('polymer_entity', 'entry_id', 'entity_id'),
+        ('branched_entity_instance', 'entry_id', 'asym_id'),
+        ('nonpolymer_entity_instance', 'entry_id', 'asym_id'),
+        ('polymer_entity_instance', 'entry_id', 'asym_id'),
+        ('uniprot', 'entry_id', 'entity_id'),
+        # Three argument group
+        ('interface', 'entry_id', 'assembly_id', 'interface_id')
+    ]
+
+    d = {x[0]: _url_getter_factory(*x) for x in staged}
+    d['files'] = (lambda entry_id: f'https://files.rcsb.org/download/{entry_id}')
+
+    return d
 
 
 class PDB:
@@ -19,15 +57,10 @@ class PDB:
     """
 
     def __init__(
-            self,
-            max_trials: int = 3,
-            num_threads: t.Optional[int] = None,
-            url_files: str = 'https://files.rcsb.org/download',
-            url_info: str = 'https://data.rcsb.org/rest/v1/core/entry',
+            self, max_trials: int = 1, num_threads: t.Optional[int] = None,
             sleep_sec: int = 5, chunk_size: int = 50, verbose: bool = False,
     ):
         """
-
         :param max_trials: Max number of fetching attempts for a given query (PDB ID).
         :param num_threads: The number of threads to use for parallel requests.
         :param url_files: Base URL to fetch structure files.
@@ -38,15 +71,34 @@ class PDB:
             workers.
         :param verbose: Display progress bar.
         """
-        self.max_trials = max_trials
-        self.num_threads = num_threads
-        self.url_files = url_files
-        self.url_info = url_info
-        self.sleep_sec = sleep_sec
-        self.chunk_size = chunk_size
-        self.verbose = verbose
+        #: Upper limit on the number of fetching attempts.
+        self.max_trials: int = max_trials
+        #: The number of threads passed to the :class:`ThreadPoolExecutor`.
+        self.num_threads: int | None = num_threads
+        #: Sleep this number of seconds if the request was blocked.
+        self.sleep_sec: int = sleep_sec
+        #: Passed to :func:`fetch_iterable <lXtractor.util.io.fetch_iterable>`
+        self.chunk_size: int = chunk_size
+        #: Display progress bar.
+        self.verbose: bool = verbose
+        #: A dictionary holding functions constructing urls from provided args.
+        self.url_getters: dict[str, UrlGetter] = _url_getters()
 
-    def fetch(
+    @property
+    def url_names(self) -> list[str]:
+        """
+        :return: A list of supported REST API services.
+        """
+        return list(self.url_getters)
+
+    @property
+    def url_args(self) -> list[tuple[str, list[str]]]:
+        """
+        :return: A list of services and argument names necessary to construct a valid url.
+        """
+        return [(k, list(inspect.signature(v).parameters)) for k, v in self.url_getters.items()]
+
+    def fetch_files(
             self, ids: abc.Iterable[str], pdb_dir: Path, fmt: str = 'cif', *, overwrite: bool = False,
     ) -> tuple[list[Path], list[str]]:
         """
@@ -64,7 +116,7 @@ class PDB:
             chunk = peekable(chunk)
             if not chunk.peek(False):
                 return []
-            urls = (f'{self.url_files}/{x}.{fmt}' for x in chunk)
+            urls = (f'{url_getter(x)}.{fmt}' for x in chunk)
             _fetcher = curry(download_to_file, root_dir=pdb_dir)
             fetched = fetch_iterable(
                 urls, fetcher=lambda xs: [download_to_file(x, root_dir=pdb_dir) for x in xs],
@@ -78,6 +130,8 @@ class PDB:
         ) -> list[str]:
             _current = {x.stem for x in fetched}
             return list(set(_remaining) - _current)
+
+        url_getter = self.url_getters['files']
 
         if pdb_dir is not None:
             pdb_dir.mkdir(parents=True, exist_ok=True)
@@ -101,49 +155,70 @@ class PDB:
 
         if remaining:
             LOGGER.warning(f'Failed to fetch {remaining}')
-        results = list(flatten(results))
+
+        results = list(chain.from_iterable(results))
 
         return results, remaining
 
-    def get_info(self, ids: abc.Iterable[str]):
-        """
-        Get `PDB entry details <https://data.rcsb.org/redoc/index.html#tag/Entry-Service/operation/getEntryById>`
-
-        :param ids: IDs of entries to fetch.
-        :return: List of dictionaries -- parsed json outputs.
+    def get_info(
+            self, url_getter: abc.Callable[[str, ...], str],
+            url_args: abc.Iterable[tuple[str, ...]]
+    ) -> tuple[list[tuple[tuple[str, ...], dict]], list[tuple[str, ...]]]:
         """
 
-        def fetcher(chunk: abc.Iterable[str]) -> list[dict]:
+        >>> pdb = PDB()
+        >>> fetched, remaining = pdb.get_info(pdb.url_getters['entry'], [('2SRC', ), ('2OIQ', )])
+        >>> len(remaining) == 0
+        True
+        >>> len(fetched) == 2
+        True
+        >>> (args1, res1), (args2, res2) = fetched
+        >>> assert {args1, args2} == {('2SRC', ), ('2OIQ', )}
+        >>> assert isinstance(res1, dict) and isinstance(res2, dict)
+
+        :param url_getter: A callable accepting strings and returning a valid url to fetch.
+        :param url_args: Arguments to a `url_getter`. Check :meth:`url_args` to see which getters
+            require which arguments.
+        :return: A tuple with fetched and remaining inputs. Fetched inputs are tuples, where the
+            first element is the original arguments and the second argument is the dictionary
+            with downloaded data. Remaining inputs are arguments that failed to fetch.
+        """
+        def fetcher(chunk: abc.Iterable[tuple[str, ...]]) -> list[tuple[tuple[str, ...], dict]]:
             chunk = peekable(chunk)
             if not chunk.peek(False):
                 return []
-            urls = (f'{self.url_info}/{x}' for x in chunk)
+            inputs = ((xs, url_getter(*xs)) for xs in chunk)
+
             fetched = fetch_iterable(
-                urls, fetcher=lambda xs: list(map(download_text, xs)),
+                inputs, fetcher=lambda xs: [(x[0], download_text(x[1])) for x in xs],
                 num_threads=self.num_threads, chunk_size=self.chunk_size,
                 sleep_sec=self.sleep_sec, verbose=self.verbose
             )
-            return list(map(json.loads, chain.from_iterable(fetched)))
+
+            return list(map(lambda x: (x[0], json.loads((x[1]))), chain.from_iterable(fetched)))
 
         def get_remaining(
-                fetched: abc.Iterable[dict], _remaining: list[str]
-        ) -> list[str]:
-            _current = {x['entry']['id'] for x in fetched}
-            return list(set(_remaining) - _current)
+                fetched: abc.Iterable[tuple[tuple[str, ...], dict]],
+                _remaining: list[tuple[str, ...]]
+        ) -> list[tuple[str, ...]]:
+            args, _ = unzip(fetched)
+            _current = set(map(op.itemgetter(0), fetched))
+            return list(set(_remaining) - set(args))
 
         results, remaining = try_fetching_until(
-            map(lambda x: x.upper(), ids),
+            url_args,
             fetcher=fetcher,
             get_remaining=get_remaining,
             max_trials=self.max_trials,
-            verbose=self.verbose)
+            verbose=self.verbose
+        )
 
         if remaining:
             LOGGER.warning(f'Failed to fetch {remaining}')
 
-        results = list(flatten(results))
+        results = list(chain.from_iterable(results))
 
-        return results
+        return results, remaining
 
 
 if __name__ == '__main__':

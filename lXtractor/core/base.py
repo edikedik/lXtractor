@@ -244,5 +244,12 @@ class SeqFilter(t.Protocol):
     def __call__(self, seq: tuple[str, str], **kwargs) -> bool: ...
 
 
+class UrlGetter(t.Protocol):
+    """
+    A callable accepting some string arguments and turning them into a  valid url.
+    """
+    def __call__(self, *args) -> str: ...
+
+
 if __name__ == '__main__':
     raise RuntimeError
