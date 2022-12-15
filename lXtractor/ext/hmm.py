@@ -5,7 +5,7 @@ from itertools import count
 from pathlib import Path
 
 from more_itertools import peekable
-from pyhmmer.easel import DigitalSequence, TextSequence
+from pyhmmer.easel import DigitalSequence, TextSequence, DigitalSequenceBlock
 from pyhmmer.plan7 import HMM, HMMFile, Pipeline, TopHits, Alignment, Domain
 
 from lXtractor.core.chain import ChainSequence, CT, ChainStructure, Chain
@@ -94,7 +94,8 @@ class PyHMMer:
         seqs = map(
             lambda s: self.convert_seq(s) if not isinstance(s, DigitalSequence) else s,
             seqs)
-        self.hits_ = self.pipeline.search_hmm(self.hmm, seqs)
+        seqs_block = DigitalSequenceBlock(self.hmm.alphabet, seqs)
+        self.hits_ = self.pipeline.search_hmm(self.hmm, seqs_block)
         return self.hits_
 
     def annotate(

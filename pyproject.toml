@@ -37,7 +37,7 @@ dependencies = [
     "toolz>=0.12",
     "tqdm>=4.64",
     "pandas>=1.5",
-    "pyhmmer>=0.6.3",
+    "pyhmmer>=0.7",
     "requests>=2.28.1",
 ]
 

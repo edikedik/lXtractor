@@ -2,7 +2,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import pytest
-from pyhmmer.easel import TextSequence, DigitalSequence
+from pyhmmer.easel import DigitalSequence
 from pyhmmer.plan7 import HMMFile
 
 from lXtractor.core.chain import ChainStructure
