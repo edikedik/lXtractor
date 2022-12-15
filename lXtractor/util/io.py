@@ -6,14 +6,14 @@ import sys
 import typing as t
 import urllib
 from collections import abc
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, Future
+from itertools import filterfalse, starmap
 from os import PathLike
 from pathlib import Path
-from time import sleep
 
 import pandas as pd
 import requests
-from more_itertools import divide
+from more_itertools import chunked_even
 from tqdm.auto import tqdm
 
 T = t.TypeVar('T')
@@ -79,14 +79,11 @@ def download_to_file(
     return fpath
 
 
-def fetch_iterable(
+def fetch_chunks(
         it: abc.Iterable[V],
-        fetcher: abc.Callable[[abc.Iterable[V]], T],
-        chunk_size: int = 100,
-        num_threads: t.Optional[int] = None,
-        verbose: bool = False,
-        sleep_sec: int = 5,
-) -> list[T]:
+        fetcher: abc.Callable[[list[V]], T],
+        chunk_size: int = 100, **kwargs
+) -> abc.Generator[tuple[list[V], T | Future]]:
     """
     A wrapper for fetching multiple links with :class:`ThreadPoolExecutor`.
 
@@ -96,38 +93,68 @@ def fetch_iterable(
     :param chunk_size: Split iterable into this many chunks for the executor.
     :param num_threads: The number of threads for :class:`ThreadPoolExecutor`.
     :param verbose: Display progress bar.
-    :param sleep_sec: In case the connection is closed, will trigger sleeping for
-        this many seconds before proceeding to retrieve the results.
     :return: A list of results
     """
-    unpacked = list(it)
-    num_chunks = max(1, len(unpacked) // chunk_size)
-    if num_chunks == 1:
+
+    chunks = chunked_even(it, chunk_size)
+
+    yield from fetch_iterable(chunks, fetcher, **kwargs)
+
+
+def fetch_iterable(
+        it: abc.Iterable[V],
+        fetcher: abc.Callable[[V], T],
+        num_threads: t.Optional[int] = None,
+        verbose: bool = False,
+        blocking: bool = True,
+        allow_failure: bool = True,
+) -> abc.Generator[tuple[V, T | Future]]:
+    """
+    :param it: Iterable over some objects accepted by the `fetcher`, e.g., links.
+    :param fetcher: A callable accepting a chunk of objects from `it`, fetching
+        and returning the result.
+    :param chunk_size: Split iterable into this many chunks for the executor.
+    :param num_threads: The number of threads for :class:`ThreadPoolExecutor`.
+    :param verbose: Display progress bar.
+    :param blocking: If ``True``, will wait for each result.
+        Otherwise, will return :class:`Future` objects instead of fetched data.
+    :param allow_failure: If ``True``, failure to fetch will raise a warning isntead of
+        an exception. Otherwise, the warning is logged, and the results won't contain
+        inputs that failed to fetch.
+    :return: A list of tuples where the first object is the input and the second object
+        is the fetched data.
+    """
+
+    def _try_get_result(inp, future=None):
         try:
-            return [fetcher(unpacked)]
+            return inp, fetcher(inp) if future is None else future.result()
         except Exception as e:
-            LOGGER.warning(f'Failed to fetch a single chunk due to error {e}')
-            return []
+            if not allow_failure:
+                raise (e)
+            LOGGER.warning(f'Failed to fetch input {inp} due to error {e}')
 
-    chunks = divide(num_chunks, unpacked)
-    results = []
-    with ThreadPoolExecutor(num_threads) as executor:
-        futures = as_completed([executor.submit(fetcher, c) for c in chunks])
+    if num_threads is None:
+        results = filterfalse(lambda x: x is None, map(_try_get_result, it))
         if verbose:
-            futures = tqdm(
-                futures, desc=f'Fetching {chunk_size}-sized chunks', total=num_chunks)
-        for i, future in enumerate(futures):
-            try:
-                results.append(future.result())
-            except Exception as e:
-                LOGGER.warning(f'Failed to fetch chunk {i} due to error {e}')
-                if 'closed' in str(e):
-                    LOGGER.warning(f'Closed connection: sleep for {sleep_sec} seconds')
-                    sleep(sleep_sec)
-    return results
+            results = tqdm(results, desc='Fetching')
+        yield from results
+    else:
+        with ThreadPoolExecutor(num_threads) as executor:
+            futures_map = {executor.submit(fetcher, x): x for x in it}
+            futures = as_completed(list(futures_map))
+
+            if verbose:
+                futures = tqdm(futures, desc=f'Fetching', total=len(futures_map))
+
+            results = ((futures_map[f], f) for f in futures)
+
+            if not blocking:
+                yield from results
+            else:
+                yield from filterfalse(lambda x: x is None, starmap(_try_get_result, results))
 
 
-def try_fetching_until(
+def fetch_max_trials(
         it: abc.Iterable[V],
         fetcher: abc.Callable[[abc.Iterable[V]], list[T]],
         get_remaining: abc.Callable[[list[T], list[V]], list[V]],
@@ -159,6 +186,7 @@ def try_fetching_until(
            if verbose else None)
     while remaining and trial <= max_trials:
         fetched = fetcher(remaining)
+
         if len(fetched):
             trials.append(fetched)
             remaining = get_remaining(fetched, remaining)

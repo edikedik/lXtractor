@@ -1,8 +1,9 @@
 import logging
+import operator as op
 import typing as t
 from urllib.parse import urlencode
 
-from lXtractor.util.io import download_text, fetch_iterable
+from lXtractor.util.io import download_text, fetch_chunks
 
 T = t.TypeVar('T')
 LOGGER = logging.getLogger(__name__)
@@ -360,7 +361,7 @@ LOGGER = logging.getLogger(__name__)
 def fetch_uniprot(
         acc: t.Iterable[str], fmt: str = 'fasta',
         chunk_size: int = 100, fields: t.Optional[str] = None,
-        num_threads: t.Optional[int] = None, verbose: bool = False
+        **kwargs
 ) -> str:
     """
     An interface for the UniProt's search.
@@ -369,13 +370,14 @@ def fetch_uniprot(
 
     Available DB identifiers: https://www.uniprot.org/help/api_idmapping
 
+    Will use :func:`fetch_chunks lXtractor.util.io.fetch_chunks` internally.
+
     :param acc: an iterable over valid UniProt accessions.
     :param fmt: download format (e.g., "fasta", "gff", "tab", ...).
     :param chunk_size: how many accessions to download in a chunk.
     :param fields: if the ``fmt`` is "tsv", must be provided
         to specify which data columns to fetch.
-    :param num_threads: a number of threads for the ``ThreadPoolExecutor``.
-    :param verbose: expose the progress bar.
+    :param kwargs: passed to :func:`fetch_chunks lXtractor.util.io.fetch_chunks`.
     :return: the 'utf-8' encoded results as a single chunk of text.
     """
 
@@ -390,9 +392,9 @@ def fetch_uniprot(
             params['fields'] = fields
         return download_text(url, params=urlencode(params).encode('utf-8'))
 
-    results = fetch_iterable(acc, fetch_chunk, chunk_size, num_threads=num_threads, verbose=verbose)
+    results = fetch_chunks(acc, fetch_chunk, chunk_size, **kwargs)
 
-    return "".join(results)
+    return "".join(map(op.itemgetter(1), results))
 
 
 if __name__ == '__main__':
