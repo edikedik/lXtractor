@@ -14,7 +14,7 @@ def test_fetch():
         assert len(fetched) == 2 and len(missed) == 0
 
         # Already fetched => skip
-        fetched, missed = pdb.fetch_structures(ids, Path(tmpdir), overwrite=False)
+        fetched, missed = pdb.fetch_structures(ids, pdb_dir=Path(tmpdir), overwrite=False)
         assert len(fetched) == len(missed) == 0
 
         # No dir => results are strings
@@ -34,17 +34,17 @@ def test_fetch():
 
 def test_get_info():
     pdb = PDB()
-    fetched, remaining = pdb.fetch_info(pdb.url_getters['entry'], [('2src',)])
+    fetched, remaining = pdb.fetch_info('entry', [('2src',)])
     assert len(remaining) == 0 and len(fetched) == 1
     args, results = fetched.pop()
     assert args == ('2src',)
     assert results['entry']['id'] == '2SRC'
 
-    fetched, remaining = pdb.fetch_info(pdb.url_getters['entry'], [('xxxx',)])
+    fetched, remaining = pdb.fetch_info('entry', [('xxxx',)])
     assert len(remaining) == 1 and len(fetched) == 0
 
     # Parallel
     pdb = PDB(num_threads=3)
     fetched, remaining = pdb.fetch_info(
-        pdb.url_getters['entry'], [('2src',), ('2oiq',), ('xxxx',)])
+        'entry', [('2src',), ('2oiq',), ('xxxx',)])
     assert len(remaining) == 1 and len(fetched) == 2
