@@ -3,7 +3,7 @@ import operator as op
 import typing as t
 from urllib.parse import urlencode
 
-from lXtractor.util.io import download_text, fetch_chunks
+from lXtractor.util.io import fetch_text, fetch_chunks
 
 T = t.TypeVar('T')
 LOGGER = logging.getLogger(__name__)
@@ -390,7 +390,7 @@ def fetch_uniprot(
         }
         if fmt == 'tsv' and fields is not None:
             params['fields'] = fields
-        return download_text(url, params=urlencode(params).encode('utf-8'))
+        return fetch_text(url, params=urlencode(params).encode('utf-8'))
 
     results = fetch_chunks(acc, fetch_chunk, chunk_size, **kwargs)
 

@@ -7,7 +7,7 @@ from more_itertools import peekable, unzip
 
 from lXtractor.core.base import UrlGetter
 from lXtractor.ext.base import ApiBase
-from lXtractor.util.io import fetch_max_trials, download_text, fetch_iterable, fetch_files
+from lXtractor.util.io import fetch_max_trials, fetch_text, fetch_iterable, fetch_files
 
 
 def url_getters() -> dict[str, UrlGetter]:

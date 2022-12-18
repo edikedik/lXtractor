@@ -27,7 +27,7 @@ LOGGER = logging.getLogger(__name__)
 
 # =================================== Fetching ========================================
 
-def download_text(
+def fetch_text(
         url: str, decode: bool = True, **kwargs
 ) -> t.Union[str, bytes]:
     """
@@ -49,7 +49,7 @@ def download_text(
             f'{r.status_code} and output {r.text}')
 
 
-def download_to_file(
+def fetch_to_file(
         url: str, fpath: t.Optional[Path] = None,
         fname: t.Optional[str] = None,
         root_dir: t.Optional[Path] = None,
@@ -77,7 +77,7 @@ def download_to_file(
     if not text or url.startswith('ftp'):
         urllib.request.urlretrieve(url, fpath, **kwargs)
     else:
-        text = download_text(url, decode=True, **kwargs)
+        text = fetch_text(url, decode=True, **kwargs)
         with fpath.open('w') as f:
             print(text, file=f)
     return fpath
@@ -235,14 +235,14 @@ def fetch_files(
     """
 
     def fetch_one(args: _U) -> _F | T:
-        # print(url_getter, url_getter(args))
         url = url_getter(args) if isinstance(args, str) else url_getter(*args)
         if dir_ is None:
-            content = download_text(url)
+            content = fetch_text(url)
             if callback:
                 content = callback(content)
             return content
-        return download_to_file(url, root_dir=dir_, fname=args[fname_idx])
+        fname_base = args if isinstance(args, str) else args[fname_idx]
+        return fetch_to_file(url, fname=f'{fname_base}.{fmt}', root_dir=dir_)
 
     def fetcher(chunk: abc.Iterable[_U]) -> list[tuple[_U, _F | T]]:
         chunk = peekable(chunk)

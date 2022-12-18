@@ -25,7 +25,7 @@ from lXtractor.core.base import AbstractResource
 from lXtractor.core.exceptions import MissingData
 from lXtractor.core.segment import Segment, map_segment_numbering
 from lXtractor.ext import resources as local
-from lXtractor.util.io import download_to_file
+from lXtractor.util.io import fetch_to_file
 from lXtractor.util.misc import col2col
 
 LOGGER = logging.getLogger(__name__)
@@ -316,7 +316,7 @@ class SIFTS(AbstractResource):
 
         LOGGER.info(f'Fetching SIFTS to {raw_path}')
 
-        download_to_file(SIFTS_FTP, raw_path)
+        fetch_to_file(SIFTS_FTP, raw_path)
 
         LOGGER.info(f'Downloaded sifts to {raw_path}')
 
