@@ -1,4 +1,5 @@
 import inspect
+import json
 import typing as t
 from collections import abc
 from itertools import chain
@@ -9,6 +10,10 @@ from more_itertools import peekable, unzip
 from lXtractor.core.base import UrlGetter
 from lXtractor.core.chain import CT
 from lXtractor.util.io import fetch_max_trials, download_text, download_to_file, fetch_iterable
+
+
+_U = t.TypeVar('_U', str, tuple[str, ...])
+_F = t.TypeVar('_F', str, Path, dict)
 
 
 @t.runtime_checkable
@@ -64,14 +69,17 @@ class ApiBase:
 
 def fetch_files(
         url_getter: UrlGetter,
-        filenames: abc.Iterable[str], fmt: str, dir_: Path | None, *,
+        url_getter_args: abc.Iterable[_U], fmt: str, dir_: Path | None, *,
         overwrite: bool = False, max_trials: int = 1, num_threads: int | None = None,
         verbose: bool = False,
-) -> tuple[list[tuple[str, Path | str]], list[str]]:
+) -> tuple[list[tuple[_U, _F]], list[_U]]:
     """
-    :param url_getter: A callable accepting strings and returning a valid url to fetch.
-    :param filenames: An iterable over file names without the extension (fmt).
-    :param dir_: Dir to save files to. If ``None``, will keep downloaded structures as strings.
+    :param url_getter: A callable accepting two or more strings and returning a valid url to fetch.
+        The last argument is reserved for `fmt`.
+    :param url_getter_args: An iterable over strings or tuple of strings supplied to the `url_getter`
+        without the extension (fmt).
+    :param dir_: Dir to save files to. If ``None``, will return either raw string or json-derived dictionary
+        if the `fmt` is "json".
     :param fmt: File format. It is used construct a full file name "{id}.{fmt}".
     :param overwrite: Overwrite existing files if `dir_` is provided.
     :param max_trials: Max number of fetching attempts for a given id.
@@ -84,13 +92,16 @@ def fetch_files(
         The latter is a list of names that failed to fetch.
     """
 
-    def fetch_one(_id):
-        url = url_getter(_id, fmt)
+    def fetch_one(args):
+        url = url_getter(args) if isinstance(args, str) else url_getter(*args)
         if dir_ is None:
-            return download_text(url)
+            content = download_text(url)
+            if fmt == 'json':
+                content = json.loads(content)
+            return content
         return download_to_file(url, root_dir=dir_)
 
-    def fetcher(chunk: abc.Iterable[str]) -> list[tuple[str, Path | str]]:
+    def fetcher(chunk: abc.Iterable[_U]) -> list[tuple[_U, _F]]:
         chunk = peekable(chunk)
         if not chunk.peek(False):
             return []
@@ -99,28 +110,28 @@ def fetch_files(
         ))
 
     def get_remaining(
-            fetched: abc.Iterable[tuple[str, Path | str]], _remaining: list[str]
-    ) -> list[str]:
-        urls, _ = unzip(fetched)
-        fetched_ids = {x.split('/')[-1].split('.')[0] for x in urls}
-        return list(set(_remaining) - fetched_ids)
+            fetched: abc.Iterable[tuple[_U, _F]],
+            _remaining: list[_U]
+    ) -> list[_U]:
+        args, _ = unzip(fetched)
+        return list(set(_remaining) - set(args))
 
-    if not isinstance(filenames, list):
-        filenames = list(filenames)
+    if not isinstance(url_getter_args, list):
+        url_getter_args = list(url_getter_args)
 
     if dir_ is not None:
         dir_.mkdir(parents=True, exist_ok=True)
 
         if not overwrite:
             existing_names = {x.name for x in dir_.glob(f'*{fmt}')}
-            current_names = {f'{x}.{fmt}' for x in filenames}
-            filenames = [x.split('.')[0] for x in current_names - existing_names]
+            current_names = {f'{x}.{fmt}' for x in url_getter_args}
+            url_getter_args = [x.split('.')[0] for x in current_names - existing_names]
 
-    if not filenames:
+    if not url_getter_args:
         return [], []
 
     results, remaining = fetch_max_trials(
-        filenames, fetcher=fetcher, get_remaining=get_remaining,
+        url_getter_args, fetcher=fetcher, get_remaining=get_remaining,
         max_trials=max_trials, verbose=verbose)
 
     results = list(chain.from_iterable(results))

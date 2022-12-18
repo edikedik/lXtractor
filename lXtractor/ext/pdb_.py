@@ -51,7 +51,7 @@ class PDB(ApiBase):
     Fetch structure files from RCSB PDB.
 
     >>> pdb = PDB()
-    >>> fetched, failed = pdb.fetch_structures(['2src', '2oiq'])
+    >>> fetched, failed = pdb.fetch_structures(['2src', '2oiq'],)
     >>> len(fetched) == 2 and len(failed) == 0
     True
     >>> (id1, res1), (id2, res2) = fetched
@@ -66,14 +66,14 @@ class PDB(ApiBase):
         super().__init__(url_getters(), max_trials, num_threads, verbose)
 
     def fetch_structures(
-            self, ids: abc.Iterable[str], fmt: str = 'cif',
-            pdb_dir: Path | None = None, *, overwrite: bool = False,
+            self, ids: abc.Iterable[str], dir_: Path | None, fmt: str = 'cif',
+            *, overwrite: bool = False,
     ) -> tuple[list[tuple[str, Path | str]], list[str]]:
         """
         Fetch structure files from RCSB PDB.
 
         >>> pdb = PDB()
-        >>> fetched, failed = pdb.fetch_structures(['2src', '2oiq'])
+        >>> fetched, failed = pdb.fetch_structures(['2src', '2oiq'],)
         >>> len(fetched) == 2 and len(failed) == 0
         True
         >>> (id1, res1), (id2, res2) = fetched
@@ -85,28 +85,27 @@ class PDB(ApiBase):
             :func:`fetch_files lXtractor.ext.base.fetch_files`.
 
         :param ids: An iterable over PDB IDs.
-        :param pdb_dir: Dir to save files to. If ``None``, will keep downloaded structures as strings.
+        :param dir_: Dir to save files to. If ``None``, will keep downloaded files as strings.
         :param fmt: Structure format.
-        :param overwrite: Overwrite existing files if `pdb_dir` is provided.
+        :param overwrite: Overwrite existing files if `dir_` is provided.
         :return: A tuple with fetched results and the remaining IDs. The former is a list of tuples,
             where the first element is the original ID, and the second element is either the path to
             a downloaded file or downloaded data as string. The order may differ.
             The latter is a list of IDs that failed to fetch.
         """
         return fetch_files(
-            self.url_getters['files'], ids, fmt, pdb_dir,
-            overwrite=overwrite, max_trials=self.max_trials,
-            num_threads=self.num_threads, verbose=self.verbose
+            self.url_getters['files'], ids, fmt, dir_, overwrite=overwrite,
+            max_trials=self.max_trials, num_threads=self.num_threads, verbose=self.verbose
         )
 
     def fetch_info(
-            self, service_name: str,
-            url_args: abc.Iterable[tuple[str, ...]]
+            self, service_name: str, url_args: abc.Iterable[tuple[str, ...]], dir_: Path | None,
+            *, overwrite: bool = False,
     ) -> tuple[list[tuple[tuple[str, ...], dict]], list[tuple[str, ...]]]:
         """
 
         >>> pdb = PDB()
-        >>> fetched, failed = pdb.fetch_info('entry',[('2SRC', ), ('2OIQ', )])
+        >>> fetched, failed = pdb.fetch_info('entry', [('2SRC', ), ('2OIQ', )])
         >>> len(failed) == 0 and len(fetched) == 2
         True
         >>> (args1, res1), (args2, res2) = fetched
@@ -114,42 +113,18 @@ class PDB(ApiBase):
         >>> assert isinstance(res1, dict) and isinstance(res2, dict)
 
         :param service_name: The name of the service to use. Check :meth:`url_args`.
+        :param dir_: Dir to save files to. If ``None``, will keep downloaded files as strings.
         :param url_args: Arguments to a `url_getter`. Check :meth:`url_args` to see which getters
             require which arguments.
+        :param overwrite: Overwrite existing files if `dir_` is provided.
         :return: A tuple with fetched and remaining inputs. Fetched inputs are tuples, where the
             first element is the original arguments and the second argument is the dictionary
             with downloaded data. Remaining inputs are arguments that failed to fetch.
         """
-
-        def fetch_one(args: tuple[str, ...]) -> dict:
-            return json.loads(download_text(url_getter(*args)))
-
-        def fetcher(chunk: abc.Iterable[tuple[str, ...]]) -> list[tuple[tuple[str, ...], dict]]:
-            chunk = peekable(chunk)
-            if not chunk.peek(False):
-                return []
-
-            return list(fetch_iterable(
-                chunk, fetcher=fetch_one, num_threads=self.num_threads, verbose=self.verbose)
-            )
-
-        def get_remaining(
-                fetched: abc.Iterable[tuple[tuple[str, ...], dict]],
-                _remaining: list[tuple[str, ...]]
-        ) -> list[tuple[str, ...]]:
-            args, _ = unzip(fetched)
-            return list(set(_remaining) - set(args))
-
-        url_getter = self.url_getters[service_name]
-
-        results, remaining = fetch_max_trials(
-            url_args, fetcher=fetcher, get_remaining=get_remaining,
-            max_trials=self.max_trials, verbose=self.verbose
+        return fetch_files(
+            self.url_getters[service_name], url_args, 'json', dir_, overwrite=overwrite,
+            max_trials=self.max_trials, num_threads=self.num_threads, verbose=self.verbose
         )
-
-        results = list(chain.from_iterable(results))
-
-        return results, remaining
 
 
 if __name__ == '__main__':
