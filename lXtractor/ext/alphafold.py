@@ -1,16 +1,17 @@
+import json
+import typing as t
 from collections import abc
 from itertools import repeat
 from pathlib import Path
 
 from lXtractor.core.base import UrlGetter
-from lXtractor.ext.base import ApiBase, fetch_files
+from lXtractor.ext.base import ApiBase
+from lXtractor.util.io import fetch_files
+
+T = t.TypeVar('T')
 
 
 def url_getters() -> dict[str, UrlGetter]:
-    def _url_getter_factory(name, v='v3'):
-        fn = f'lambda _id, fmt: f"{base}/AF-{{_id}}-F1-{name}_{v}.{{fmt}}"'
-        return eval(fn)
-
     base = 'https://alphafold.ebi.ac.uk/files'
     v = 'v3'
 
@@ -27,20 +28,58 @@ class AlphaFold(ApiBase):
         super().__init__(url_getters(), max_trials, num_threads, verbose)
 
     def fetch_structures(
-            self, ids: abc.Iterable[str], fmt: str = 'cif',
-            dir_: Path | None = None, *, overwrite: bool = False
-    ):
+            self, ids: abc.Iterable[str], fmt: str = 'cif', dir_: Path | None = None, *,
+            callback: abc.Callable[[str], T] | None = None, overwrite: bool = False
+    ) -> tuple[list[tuple[tuple[str, str], str | Path | T]], list[tuple[str, str]]]:
+        """
+        Fetch structures from the AlphaFold2 database.
+
+        .. seealso::
+            :func:`fetch_files <lXtractor.util.io.fetch_files>`
+
+        >>> AF = AlphaFold()
+        >>> fetched, failed = AF.fetch_structures(['P12931'], dir_=None)
+        >>> len(fetched) == 1 and len(failed) == 0
+        True
+        >>> (args, text) = fetched.pop()
+        >>> args
+        ('P12931', 'cif')
+        >>> isinstance(text, str)
+        True
+
+        :param ids: (UniProt) IDs to fetch.
+        :param fmt: Format of the structure.
+        :param dir_: Dir to save files to. If provided, the returned value is a Path to fetched file.
+            Otherwise, won't save anywhere, and the returned fetched value is either a string or
+            anything returned by `callback`.
+        :param callback: A wrapper to imideately parse the fetched text.
+        :param overwrite: Overwrite existing files if `dir_` is provided.
+        :return: A tuple with two lists: (1) fetched data and (2) arguments that failed to fetch.
+        """
         return fetch_files(
             self.url_getters['model'], zip(ids, repeat(fmt)), fmt, dir_,
-            overwrite=overwrite, max_trials=self.max_trials,
+            callback=callback, overwrite=overwrite, max_trials=self.max_trials,
             num_threads=self.num_threads, verbose=self.verbose
         )
 
     def fetch_pae(
             self, ids: abc.Iterable[str], dir_: Path | None = None, *, overwrite: bool = False
-    ):
+    ) -> tuple[list[tuple[str, dict]], list[str]]:
+        """
+
+        .. seealso::
+            :func:`fetch_files <lXtractor.util.io.fetch_files>`
+
+        :param ids: (UniProt) IDs to fetch.
+        :param dir_: Dir to save files to. If provided, the returned value is a Path to fetched file.
+            Otherwise, won't save anywhere, and the returned fetched value is either a string or
+            anything returned by `callback`.
+        :param overwrite: Overwrite existing files if `dir_` is provided.
+        :return: A tuple with two lists: (1) fetched data and (2) arguments that failed to fetch.
+        """
         return fetch_files(
-            self.url_getters['predicted_aligned_error'], ids, 'json', dir_, overwrite=overwrite,
+            self.url_getters['predicted_aligned_error'], ids, 'json', dir_,
+            overwrite=overwrite, callback=json.loads,
             max_trials=self.max_trials, num_threads=self.num_threads, verbose=self.verbose
         )
 

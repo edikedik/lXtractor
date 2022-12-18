@@ -7,17 +7,21 @@ import typing as t
 import urllib
 from collections import abc
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
-from itertools import filterfalse, starmap
+from itertools import filterfalse, starmap, chain
 from os import PathLike
 from pathlib import Path
 
 import pandas as pd
 import requests
-from more_itertools import chunked_even
+from more_itertools import chunked_even, peekable, unzip
 from tqdm.auto import tqdm
+
+from lXtractor.core.base import UrlGetter
 
 T = t.TypeVar('T')
 V = t.TypeVar('V')
+_U = t.TypeVar('_U', str, tuple[str, ...])
+_F = t.TypeVar('_F', str, Path)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -91,8 +95,7 @@ def fetch_chunks(
     :param fetcher: A callable accepting a chunk of objects from `it`, fetching
         and returning the result.
     :param chunk_size: Split iterable into this many chunks for the executor.
-    :param num_threads: The number of threads for :class:`ThreadPoolExecutor`.
-    :param verbose: Display progress bar.
+    :param kwargs: Passed to :func:`fetch_iterable`.
     :return: A list of results
     """
 
@@ -113,9 +116,8 @@ def fetch_iterable(
     :param it: Iterable over some objects accepted by the `fetcher`, e.g., links.
     :param fetcher: A callable accepting a chunk of objects from `it`, fetching
         and returning the result.
-    :param chunk_size: Split iterable into this many chunks for the executor.
     :param num_threads: The number of threads for :class:`ThreadPoolExecutor`.
-    :param verbose: Display progress bar.
+    :param verbose: Enable progress bar and warnings/exceptions on fetching failures.
     :param blocking: If ``True``, will wait for each result.
         Otherwise, will return :class:`Future` objects instead of fetched data.
     :param allow_failure: If ``True``, failure to fetch will raise a warning isntead of
@@ -130,8 +132,10 @@ def fetch_iterable(
             return inp, fetcher(inp) if future is None else future.result()
         except Exception as e:
             if not allow_failure:
-                raise (e)
-            LOGGER.warning(f'Failed to fetch input {inp} due to error {e}')
+                raise e
+            if verbose:
+                LOGGER.warning(f'Failed to fetch input {inp} due to error {e}')
+                LOGGER.exception(e)
 
     if num_threads is None:
         results = filterfalse(lambda x: x is None, map(_try_get_result, it))
@@ -198,6 +202,91 @@ def fetch_max_trials(
     if bar is not None:
         bar.close()
     return trials, remaining
+
+
+def fetch_files(
+        url_getter: UrlGetter,
+        url_getter_args: abc.Iterable[_U], fmt: str, dir_: Path | None, *,
+        fname_idx: int = 0, callback: abc.Callable[[str], T] | None = None,
+        overwrite: bool = False, max_trials: int = 1, num_threads: int | None = None,
+        verbose: bool = False,
+) -> tuple[list[tuple[_U, _F | T]], list[_U]]:
+    """
+    :param url_getter: A callable accepting two or more strings and returning a valid url to fetch.
+        The last argument is reserved for `fmt`.
+    :param url_getter_args: An iterable over strings or tuple of strings supplied to the `url_getter`.
+        Each element must be sufficient for the `url_getter` to return a valid URL.
+    :param dir_: Dir to save files to. If ``None``, will return either raw string or json-derived dictionary
+        if the `fmt` is "json".
+    :param fmt: File format. It is used construct a full file name "{filename}.{fmt}".
+    :param fname_idx: If an element in `url_getter_args` is a tuple, this argument is used to index this
+        tuple to construct a file name that is used to save file / check if such file exists.
+    :param callback: A callable to parse the text right after fetching, e.g., ``json.loads``. It's only
+        used if the `dir_` is ``None``.
+    :param overwrite: Overwrite existing files if `dir_` is provided.
+    :param max_trials: Max number of fetching attempts for a given id.
+    :param num_threads: The number of threads to use for parallel requests. If ``None``,
+        will send requests sequentially.
+    :param verbose: Display progress bar.
+    :return: A tuple with fetched results and the remaining file names. The former is a list of tuples,
+        where the first element is the original name, and the second element is either the path to
+        a downloaded file or downloaded data as string. The order may differ.
+        The latter is a list of names that failed to fetch.
+    """
+
+    def fetch_one(args: _U) -> _F | T:
+        # print(url_getter, url_getter(args))
+        url = url_getter(args) if isinstance(args, str) else url_getter(*args)
+        if dir_ is None:
+            content = download_text(url)
+            if callback:
+                content = callback(content)
+            return content
+        return download_to_file(url, root_dir=dir_, fname=args[fname_idx])
+
+    def fetcher(chunk: abc.Iterable[_U]) -> list[tuple[_U, _F | T]]:
+        chunk = peekable(chunk)
+        if not chunk.peek(False):
+            return []
+        return list(fetch_iterable(
+            chunk, fetcher=fetch_one, num_threads=num_threads, verbose=verbose,
+        ))
+
+    def get_remaining(
+            fetched: abc.Iterable[tuple[_U, _F | T]],
+            _remaining: list[_U]
+    ) -> list[_U]:
+        args, _ = unzip(fetched)
+        return list(set(_remaining) - set(args))
+
+    def filter_existing(args):
+        def exists(arg):
+            if isinstance(arg, str):
+                return f'{arg}.{fmt}' in existing_names
+            return f'{arg[fname_idx]}.{fmt}' in existing_names
+
+        existing_names = {x.name for x in dir_.glob(f'*.{fmt}')}
+        return list(filterfalse(exists, args))
+
+    if not isinstance(url_getter_args, list):
+        url_getter_args = list(url_getter_args)
+
+    if dir_ is not None:
+        dir_.mkdir(parents=True, exist_ok=True)
+
+        if not overwrite:
+            url_getter_args = filter_existing(url_getter_args)
+
+    if not url_getter_args:
+        return [], []
+
+    results, remaining = fetch_max_trials(
+        url_getter_args, fetcher=fetcher, get_remaining=get_remaining,
+        max_trials=max_trials, verbose=verbose)
+
+    results = list(chain.from_iterable(results))
+
+    return results, remaining
 
 
 # =================================== Logging ========================================

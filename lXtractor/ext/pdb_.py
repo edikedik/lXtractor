@@ -1,13 +1,13 @@
 import json
 from collections import abc
-from itertools import chain
+from itertools import chain, repeat
 from pathlib import Path
 
 from more_itertools import peekable, unzip
 
 from lXtractor.core.base import UrlGetter
-from lXtractor.ext.base import ApiBase, fetch_files
-from lXtractor.util.io import fetch_max_trials, download_text, fetch_iterable
+from lXtractor.ext.base import ApiBase
+from lXtractor.util.io import fetch_max_trials, download_text, fetch_iterable, fetch_files
 
 
 def url_getters() -> dict[str, UrlGetter]:
@@ -68,16 +68,16 @@ class PDB(ApiBase):
     def fetch_structures(
             self, ids: abc.Iterable[str], dir_: Path | None, fmt: str = 'cif',
             *, overwrite: bool = False,
-    ) -> tuple[list[tuple[str, Path | str]], list[str]]:
+    ) -> tuple[list[tuple[tuple[str, str], Path | str]], list[tuple[str, str]]]:
         """
-        Fetch structure files from RCSB PDB.
+        Fetch structure files from RCSB PDB as text.
 
         >>> pdb = PDB()
-        >>> fetched, failed = pdb.fetch_structures(['2src', '2oiq'],)
+        >>> fetched, failed = pdb.fetch_structures(['2src', '2oiq'], dir_=None)
         >>> len(fetched) == 2 and len(failed) == 0
         True
-        >>> (id1, res1), (id2, res2) = fetched
-        >>> assert {id1, id2} == {'2src', '2oiq'}
+        >>> (args1, res1), (args2, res2) = fetched
+        >>> assert {args1, args2} == {('2src', 'cif'), ('2oiq', 'cif')}
         >>> isinstance(res1, str) and isinstance(res2, str)
         True
 
@@ -94,7 +94,7 @@ class PDB(ApiBase):
             The latter is a list of IDs that failed to fetch.
         """
         return fetch_files(
-            self.url_getters['files'], ids, fmt, dir_, overwrite=overwrite,
+            self.url_getters['files'], zip(ids, repeat(fmt)), fmt, dir_, overwrite=overwrite,
             max_trials=self.max_trials, num_threads=self.num_threads, verbose=self.verbose
         )
 
@@ -105,7 +105,7 @@ class PDB(ApiBase):
         """
 
         >>> pdb = PDB()
-        >>> fetched, failed = pdb.fetch_info('entry', [('2SRC', ), ('2OIQ', )])
+        >>> fetched, failed = pdb.fetch_info('entry', [('2SRC', ), ('2OIQ', )], dir_=None)
         >>> len(failed) == 0 and len(fetched) == 2
         True
         >>> (args1, res1), (args2, res2) = fetched
@@ -122,7 +122,8 @@ class PDB(ApiBase):
             with downloaded data. Remaining inputs are arguments that failed to fetch.
         """
         return fetch_files(
-            self.url_getters[service_name], url_args, 'json', dir_, overwrite=overwrite,
+            self.url_getters[service_name], url_args, 'json', dir_,
+            callback=json.loads, overwrite=overwrite,
             max_trials=self.max_trials, num_threads=self.num_threads, verbose=self.verbose
         )
 

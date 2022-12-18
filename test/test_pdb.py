@@ -10,7 +10,8 @@ def test_fetch():
         ids = ['2oiq', '3i6x']
 
         # Not fetched => save to dir
-        fetched, missed = pdb.fetch_structures(ids, dir_=Path(tmpdir), fmt='cif')
+        fetched, missed = pdb.fetch_structures(ids, dir_=Path(tmpdir))
+
         assert len(fetched) == 2 and len(missed) == 0
 
         # Already fetched => skip
@@ -21,10 +22,10 @@ def test_fetch():
         ids.append('xxxx')
         fetched, missed = pdb.fetch_structures(ids, dir_=None)
         assert len(missed) == 1 and len(fetched) == 2
-        (id1, res1), (id2, res2) = fetched
-        assert {id1, id2} == {'2oiq', '3i6x'}
+        (args1, res1), (args2, res2) = fetched
+        assert {args1, args2} == {('2oiq', 'cif'), ('3i6x', 'cif')}
         assert isinstance(res1, str) and isinstance(res2, str)
-        assert missed.pop() == 'xxxx'
+        assert missed.pop() == ('xxxx', 'cif')
 
         # Fetch in parallel
         pdb = PDB(num_threads=3)
