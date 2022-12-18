@@ -25,8 +25,7 @@ jobs:
         with:
           path: ~/conda_pkgs_dir
           key:
-            ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{
-            hashFiles('environment.yml') }}
+            ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ hashFiles('environment.yml') }}
       - uses: conda-incubator/setup-miniconda@v2
         with:
           auto-update-conda: true
@@ -47,9 +46,8 @@ jobs:
         with:
           path: ${{ env.CONDA }}/envs
           key:
-            conda-${{ runner.os }}--${{ runner.arch }}--${{ hashFiles('environment.yml') }}-${{ env.CACHE_NUMBER }}
+            conda-${{ runner.os }}-${{ hashFiles('environment.yml') }}-${{ env.CACHE_NUMBER }}
         env:
           # Increase this value to reset cache if etc/example-environment.yml has not changed
           CACHE_NUMBER: 0
         id: cache
-    #      - uses: actions/checkout@v3
