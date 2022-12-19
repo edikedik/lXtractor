@@ -17,16 +17,16 @@ jobs:
         shell: bash -l {0}
     steps:
       - uses: actions/checkout@v3
-      - name: Cache conda
+      - name: Cache env file
         uses: actions/cache@v2
         env:
           # Increase this value to reset cache if etc/example-environment.yml has not changed
           CACHE_NUMBER: 0
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           path: ~/conda_pkgs_dir
           key:
             ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ hashFiles('environment.yml') }}
+      - name: Setup env
       - uses: conda-incubator/setup-miniconda@v2
         with:
           auto-update-conda: true
@@ -37,13 +37,19 @@ jobs:
           activate-environment: lXt-dev
           environment-file: environment.yml
           use-only-tar-bz2: true # IMPORTANT: This needs to be set for caching to work properly!
+      - name: Install test packages
+        run: |
+          mamba install -c conda-forge -y pytest pytest-cov
       - name: Run tests
         run: >
           pytest
           --ignore=test/test_variables.py
           --ignore=test/test_manager.py
           --cov=lXtractor --cov-branch --cov-report term-missing
-          
+      - name: Publish cov
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
           coveralls --service=github
       - name: Cache conda env
         uses: actions/cache@v2

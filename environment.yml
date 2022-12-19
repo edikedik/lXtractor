@@ -17,7 +17,7 @@ dependencies:
   - pandas >= 1.5
   - pyhmmer >= 0.6.3
   - python >= 3.10
-  - pytest >= 7.1.2
+#  - pytest >= 7.1.2
   - requests >= 2.28
 #  - sphinx >= 5.1.1
 #  - sphinx-material >= 0.0.35
