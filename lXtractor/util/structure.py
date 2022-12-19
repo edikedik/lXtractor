@@ -1,3 +1,6 @@
+"""
+Low-level utilities to work with structures.
+"""
 from __future__ import annotations
 
 import logging
@@ -22,8 +25,7 @@ _BASIC_COMPARISON_ATOMS = {'N', 'CA', 'C', 'CB'}
 
 
 def calculate_dihedral(
-        atom1: np.ndarray, atom2: np.ndarray,
-        atom3: np.ndarray, atom4: np.ndarray
+    atom1: np.ndarray, atom2: np.ndarray, atom3: np.ndarray, atom4: np.ndarray
 ) -> float:
     """
     Calculate angle between planes formed by
@@ -32,12 +34,13 @@ def calculate_dihedral(
     Each atom is an array of shape (3, ) with XYZ coordinates.
 
     Calculation method inspired by
-    https://math.stackexchange.com/questions/47059/how-do-i-calculate-a-dihedral-angle-given-cartesian-coordinates
+    https://math.stackexchange.com/questions/47059/how-do-i-calculate-a-
+    dihedral-angle-given-cartesian-coordinates
     """
 
     v1, v2, v3 = map(
-        lambda v: v / np.linalg.norm(v),
-        [atom2 - atom1, atom3 - atom2, atom4 - atom3])
+        lambda v: v / np.linalg.norm(v), [atom2 - atom1, atom3 - atom2, atom4 - atom3]
+    )
 
     n1 = np.cross(v1, v2)
     n2 = np.cross(v2, v3)
@@ -48,16 +51,18 @@ def calculate_dihedral(
 
 
 def filter_selection(
-        array: bst.AtomArray, res_id: abc.Sequence[int] | None,
-        atom_names: abc.Sequence[abc.Sequence[str]] | abc.Sequence[str] | None = None
+    array: bst.AtomArray,
+    res_id: abc.Sequence[int] | None,
+    atom_names: abc.Sequence[abc.Sequence[str]] | abc.Sequence[str] | None = None,
 ) -> np.ndarray:
     """
     Filter :class:`AtomArray` by residue numbers and atom names.
 
     :param array: Arbitrary structure.
     :param res_id: A sequence of residue numbers.
-    :param atom_names: A sequence of atom names (broadcasted to each position in `res_id`)
-        or an iterable over such sequences for each position in `res_id`.
+    :param atom_names: A sequence of atom names (broadcasted to each position
+        in `res_id`) or an iterable over such sequences for each position in
+        `res_id`.
     :return: A binary mask that is ``True`` for filtered atoms.
     """
 
@@ -65,7 +70,9 @@ def filter_selection(
         res_id, _ = bst.get_residues(array)
 
     if atom_names is None or isinstance(atom_names[0], str):
-        atom_names = repeat(atom_names, len(res_id))
+        atom_names: abc.Iterator[abc.Sequence[str] | None] = repeat(
+            atom_names, len(res_id)
+        )
 
     mask = np.zeros_like(array, bool)
 
@@ -78,19 +85,20 @@ def filter_selection(
 
 
 def filter_to_common_atoms(
-        a1: bst.AtomArray, a2: bst.AtomArray,
-        allow_residue_mismatch: bool = False
+    a1: bst.AtomArray, a2: bst.AtomArray, allow_residue_mismatch: bool = False
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Filter to atoms common between residues of atom arrays a1 and a2.
 
     :param a1: Arbitrary atom array.
     :param a2: Arbitrary atom array.
-    :param allow_residue_mismatch: If ``True``, when residue names mismatch, the common atoms
-        are derived from the intersection ``a1.atoms & a2.atoms & {"C", "N", "CA", "CB"}``.
+    :param allow_residue_mismatch: If ``True``, when residue names mismatch,
+        the common atoms are derived from the intersection
+        ``a1.atoms & a2.atoms & {"C", "N", "CA", "CB"}``.
     :return: A pair of masks for a1 and a2, ``True`` for matching atoms.
     :raises ValueError: (1) If `a1` and `a2` have different number of residues.
-        (2) If the selection for some residue produces different number of atoms.
+        (2) If the selection for some residue produces different number
+        of atoms.
 
     """
 
@@ -99,15 +107,18 @@ def filter_to_common_atoms(
         r_it = bst.residue_iter(a)
         return num_res, r_it
 
-    def process_pair(r1: bst.AtomArray, r2: bst.AtomArray) -> tuple[np.ndarray, np.ndarray]:
+    def process_pair(
+        r1: bst.AtomArray, r2: bst.AtomArray
+    ) -> tuple[np.ndarray, np.ndarray]:
         r1_name, r2_name = r1.res_name[0], r2.res_name[0]
         atom_names = set(r1.atom_name) & set(r2.atom_name)
 
         if r1_name != r2_name:
             if not allow_residue_mismatch:
                 raise ValueError(
-                    f'Residue names must match. Got {r1_name} from the first array and {r2_name} '
-                    f'from the second one. Use `allow_residue_mismatch` to allow name mismatches.'
+                    f'Residue names must match. Got {r1_name} from the first array '
+                    f'and {r2_name} from the second one. Use `allow_residue_mismatch` '
+                    'to allow name mismatches.'
                 )
             atom_names &= _BASIC_COMPARISON_ATOMS
 
@@ -130,7 +141,7 @@ def filter_to_common_atoms(
 
     mask1, mask2 = map(
         lambda x: np.concatenate(list(x)),
-        unzip(starmap(process_pair, zip(a1_it, a2_it, strict=True)))
+        unzip(starmap(process_pair, zip(a1_it, a2_it, strict=True))),
     )
 
     return mask1, mask2
@@ -159,16 +170,19 @@ def _exclude(a, names, elements):
 
 
 def get_missing_atoms(
-        a: bst.AtomArray,
-        excluding_names: abc.Sequence[str] | None = ('OXT',),
-        excluding_elements: abc.Sequence[str] | None = ('H',)
+    a: bst.AtomArray,
+    excluding_names: abc.Sequence[str] | None = ('OXT',),
+    excluding_elements: abc.Sequence[str] | None = ('H',),
 ) -> abc.Generator[list[str | None]]:
     """
-    For each residue, compare with the one stored in CCD, and find missing atoms.
+    For each residue, compare with the one stored in CCD, and find missing
+    atoms.
 
     :param a: Non-empty atom array.
-    :param excluding_names: A sequence of atom names to exclude for calculation.
-    :param excluding_elements: A sequence of element names to exclude for calculation.
+    :param excluding_names: A sequence of atom names to exclude
+        for calculation.
+    :param excluding_elements: A sequence of element names to exclude
+        for calculation.
     :return: A generator of lists of missing atoms (excluding hydrogens)
         per residue in `a` or ``None`` if not such residue was found in CCD.
     """
@@ -184,18 +198,21 @@ def get_missing_atoms(
 
 
 def get_observed_atoms_frac(
-        a: bst.AtomArray,
-        excluding_names: abc.Sequence[str] | None = ('OXT',),
-        excluding_elements: abc.Sequence[str] | None = ('H',)
+    a: bst.AtomArray,
+    excluding_names: abc.Sequence[str] | None = ('OXT',),
+    excluding_elements: abc.Sequence[str] | None = ('H',),
 ) -> abc.Generator[list[str | None]]:
     """
-    Find fractions of observed atoms compared to canonical residue versions stored in CCD.
+    Find fractions of observed atoms compared to canonical residue versions
+    stored in CCD.
 
     :param a: Non-empty atom array.
-    :param excluding_names: A sequence of atom names to exclude for calculation.
-    :param excluding_elements: A sequence of element names to exclude for calculation.
-    :return: A generator of observed atom fractions per residue in `a` or ``None``
-        if a residue was not found in CCD.
+    :param excluding_names: A sequence of atom names to exclude
+        for calculation.
+    :param excluding_elements: A sequence of element names to exclude
+        for calculation.
+    :return: A generator of observed atom fractions per residue in
+        `a` or ``None`` if a residue was not found in CCD.
     """
     if len(a) == 0:
         raise MissingData('Array is empty')

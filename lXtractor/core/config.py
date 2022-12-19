@@ -1,15 +1,16 @@
 from collections import namedtuple
 from dataclasses import dataclass
 
-Separators = namedtuple('Separators', ['list', 'chain', 'dom', 'uni_pdb', 'str', 'start_end'])
+Separators = namedtuple(
+    'Separators', ['list', 'chain', 'dom', 'uni_pdb', 'str', 'start_end']
+)
 Sep = Separators(',', ':', '::', '_', '--', '|')
 
 
 @dataclass
 class _DumpNames:
     """
-    Dataclass encapsulating names of files
-    used for dumping data.
+    Dataclass encapsulating names of files used for dumping data.
     """
 
     sequence: str = 'sequence.tsv'
@@ -28,6 +29,7 @@ class _SeqNames:
     Container holding names used within
     :attr:`lXtractor.core.Protein.ChainSequence._seqs`
     """
+
     seq1: str = 'seq1'
     seq3: str = 'seq3'
     enum: str = 'numbering'
@@ -54,7 +56,6 @@ MetaNames = _MetaNames()
 
 MetaColumns = (
     # Taken from https://bioservices.readthedocs.io/en/main/_modules/bioservices/uniprot.html#UniProt
-
     # Names & Taxonomy ================================================
     "accession",
     "id",
@@ -69,7 +70,6 @@ MetaColumns = (
     "xref_proteomes",
     "lineage",
     "virus_hosts",
-
     # Sequences ========================================================
     "fragment",
     "sequence",
@@ -90,7 +90,6 @@ MetaColumns = (
     "ft_conflict",
     "ft_unsure",
     "sequence_version",
-
     # Family and Domains ========================================
     'ft_coiled',
     'ft_compbias',
@@ -101,7 +100,6 @@ MetaColumns = (
     'ft_region',
     'ft_repeat',
     'ft_zn_fing',
-
     # Function ===================================================
     'absorption',
     'ft_act_site',
@@ -122,44 +120,36 @@ MetaColumns = (
     # 'rhea_id',
     'ft_site',
     'temp_dependence',
-
     # Gene Ontology ==================================
     "go",
     "go_p",
     "go_f",
     "go_c",
     "go_id",
-
     # Interaction ======================================
     "cc_interaction",
     "cc_subunit",
-
     # EXPRESSION =======================================
     "cc_developmental_stage",
     "cc_induction",
     "cc_tissue_specificity",
-
     # Publications
     "lit_pubmed_id",
-
     # Date of
     "date_created",
     "date_modified",
     "date_sequence_modified",
     "version",
-
     # Structure
     "structure_3d",
     "ft_strand",
     "ft_helix",
     "ft_turn",
-
     # Subcellular location
     "cc_subcellular_location",
     "ft_intramem",
     "ft_topo_dom",
     "ft_transmem",
-
     # Miscellaneous ==========================
     "annotation_score",
     "cc_caution",
@@ -173,7 +163,6 @@ MetaColumns = (
     "tools",
     "reviewed",
     "uniparc_id",
-
     # Pathology
     'cc_allergen',
     'cc_biotechnology',
@@ -182,7 +171,6 @@ MetaColumns = (
     'ft_mutagen',
     'cc_pharmaceutical',
     'cc_toxic_dose',
-
     # PTM / Processsing
     'ft_chain',
     'ft_crosslnk',
@@ -196,9 +184,8 @@ MetaColumns = (
     'ft_propep',
     'ft_signal',
     'ft_transit',
-
     # not documented
-    'xref_pdb'
+    'xref_pdb',
 )
 
 if __name__ == '__main__':

@@ -1,3 +1,6 @@
+"""
+Low-level utilities to work with sequences (as strings) or sequence files.
+"""
 from __future__ import annotations
 
 import logging
@@ -24,7 +27,7 @@ GAP_CHARS = ('-',)
 
 
 def read_fasta(
-        inp: Path | TextIOBase | abc.Iterable[str], strip_id: bool = True
+    inp: Path | TextIOBase | abc.Iterable[str], strip_id: bool = True
 ) -> abc.Generator[tuple[str, str]]:
     """
     Simple lazy fasta reader.
@@ -33,6 +36,7 @@ def read_fasta(
     :param strip_id: Strip ID to the first consecutive (spaceless) string.
     :return: A generator of (header, seq) pairs.
     """
+
     def _yield_seqs(buffer):
         buffer = filterfalse(lambda x: not x or x == '\n', buffer)
         items = split_before(map(str.rstrip, buffer), lambda x: x[0] == '>')
@@ -69,9 +73,12 @@ def write_fasta(inp: abc.Iterable[tuple[str, str]], out: Path | SupportsWrite) -
 
 
 def mafft_add(
-        msa: abc.Iterable[tuple[str, str]] | Path,
-        seqs: abc.Iterable[tuple[str, str]], *,
-        mafft: str = 'mafft', thread: int = 1, keeplength: bool = True,
+    msa: abc.Iterable[tuple[str, str]] | Path,
+    seqs: abc.Iterable[tuple[str, str]],
+    *,
+    mafft: str = 'mafft',
+    thread: int = 1,
+    keeplength: bool = True,
 ) -> abc.Iterator[tuple[str, str]]:
     """
     Add a sequence using mafft.
@@ -111,15 +118,19 @@ def mafft_add(
 
     # Run the subprocess command
     keeplength = '--keeplength' if keeplength else ''
-    cmd = (f'{mafft} --add {add_handle.name} {keeplength} --anysymbol '
-           f'--inputorder --thread {thread} {msa_path}')
+    cmd = (
+        f'{mafft} --add {add_handle.name} {keeplength} --anysymbol '
+        f'--inputorder --thread {thread} {msa_path}'
+    )
 
     return tail(len(seqs), read_fasta(StringIO(run_sp(cmd).stdout)))
 
 
 def mafft_align(
-        seqs: abc.Iterable[tuple[str, str]] | Path,
-        *, mafft: str = 'mafft-linsi', thread: int = 1,
+    seqs: abc.Iterable[tuple[str, str]] | Path,
+    *,
+    mafft: str = 'mafft-linsi',
+    thread: int = 1,
 ) -> t.Iterator[tuple[str, str]]:
     """
     Align an arbitrary number of sequences using mafft.
@@ -131,18 +142,26 @@ def mafft_align(
     :return: An Iterator over aligned (header, seq) pairs.
     """
     if isinstance(seqs, Path):
-        filename = seqs
+        cmd = f'{mafft} --anysymbol --thread {thread} --inputorder {seqs}'
+        return read_fasta(StringIO(run_sp(cmd).stdout))
     else:
-        handle = NamedTemporaryFile('w')
-        write_fasta(seqs, handle)
-        handle.seek(0)
-        filename = handle.name
-    cmd = f'{mafft} --anysymbol --thread {thread} --inputorder {filename}'
-    return read_fasta(StringIO(run_sp(cmd).stdout))
+        with NamedTemporaryFile('w') as handle:
+            write_fasta(seqs, handle)
+            handle.seek(0)
+            filename = handle.name
+            cmd = f'{mafft} --anysymbol --thread {thread} --inputorder {filename}'
+            return read_fasta(StringIO(run_sp(cmd).stdout))
 
 
-def biotite_align(seqs: abc.Iterable[tuple[str, str]]) -> tuple[tuple[str, str], tuple[str, str]]:
+def biotite_align(
+    seqs: abc.Iterable[tuple[str, str]]
+) -> tuple[tuple[str, str], tuple[str, str]]:
+    """
+    Align two sequences using biotite `align_optimal` function.
 
+    :param seqs: An iterable with exactly two sequences.
+    :return: A pair of aligned sequences.
+    """
     (h1, seq1), (h2, seq2) = take(2, seqs)
 
     if not isinstance(seq1, bseq.ProteinSequence):
@@ -151,7 +170,8 @@ def biotite_align(seqs: abc.Iterable[tuple[str, str]]) -> tuple[tuple[str, str],
         seq2 = bseq.ProteinSequence(seq2)
 
     alignments = balign.align_optimal(
-        seq1, seq2, balign.SubstitutionMatrix.std_protein_matrix())
+        seq1, seq2, balign.SubstitutionMatrix.std_protein_matrix()
+    )
 
     seq1a, seq2a = alignments[0].get_gapped_sequences()
 
@@ -181,8 +201,7 @@ def biotite_align(seqs: abc.Iterable[tuple[str, str]]) -> tuple[tuple[str, str],
 
 
 def remove_gap_columns(
-        seqs: abc.Iterable[str],
-        max_gaps: float = 1.0
+    seqs: abc.Iterable[str], max_gaps: float = 1.0
 ) -> tuple[abc.Iterator[str], np.ndarray]:
     """
     Remove gap columns from a collection of sequences.
@@ -206,8 +225,7 @@ def remove_gap_columns(
 
 
 def partition_gap_sequences(
-        seqs: abc.Iterable[tuple[str, str]],
-        max_fraction_of_gaps: float = 1.0,
+    seqs: abc.Iterable[tuple[str, str]], max_fraction_of_gaps: float = 1.0
 ) -> tuple[abc.Iterator[str], abc.Iterator[str]]:
     """
     Removes sequences having fraction of gaps above the given threshold.
@@ -223,9 +241,7 @@ def partition_gap_sequences(
 
     above_threshold, below_threshold = map(
         lambda seqs: map(op.itemgetter(0), seqs),
-        partition(
-            lambda s: fraction_of_gaps(s[1]) < max_fraction_of_gaps,
-            seqs)
+        partition(lambda s: fraction_of_gaps(s[1]) < max_fraction_of_gaps, seqs),
     )
 
     return below_threshold, above_threshold
@@ -236,10 +252,12 @@ def parse_cdhit(clstr_file: Path) -> t.List[t.List[str]]:
     Parse cd-hit cluster file into a (list of lists of) clusters with seq ids.
     """
     with clstr_file.open() as f:
-        return list(map(
-            lambda cc: list(map(lambda c: c.split('>')[1].split('...')[0], cc)),
-            filter(bool, split_at(f, lambda x: x.startswith('>')))
-        ))
+        return list(
+            map(
+                lambda cc: list(map(lambda c: c.split('>')[1].split('...')[0], cc)),
+                filter(bool, split_at(f, lambda x: x.startswith('>'))),
+            )
+        )
 
 
 # def cluster_cdhit(
@@ -344,10 +362,14 @@ def parse_cdhit(clstr_file: Path) -> t.List[t.List[str]]:
 
 
 def map_pairs_numbering(
-        s1: str, s1_numbering: t.Iterable[int],
-        s2: str, s2_numbering: t.Iterable[int],
-        align: bool = True, align_method: AlignMethod = mafft_align,
-        empty: t.Any = None, **kwargs
+    s1: str,
+    s1_numbering: t.Iterable[int],
+    s2: str,
+    s2_numbering: t.Iterable[int],
+    align: bool = True,
+    align_method: AlignMethod = mafft_align,
+    empty: t.Any = None,
+    **kwargs,
 ) -> t.Iterator[t.Tuple[t.Optional[int], t.Optional[int]]]:
     """
     Map numbering between a pair of sequences.
@@ -372,36 +394,34 @@ def map_pairs_numbering(
 
     if align:
         s1_aln, s2_aln = map(
-            op.itemgetter(1),
-            align_method([('s1', s1), ('s2', s2)], **kwargs))
+            op.itemgetter(1), align_method([('s1', s1), ('s2', s2)], **kwargs)
+        )
     else:
         s1_aln, s2_aln = s1, s2
 
-    s1_raw, s2_raw = map(
-        lambda s: s.replace('-', ''), [s1_aln, s2_aln])
+    s1_raw, s2_raw = map(lambda s: s.replace('-', ''), [s1_aln, s2_aln])
 
     if len(s1_raw) > len(s1_numbering):
-        raise LengthMismatch(
-            f's1 is larger than a corresponding numbering')
+        raise LengthMismatch('s1 is larger than a corresponding numbering')
     if len(s2_raw) > len(s2_numbering):
-        raise LengthMismatch(
-            f's2 is larger than a corresponding numbering')
+        raise LengthMismatch('s2 is larger than a corresponding numbering')
     if len(s1_aln) != len(s2_aln):
         raise LengthMismatch(
             f'Lengths of aligned seqs must match; '
-            f'(len(s1)={len(s1)} != len(s2)={len(s2)})')
+            f'(len(s1)={len(s1)} != len(s2)={len(s2)})'
+        )
 
     s1_pool, s2_pool = map(iter, [s1_numbering, s2_numbering])
 
     for c1, c2 in zip(s1_aln, s2_aln):
         try:
             n1 = next(s1_pool) if c1 != '-' else empty
-        except StopIteration:
-            raise RuntimeError(f'Numbering pool for s1 is exhausted')
+        except StopIteration as e:
+            raise RuntimeError('Numbering pool for s1 is exhausted') from e
         try:
             n2 = next(s2_pool) if c2 != '-' else empty
-        except StopIteration:
-            raise RuntimeError(f'Numbering pool for s2 is exhausted')
+        except StopIteration as e:
+            raise RuntimeError('Numbering pool for s2 is exhausted') from e
         yield n1, n2
 
 

@@ -3,6 +3,7 @@ class InitError(ValueError):
     A broad category exception for problems with
     an object's initialization
     """
+
     pass
 
 

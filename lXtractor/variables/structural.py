@@ -1,3 +1,6 @@
+"""
+Module defining variables calculated on structures.
+"""
 from __future__ import annotations
 
 import logging
@@ -24,13 +27,15 @@ def _map_pos(pos: int, mapping: t.Optional[MappingT] = None) -> int:
         return pos
     try:
         return mapping[pos]
-    except KeyError:
-        raise FailedCalculation(f'Missing position {pos} in the provided mapping.')
+    except KeyError as e:
+        raise FailedCalculation(
+            f'Missing position {pos} in the provided mapping.'
+        ) from e
 
 
 @curry
 def _get_residue_mask(
-        pos: int, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+    pos: int, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
 ) -> np.ndarray:
     pos = _map_pos(pos, mapping)
 
@@ -42,14 +47,16 @@ def _get_residue_mask(
 
     num_starts = bst.get_residue_starts(residue_atoms)
     if len(num_starts) > 1:
-        raise FailedCalculation(f'Position {pos} points to {len(num_starts)}>1 residues')
+        raise FailedCalculation(
+            f'Position {pos} points to {len(num_starts)}>1 residues'
+        )
 
     return mask
 
 
 @curry
 def _get_residue(
-        pos: int, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+    pos: int, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
 ) -> bst.AtomArray:
     mask = _get_residue_mask(pos, array, mapping)
     return array[mask]
@@ -72,9 +79,7 @@ def _get_atom(array: bst.AtomArray, name: str) -> bst.Atom:
 
 @curry
 def _get_coord(
-        residue: bst.AtomArray,
-        atom_name: t.Optional[str],
-        agg_fn: t.Optional[str] = 'mean'
+    residue: bst.AtomArray, atom_name: t.Optional[str], agg_fn: t.Optional[str] = 'mean'
 ) -> np.ndarray:
     if atom_name is None:
         fn = AggFns[agg_fn]
@@ -84,8 +89,8 @@ def _get_coord(
 
 
 def _agg_dist(
-        r1: bst.AtomArray, r2: bst.AtomArray,
-        agg_fn: t.Callable[[np.ndarray], float]) -> float:
+    r1: bst.AtomArray, r2: bst.AtomArray, agg_fn: t.Callable[[np.ndarray], float]
+) -> float:
     """
     Calculate the aggregated distance between two residues
     """
@@ -105,20 +110,25 @@ def _verify_consecutive(positions: abc.Iterable[int]) -> None:
         if current != previous + 1:
             raise FailedCalculation(
                 f'Positions {previous} and {current} are not consecutive '
-                f'in a given list {positions}')
+                f'in a given list {positions}'
+            )
 
 
 class Dist(StructureVariable):
     """
     A distance between two atoms.
     """
+
     __slots__ = ('p1', 'p2', 'a1', 'a2', 'com')
 
     def __init__(
-            self, p1: int, p2: int,
-            a1: t.Optional[str] = None,
-            a2: t.Optional[str] = None,
-            com: bool = False):
+        self,
+        p1: int,
+        p2: int,
+        a1: t.Optional[str] = None,
+        a2: t.Optional[str] = None,
+        com: bool = False,
+    ):
         #: Position 1.
         self.p1: int = p1
         #: Position 2.
@@ -133,22 +143,22 @@ class Dist(StructureVariable):
         if any((not com and a1 is None, not com and a2 is None)):
             raise ValueError(
                 'No atom name specified and "center of mass" flag is down. '
-                'Therefore, not possible to calculate distance.')
+                'Therefore, not possible to calculate distance.'
+            )
 
     @property
     def rtype(self) -> t.Type[float]:
         return float
 
     def calculate(
-            self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+        self, obj: bst.AtomArray, mapping: t.Optional[MappingT] = None
     ) -> float:
         xyz1, xyz2 = starmap(
-            lambda p, a:
-            pipe(
-                _get_residue(p, array, mapping),
-                _get_coord(atom_name=a)
+            lambda p, a: pipe(
+                _get_residue(p, obj, mapping),
+                _get_coord(atom_name=a),  # pylint: disable=no-value-for-parameter
             ),
-            [(self.p1, self.a1), (self.p2, self.a2)]
+            [(self.p1, self.a1), (self.p2, self.a2)],
         )
         return np.linalg.norm(xyz2 - xyz1)
 
@@ -160,6 +170,7 @@ class AggDist(StructureVariable):
     It will return ``agg_fn(pdist)`` where ``pdist`` is an array of
     all pairwise distances between atoms of `p1` and `p2`.
     """
+
     __slots__ = ('p1', 'p2', 'key')
 
     def __init__(self, p1: int, p2: int, key: str = 'min'):
@@ -176,8 +187,8 @@ class AggDist(StructureVariable):
         """
         if key not in AggFns:
             raise InitError(
-                f'Wrong key {key}. '
-                f'Available aggregators: {list(AggFns)}')
+                f'Wrong key {key}. ' f'Available aggregators: {list(AggFns)}'
+            )
         #: Agg function name.
         self.key = key
         #: Position 1.
@@ -190,11 +201,9 @@ class AggDist(StructureVariable):
         return float
 
     def calculate(
-            self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+        self, obj: bst.AtomArray, mapping: t.Optional[MappingT] = None
     ) -> float:
-        res1, res2 = map(
-            lambda p: _get_residue(p, array, mapping),
-            [self.p1, self.p2])
+        res1, res2 = map(lambda p: _get_residue(p, obj, mapping), [self.p1, self.p2])
         return _agg_dist(res1, res2, AggFns[self.key])
 
 
@@ -242,13 +251,21 @@ class Dihedral(StructureVariable):
     """
     Dihedral angle involving four different atoms.
     """
+
     __slots__ = ('p1', 'p2', 'p3', 'p4', 'a1', 'a2', 'a3', 'a4', 'name')
 
     def __init__(
-            self,
-            p1: int, p2: int, p3: int, p4: int,
-            a1: str, a2: str, a3: str, a4: str,
-            name: str = 'GenericDihedral'):
+        self,
+        p1: int,
+        p2: int,
+        p3: int,
+        p4: int,
+        a1: str,
+        a2: str,
+        a3: str,
+        a4: str,
+        name: str = 'GenericDihedral',
+    ):
         #: Used to designate special kinds of dihedrals.
         self.name: str = name
         #: Position.
@@ -275,15 +292,15 @@ class Dihedral(StructureVariable):
         return [self.a1, self.a2, self.a3, self.a4]
 
     def calculate(
-            self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+        self, obj: bst.AtomArray, mapping: t.Optional[MappingT] = None
     ) -> float:
         # Map positions to the PDB numbering
         coordinates = starmap(
             lambda p, a: pipe(
-                _get_residue(p, array, mapping),
-                _get_coord(atom_name=a)
+                _get_residue(p, obj, mapping),
+                _get_coord(atom_name=a),  # pylint: disable=no-value-for-parameter
             ),
-            zip(self.positions, self.atoms)
+            zip(self.positions, self.atoms),
         )
         return calculate_dihedral(*coordinates)
 
@@ -291,56 +308,59 @@ class Dihedral(StructureVariable):
 class PseudoDihedral(Dihedral):
     """
     Pseudo-dihedral angle -
-    "the torsion angle between planes defined by 4 consecutive alpha-carbon atoms."
+    "the torsion angle between planes defined by 4 consecutive
+    alpha-carbon atoms."
 
     """
+
     __slots__ = ()
 
     def __init__(self, p1: int, p2: int, p3: int, p4: int):
-        super().__init__(
-            p1, p2, p3, p4,
-            'CA', 'CA', 'CA', 'CA',
-            name='PseudoDihedral')
+        super().__init__(p1, p2, p3, p4, 'CA', 'CA', 'CA', 'CA', name='PseudoDihedral')
 
 
 class Phi(Dihedral):
+    """
+    Phi dihedral angle.
+    """
+
     __slots__ = ('p',)
 
     def __init__(self, p: int):
         self.p = p
-        super().__init__(
-            p - 1, p, p, p,
-            'C', 'N', 'CA', 'C',
-            name='Phi')
+        super().__init__(p - 1, p, p, p, 'C', 'N', 'CA', 'C', name='Phi')
 
 
 class Psi(Dihedral):
+    """
+    Psi dihedral angle.
+    """
+
     __slots__ = ('p',)
 
     def __init__(self, p: int):
         self.p = p
-        super().__init__(
-            p, p, p, p + 1,
-            'N', 'CA', 'C', 'N',
-            name='Psi')
+        super().__init__(p, p, p, p + 1, 'N', 'CA', 'C', 'N', name='Psi')
 
 
 class Omega(Dihedral):
+    """
+    Omega dihedral angle.
+    """
+
     __slots__ = ('p',)
 
     def __init__(self, p: int):
         self.p = p
-        super().__init__(
-            p, p, p + 1, p + 1,
-            'CA', 'C', 'N', 'CA',
-            name='Omega')
+        super().__init__(p, p, p + 1, p + 1, 'CA', 'C', 'N', 'CA', name='Omega')
 
 
 class CompositeDihedral(StructureVariable):
     """
-    An abstract class that defines a dihedral angle s.t. the atoms are within a single
-    residue but the atom names may vary depending on the residue type.
+    An abstract class that defines a dihedral angle s.t. the atoms are within
+    a single residue but the atom names may vary depending on the residue type.
     """
+
     __slots__ = ('p',)
 
     def __init__(self, p: int):
@@ -359,31 +379,36 @@ class CompositeDihedral(StructureVariable):
 
         :param pos: Position to create :class:`Dihedral` instances.
         :return: An iterable over :class:`Dihedral`'s.
-            The :meth:`calculate` will try calculating dihedrals in the provided order
-            until the first successful calculation. If no calculations were successful,
-            will raise :class:`FailedCalculation` error.
+            The :meth:`calculate` will try calculating dihedrals in the
+            provided order until the first successful calculation. If no
+            calculations were successful, will raise :class:`FailedCalculation`
+            error.
         """
         raise NotImplementedError('Must be implemented by the subclass')
 
     def calculate(
-            self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+        self, obj: bst.AtomArray, mapping: t.Optional[MappingT] = None
     ) -> float:
         res = None
         dihedrals = self.get_dihedrals(self.p)
         for d in dihedrals:
             try:
-                res = d.calculate(array, mapping)
+                res = d.calculate(obj, mapping)
                 break
             except FailedCalculation:
                 pass
         if res is None:
             raise FailedCalculation(
-                f"Couldn't calculate any of dihedrals "
-                f"{[d.id for d in dihedrals]}")
+                f"Couldn't calculate any of dihedrals " f"{[d.id for d in dihedrals]}"
+            )
         return res
 
 
 class Chi1(CompositeDihedral):
+    """
+    Chi1-dihedral angle.
+    """
+
     __slots__ = ()
 
     @staticmethod
@@ -393,11 +418,15 @@ class Chi1(CompositeDihedral):
             Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'CG1', 'Chi1_CG1'),
             Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'OG', 'Chi1_OG'),
             Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'OG1', 'Chi1_OG1'),
-            Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'SG', 'Chi1_SG')
+            Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'SG', 'Chi1_SG'),
         ]
 
 
 class Chi2(CompositeDihedral):
+    """
+    Chi2-dihedral angle,
+    """
+
     __slots__ = ()
 
     @staticmethod
@@ -416,9 +445,10 @@ class SASA(StructureVariable):
     """
     Solvent-accessible surface area of a residue or a specific atom.
 
-    The SASA is calculated for the whole array, and subset to all or a single atoms of a residue
-    (so atoms are taken into account for calculation).
+    The SASA is calculated for the whole array, and subset to all or a single
+    atoms of a residue (so atoms are taken into account for calculation).
     """
+
     __slots__ = ('p', 'a')
 
     def __init__(self, p: int, a: str | None = None):
@@ -430,17 +460,17 @@ class SASA(StructureVariable):
         return float
 
     def calculate(
-            self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+        self, obj: bst.AtomArray, mapping: t.Optional[MappingT] = None
     ) -> float | None:
-        m = _get_residue_mask(self.p, array, mapping)
+        m = _get_residue_mask(self.p, obj, mapping)
 
         if self.a is not None:
-            m &= (array.atom_name == self.a)
+            m &= obj.atom_name == self.a
 
         if m.sum() == 0:
             raise FailedCalculation('Empty selection')
 
-        sasa = bst.sasa(array, atom_filter=m)
+        sasa = bst.sasa(obj, atom_filter=m)
         return float(np.sum(sasa[~np.isnan(sasa)]))
 
 

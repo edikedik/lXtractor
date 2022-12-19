@@ -1,3 +1,6 @@
+"""
+Base classes, common types and functions for the `variables` module.
+"""
 from __future__ import annotations
 
 import inspect
@@ -38,8 +41,7 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
         return self.__str__()
 
     def __eq__(self, other):
-        return (not isinstance(other, type(self)) or
-                self.id == other.id)
+        return not isinstance(other, type(self)) or self.id == other.id
 
     def __hash__(self):
         return hash(self.id)
@@ -56,27 +58,28 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
             return v
 
         init_params = inspect.signature(self.__init__).parameters
-        args = ','.join(map(lambda x: f'{x}={parse_value(getattr(self, x))}', init_params))
+        args = ','.join(
+            map(lambda x: f'{x}={parse_value(getattr(self, x))}', init_params)
+        )
         return f'{self.__class__.__name__}({args})'
 
     @property
     @abstractmethod
     def rtype(self) -> t.Type[RT]:
         """
-        Variable's return type, such that `rtype("result")` converts to the relevant type.
+        Variable's return type, such that `rtype("result")` converts to
+        the relevant type.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def calculate(
-            self, obj: OT, mapping: t.Optional[MappingT] = None
-    ) -> RT:
+    def calculate(self, obj: OT, mapping: t.Optional[MappingT] = None) -> RT:
         """
         Calculate variable. Each variable defines its own calculation strategy.
 
         :param obj: An object used for variable's calculation.
-        :param mapping: Mapping from generalizable positions of MSA/reference/etc.
-            to the `obj`'s positions.
+        :param mapping: Mapping from generalizable positions of
+            MSA/reference/etc. to the `obj`'s positions.
         :return: Calculation result.
         :raises: :class:`FailedCalculation` if the calculation fails.
         """
@@ -85,41 +88,60 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
 
 class StructureVariable(AbstractVariable[bst.AtomArray, RT]):
     """
-    A type of variable whose :meth:`calculate` method requires protein structure.
+    A type of variable whose :meth:`calculate` method requires protein
+    structure.
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    def calculate(self, obj: bst.AtomArray, mapping: t.Optional[MappingT] = None) -> RT:
+        """
+        :param obj: Some atom array.
+        :param mapping: Optional mapping between structure and some reference
+            object numbering schemes.
+        :return: A calculation result of some sensible non-sequence type, such
+            as string, float, int, etc.
+        """
+
+
+class SequenceVariable(AbstractVariable[abc.Sequence[t.Any], RT]):
+    """
+    A type of variable whose :meth:`calculate` method requires protein
+    sequence.
     """
 
     __slots__ = ()
 
     @abstractmethod
     def calculate(
-            self, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+        self, obj: abc.Sequence[t.Any], mapping: t.Optional[MappingT] = None
     ) -> RT:
-        raise NotImplementedError
+        """
+        :param obj: Some sequence.
+        :param mapping: Optional mapping between sequence and some reference
+            object numbering schemes.
+        :return: A calculation result of some sensible non-sequence type, such
+            as string, float, int, etc.
+        """
 
 
-class SequenceVariable(AbstractVariable[abc.Sequence[t.Any], RT]):
-    """
-    A type of variable whose :meth:`calculate` method requires protein sequence.
-    """
-
-    __slots__ = ()
-
-    @abstractmethod
-    def calculate(self, seq: abc.Sequence[t.Any], mapping: t.Optional[MappingT] = None) -> RT:
-        raise NotImplementedError
-
-
-VT = t.TypeVar('VT', bound=t.Union[StructureVariable, SequenceVariable])  # variable type
+VT = t.TypeVar(
+    'VT', bound=t.Union[StructureVariable, SequenceVariable]
+)  # variable type
 
 
 class Variables(UserDict):
     # TODO: Proper generic type?
     """
-    A subclass of :class:`dict` holding variables (:class:`AbstractVariable` subclasses).
+    A subclass of :class:`dict` holding variables (:class:`AbstractVariable`
+    subclasses).
 
     The keys are the :class:`AbstractVariable` subclasses' instances
-    (hashed by :meth::class:`id <AbstractVariable.id>`), and values are calculation results.
+    (hashed by :meth::class:`id <AbstractVariable.id>`), and values are
+    calculation results.
     """
+
     def __getitem__(self, item: str | AbstractVariable):
         if isinstance(item, str):
             return super().__getitem__(hash(item))
@@ -130,25 +152,28 @@ class Variables(UserDict):
         """
         :return: values that are :class:`StructureVariable` instances.
         """
-        return Variables({k: v for k, v in self.items() if isinstance(k, StructureVariable)})
+        return Variables(
+            {k: v for k, v in self.items() if isinstance(k, StructureVariable)}
+        )
 
     @property
     def sequence(self) -> Variables:
         """
         :return: values that are :class:`SequenceVariable` instances.
         """
-        return Variables({k: v for k, v in self.items() if isinstance(k, SequenceVariable)})
+        return Variables(
+            {k: v for k, v in self.items() if isinstance(k, SequenceVariable)}
+        )
 
     @classmethod
     def read(cls, path: Path) -> Variables:
-        # TODO: read pdist
         # TODO: does it still need the dynamic imports?
         """
         Read and initialize variables.
 
-        :param path: Path to a two-column .tsv file holding pairs (var_id, var_value).
-            Will use `var_id` to initialize variable, importing dynamically a relevant
-            class from :mod:`variables`.
+        :param path: Path to a two-column .tsv file holding pairs
+            (var_id, var_value). Will use `var_id` to initialize variable,
+            importing dynamically a relevant class from :mod:`variables`.
         :return: A dict mapping variable object to its value.
         """
 
@@ -167,7 +192,8 @@ class Variables(UserDict):
             except ImportError:
                 LOGGER.exception(
                     f'Failed to exec {import_statement} for variable {v_name} '
-                    f'causing variable\'s init to fail')
+                    f'causing variable\'s init to fail'
+                )
                 continue
 
             try:
@@ -184,28 +210,29 @@ class Variables(UserDict):
         return variables
 
     def write(
-            self, path: Path,
-            skip_if_contains: t.Collection[str] | None = None
+        self, path: Path, skip_if_contains: t.Collection[str] | None = None
     ) -> None:
         """
         :param path: Path to a file.
-        :param skip_if_contains: Skip if a variable ID contains any of the provided strings.
+        :param skip_if_contains: Skip if a variable ID contains any of the
+            provided strings.
         """
         items = (f'{v.id}\t{r}' for v, r in self.items())
         if skip_if_contains:
-            items = filterfalse(lambda it: any(x in it for x in skip_if_contains), items)
+            items = filterfalse(
+                lambda it: any(x in it for x in skip_if_contains), items
+            )
         path.write_text('\n'.join(items))
 
     def as_df(self) -> pd.DataFrame:
         """
         :return: A table with two columns: VariableID and VariableResult.
         """
-        if not len(self):
+        if len(self) == 0:
             return pd.DataFrame()
-        return pd.DataFrame({
-            'VariableID': [k.id for k in self],
-            'VariableResult': list(self.values())
-        })
+        return pd.DataFrame(
+            {'VariableID': [k.id for k in self], 'VariableResult': list(self.values())}
+        )
 
 
 class AbstractCalculator(t.Generic[OT, VT, RT], metaclass=ABCMeta):
@@ -216,72 +243,75 @@ class AbstractCalculator(t.Generic[OT, VT, RT], metaclass=ABCMeta):
     __slots__ = ()
 
     @abstractmethod
-    def __call__(self, o: OT, v: VT, m: MappingT | None) -> RT: ...
+    def __call__(self, o: OT, v: VT, m: MappingT | None) -> RT:
+        """
+        :param o: Object to calculate on.
+        :param v: Some variable whose `calculate` method accepts `o`-type
+            instances.
+        :param m: Optional mapping between object and some reference object
+            numbering schemes.
+        :return: Calculation result.
+        """
 
     @abstractmethod
-    def map(
-            self, o: OT, v: abc.Iterable[VT], m: MappingT | None
-    ) -> abc.Iterator[RT]: ...
+    def map(self, o: OT, v: abc.Iterable[VT], m: MappingT | None) -> abc.Iterator[RT]:
+        """
+        Map variables to a single object.
+
+        :param o: Object to calculate on.
+        :param v: An iterable over variables whose `calculate` method accepts
+            `o`-type instances.
+        :param m: Optional mapping between object and some reference object
+            numbering schemes.
+        :return: An iterator (generator) over calculation result.
+        """
 
     @abstractmethod
     def vmap(
-            self, o: abc.Iterable[OT], v: VT, m: abc.Iterable[MappingT | None]
-    ) -> abc.Iterator[RT]: ...
+        self, o: abc.Iterable[OT], v: VT, m: abc.Iterable[MappingT | None]
+    ) -> abc.Iterator[RT]:
+        """
+        Map objects to a single variable.
+
+        :param o: An iterable over objects to calculate on.
+        :param v: Some variable whose `calculate` method accepts `o`-type
+            instances.
+        :param m:  Optional mapping between object and some reference object
+            numbering schemes.
+        :return: An iterator (generator) over calculation result.
+        """
 
 
 class CalculatorProtocol(t.Protocol[OT, VT, RT]):
+    """
+    An interface of a calculator definition for typing.
+    """
 
     @t.overload
-    def __call__(self, o: OT, v: VT, m: MappingT | None, *args, **kwargs) -> RT: ...
+    def __call__(self, o: OT, v: VT, m: MappingT | None, *args, **kwargs) -> RT:
+        ...
 
     @t.overload
     def __call__(
-            self, o: abc.Iterable[OT], v: abc.Iterable[abc.Iterable[VT]],
-            m: abc.Iterable[MappingT | None] | None, *args, **kwargs
-    ) -> abc.Iterable[abc.Iterable[RT]]: ...
+        self,
+        o: abc.Iterable[OT],
+        v: abc.Iterable[abc.Iterable[VT]],
+        m: abc.Iterable[MappingT | None] | None,
+        *args,
+        **kwargs,
+    ) -> abc.Iterable[abc.Iterable[RT]]:
+        ...
 
     def __call__(
-            self, o: OT | abc.Iterable[OT], v: VT | abc.Iterable[abc.Iterable[VT]],
-            m: MappingT | abc.Iterable[MappingT | None] | None,
-            *args, **kwargs
-    ) -> RT | abc.Iterable[abc.Iterable[RT]]: ...
+        self,
+        o: OT | abc.Iterable[OT],
+        v: VT | abc.Iterable[abc.Iterable[VT]],
+        m: MappingT | abc.Iterable[MappingT | None] | None,
+        *args,
+        **kwargs,
+    ) -> RT | abc.Iterable[abc.Iterable[RT]]:
+        ...
 
-
-# class AbstractManager(t.Generic[VT, OT, T, CalcT], metaclass=ABCMeta):
-#
-#     __slots__ = ()
-#
-#     @abstractmethod
-#     def assign(
-#             self, vs: abc.Sequence[VT], chains: T | abc.MutableSequence[T], *,
-#             level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
-#     ) -> t.NoReturn: ...
-#
-#     @abstractmethod
-#     def reset(
-#             self, chains: T | abc.MutableSequence[T], vs: abc.Sequence[VT] | None, *,
-#             level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
-#     ) -> t.NoReturn: ...
-#
-#     @abstractmethod
-#     def remove(
-#             self, chains: T | abc.MutableSequence[T], vs: abc.Sequence[VT] | None, *,
-#             level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
-#     ) -> t.NoReturn: ...
-#
-#     @abstractmethod
-#     def calculate(
-#             self, chains: T | abc.MutableSequence[T], calculator: CalcT, *,
-#             missing: bool, seq_name: str, map_name: t.Optional[str],
-#             level: int, id_contains: str | None,
-#             obj_type: abc.Sequence[str] | str | None
-#     ) -> t.NoReturn: ...
-#
-#     @abstractmethod
-#     def aggregate(
-#             self, chains: T | abc.MutableSequence[T], *,
-#             level: int, id_contains: str | None, obj_type: abc.Sequence[str] | str | None
-#     ) -> pd.DataFrame: ...
 
 class ProtFP:
     """
@@ -305,6 +335,7 @@ class ProtFP:
     .. bibliography::
 
     """
+
     def __init__(self, path: Path = Path(resources.__file__).parent / 'PFP.csv'):
         self._df = pd.read_csv(path).set_index('AA')
 
@@ -320,7 +351,9 @@ class ProtFP:
     def __getitem__(self, item: int) -> pd.Series:
         ...
 
-    def __getitem__(self, item: tuple[str, int] | str | int) -> float | np.ndarray | pd.Series:
+    def __getitem__(
+        self, item: tuple[str, int] | str | int
+    ) -> float | np.ndarray | pd.Series:
         match item:
             case [c, i]:
                 return self._df.loc[c, str(i - 1)]

@@ -1,19 +1,21 @@
 """
-Contains utils allowing to benefit from SIFTS database `UniProt`-`PDB` mapping.
+Contains utils allowing to benefit from SIFTS database `UniProt`-`PDBF;`
+mapping.
 
-Namely, the `SIFTS` class is build around the file `uniprot_segments_observed.csv.gz`.
-The latter contains segment-wise mapping between UniProt sequences and continuous
-corresponding regions in PDB structures, and allows us to:
+Namely, the `SIFTS` class is build around the file
+`uniprot_segments_observed.csv.gz`.
+The latter contains segment-wise mapping between UniProt sequences
+and continuous corresponding regions in PDB structures, and allows us to:
 
-#.  Cross-reference PDB and UniProt databases (e.g., which structures are available
-    for a UniProt "PXXXXXX" accession?)
-#.  Map between sequence numbering schemes.
-
+#. Cross-reference PDB and UniProt databases (e.g., which structures
+are available for a UniProt "PXXXXXX" accession?)
+#. Map between sequence numbering schemes.
 """
 import json
 import logging
 import os
 import typing as t
+from collections import abc
 from importlib import resources
 from itertools import starmap
 from pathlib import Path
@@ -29,13 +31,17 @@ from lXtractor.util.io import fetch_to_file
 from lXtractor.util.misc import col2col
 
 LOGGER = logging.getLogger(__name__)
-SIFTS_FTP = 'ftp://ftp.ebi.ac.uk/pub/databases/msd/sifts/flatfiles/csv/uniprot_segments_observed.csv.gz'
+SIFTS_FTP = (
+    'ftp://ftp.ebi.ac.uk/pub/databases/msd/sifts/flatfiles/csv'
+    '/uniprot_segments_observed.csv.gz'
+)
 RAW_SEGMENTS = 'uniprot_segments_observed.csv.gz'
 ID_MAPPING = 'id_mapping.json'
 DF_SIFTS = 'sifts.tsv'
 RESOURCES = Path(__file__).parent / 'resources'
 
-# TODO: Create a remote interface. (this may include segment-based mappings, although for many files it can be slow)
+# TODO: Create a remote interface. (this may include segment-based mappings,
+# although for many files it can be slow)
 
 
 SIFTS_RENAMES = (
@@ -45,7 +51,7 @@ SIFTS_RENAMES = (
     ('PDB_BEG', 'PDB_start'),
     ('PDB_END', 'PDB_end'),
     ('SP_BEG', 'UniProt_start'),
-    ('SP_END', 'UniProt_end')
+    ('SP_END', 'UniProt_end'),
 )
 
 
@@ -58,7 +64,7 @@ def _soft_load_resource(name: str) -> pd.DataFrame | dict | None:
         if suffix in ['.tsv', '.gz']:
             return pd.read_csv(path, sep='\t')
         if suffix in ['.json']:
-            with path.open() as f:
+            with path.open(encoding='utf-8') as f:
                 return json.load(f)
         LOGGER.warning(f'Failed to load {path}')
         return None
@@ -85,30 +91,35 @@ class SIFTS(AbstractResource):
     """
     A resource to segment-wise and ID mappings between UniProt and PDB.
 
-    For a first-time usage, you'll need to call :meth:`fetch` to download and store
-    the "uniprot_segments_observed" dataset.
+    For a first-time usage, you'll need to call :meth:`fetch`
+    to download and store the "uniprot_segments_observed" dataset.
 
     >>> sifts = SIFTS()
     >>> path = sifts.fetch()
     >>> path.name
     'uniprot_segments_observed.csv.gz'
 
-    Next, :meth:`parse` will process the downloaded file to create and store the table
-    with segments and ID mappings.
+    Next, :meth:`parse` will process the downloaded file to create
+    and store the table with segments and ID mappings.
 
-    (We pass ``overwrite=True`` for the doctest to work. It's not needed for the first setup).
+    (We pass ``overwrite=True`` for the doctest to work.
+    It's not needed for the first setup).
 
     >>> df, mapping = sifts.parse(store_to_resources=True, overwrite=True)
     >>> isinstance(df, pd.DataFrame) and isinstance(mapping, dict)
     True
-    >>> list(df.columns)
-    ['PDB_Chain', 'PDB', 'Chain', 'UniProt_ID', 'PDB_start', 'PDB_end', 'UniProt_start', 'UniProt_end']
+    >>> list(df.columns)[:4]
+    ['PDB_Chain', 'PDB', 'Chain', 'UniProt_ID']
+    >>> list(df.columns)[4:]
+    ['PDB_start', 'PDB_end', 'UniProt_start', 'UniProt_end']
 
-    Now that we parsed SIFTS segments data, we can use it to map IDs and numberings between UniProt and PDB.
+    Now that we parsed SIFTS segments data, we can use it to map IDs
+    and numberings between UniProt and PDB.
     Let's reinitalize SIFTS to verify it loads locally stored resources
 
     >>> sifts = SIFTS(load_segments=True, load_id_mapping=True)
-    >>> assert isinstance(sifts.df, pd.DataFrame) and isinstance(sifts.id_mapping, dict)
+    >>> assert isinstance(sifts.df, pd.DataFrame)
+    >>> assert isinstance(sifts.id_mapping, dict)
 
     SIFTS has three types of mappings stored:
 
@@ -128,8 +139,10 @@ class SIFTS(AbstractResource):
         ['A', 'B']
 
 
-    The same types of keys are supported to obtain mappings between the numbering schemes.
-    You'll get a generator yielding mappings from UniProt numbering to the PDB numbering.
+    The same types of keys are supported to obtain mappings between
+    the numbering schemes.
+    You'll get a generator yielding mappings from UniProt numbering
+    to the PDB numbering.
 
     In these two cases, we'll get the mappings for each chain.
 
@@ -147,10 +160,11 @@ class SIFTS(AbstractResource):
     """
 
     def __init__(
-            self, resource_path: t.Optional[Path] = None,
-            resource_name: str = 'SIFTS',
-            load_segments: bool = False,
-            load_id_mapping: bool = False,
+        self,
+        resource_path: t.Optional[Path] = None,
+        resource_name: str = 'SIFTS',
+        load_segments: bool = False,
+        load_id_mapping: bool = False,
     ):
         """
         :param resource_path: a path to a file "uniprot_segments_observed".
@@ -166,7 +180,7 @@ class SIFTS(AbstractResource):
         if load_id_mapping:
             self.id_mapping = _soft_load_resource(ID_MAPPING)
         else:
-            self.id_mapping = (None if self.df is None else self._prepare_id_map(self.df))
+            self.id_mapping = None if self.df is None else self._prepare_id_map(self.df)
 
         resource_path = resource_path or RESOURCES / RAW_SEGMENTS
         self.renames = dict(SIFTS_RENAMES)
@@ -196,9 +210,7 @@ class SIFTS(AbstractResource):
     def __getitem__(self, item: str):
         return self.map_id(item)
 
-    def read(
-            self, overwrite: bool = True
-    ) -> pd.DataFrame:
+    def read(self, overwrite: bool = True) -> pd.DataFrame:
         """
         The method reads the initial file "uniprot_segments_observed" into memory.
 
@@ -210,9 +222,10 @@ class SIFTS(AbstractResource):
         try:
             LOGGER.debug(f'Reading SIFTS from {self.path}')
             df = pd.read_csv(self.path, skiprows=1, low_memory=False)
-        except FileNotFoundError:
+        except FileNotFoundError as e:
             raise MissingData(
-                f'Missing file {self.path}. Use `fetch` do download this file.')
+                f'Missing file {self.path}. Use `fetch` do download this file.'
+            ) from e
         LOGGER.debug(f'Read `DataFrame` with {len(df)} records')
         if overwrite:
             self.df = df
@@ -227,15 +240,17 @@ class SIFTS(AbstractResource):
         return _soft_load_resource(DF_SIFTS), _soft_load_resource(ID_MAPPING)
 
     def parse(
-            self, overwrite: bool = False,
-            store_to_resources: bool = True,
-            rm_raw: bool = True,
+        self,
+        overwrite: bool = False,
+        store_to_resources: bool = True,
+        rm_raw: bool = True,
     ) -> tuple[pd.DataFrame, dict[str, list[str]]]:
         """
         Prepare the resource to be used for mapping:
 
             - remove records with empty chains.
-            - select and rename key columns based on the ``SIFTS_RENAMES`` constant.
+            - select and rename key columns based on the ``SIFTS_RENAMES``
+            constant.
             - create a `PDB_Chain` column to speed up the search.
 
         :param overwrite: Overwrite both :attr:`df` and existing id mapping
@@ -243,46 +258,45 @@ class SIFTS(AbstractResource):
         :param store_to_resources: Store parsed `DataFrame` and id mapping
             in resources for further simplified access.
         :param rm_raw: After parsing is finished, remove raw SIFTS download.
-            **(!) If `store_to_resources` is ``False``, using SIFTS next time will require
-            downloading "uniprot_segments_observed".**
-        :return: prepared :class:`DataFrame` of Segment-wise mapping between UniProt
-            and PDB sequences. Mapping between IDs will be stored in :attr:`id_mapping`.
+            **(!) If `store_to_resources` is ``False``, using SIFTS next
+            time will require downloading "uniprot_segments_observed".**
+        :return: prepared :class:`DataFrame` of Segment-wise mapping between
+            UniProt and PDB sequences. Mapping between IDs will be stored
+            in :attr:`id_mapping`.
         """
         if (RESOURCES / DF_SIFTS).exists() and (RESOURCES / ID_MAPPING).exists():
             if not overwrite and store_to_resources:
                 raise RuntimeError(
-                    'Resources was parsed. Pass overwrite if you wan\'t to overwrite.')
+                    'Resources was parsed. Pass overwrite if you wan\'t to overwrite.'
+                )
 
         if not (RESOURCES / RAW_SEGMENTS).exists():
-            raise MissingData('Missing fetched SIFTS. Try calling `fetch` method first.')
+            raise MissingData(
+                'Missing fetched SIFTS. Try calling `fetch` method first.'
+            )
 
         df = self.read(False)
         LOGGER.debug(f'Received {len(df)} records')
 
-        df = df[
-            list(self.renames)
-        ].rename(
-            columns=self.renames
-        ).drop_duplicates()
+        df = df[list(self.renames)].rename(columns=self.renames).drop_duplicates()
         LOGGER.debug(f'Renamed and removed duplicates: records={len(df)}')
 
         df = df[~df.Chain.isna()]
         LOGGER.debug(f'Removed entries with empty chains: records={len(df)}')
 
         df['PDB'] = df['PDB'].str.upper()
-        df['PDB_Chain'] = [
-            f'{x[1]}:{x[2]}' for x in df[['PDB', 'Chain']].itertuples()]
-        LOGGER.debug(f'Created PDB_Chain column')
+        df['PDB_Chain'] = [f'{x[1]}:{x[2]}' for x in df[['PDB', 'Chain']].itertuples()]
+        LOGGER.debug('Created PDB_Chain column')
 
         for col in ['PDB_start', 'PDB_end']:
-            df[col] = ["".join(filter(lambda x: x.isdigit(), value)) for value in df[col]]
+            df[col] = [
+                "".join(filter(lambda x: x.isdigit(), value)) for value in df[col]
+            ]
             df[col] = df[col].astype(int)
         LOGGER.debug('Digitized boundaries')
 
         sel = ['PDB_Chain'] + list(self.renames.values())
-        df = df[sel].sort_values(
-            ['UniProt_ID', 'PDB_Chain']
-        )
+        df = df[sel].sort_values(['UniProt_ID', 'PDB_Chain'])
         LOGGER.debug(f'Finished parsing df: records={len(df)}')
 
         if overwrite or self.df is None:
@@ -335,7 +349,7 @@ class SIFTS(AbstractResource):
             sel_column = 'UniProt_ID'
         return sel_column
 
-    def map_numbering(self, obj_id: str) -> t.Iterator[Mapping]:
+    def map_numbering(self, obj_id: str) -> abc.Generator[Mapping]:
         """
         Retrieve mappings associated with the ``obj_id``. Mapping example::
 
@@ -344,18 +358,21 @@ class SIFTS(AbstractResource):
             3 -> None
             4 -> 4
 
-        Above, a UniProt sequence maps to two segments of a PDB sequence (2-3 and 4).
-        PDB sequence is always considered a subset of a corresponding UniProt sequence.
-        Thus, any "holes" between continuous PDB segments are filled with ``None``.
+        Above, a UniProt sequence maps to two segments of a PDB sequence
+        (2-3 and 4). PDB sequence is always considered a subset of
+        a corresponding UniProt sequence. Thus, any "holes" between continuous
+        PDB segments are filled with ``None``.
 
         .. figure:: fig/segments.png
            :scale: 50 %
            :alt: segments
 
-           Mapping from PDB segments to UniProt segments accounting for discontinuities.
+           Mapping from PDB segments to UniProt segments accounting
+           for discontinuities.
 
         .. seealso::
-            :func:`map_segment_numbering <lXtractor.core.segment.map_segment_numbering>`
+            :func:`map_segment_numbering <lXtractor.core.segment.map_
+            segment_numbering>`
 
             :func:`wrap_into_segments`.
 
@@ -366,8 +383,9 @@ class SIFTS(AbstractResource):
             3. "UniProt ID"
 
         :return: an iterator over the ``Mapping`` objects.
-            These are "unidirectional", i.e., the ``Mapping`` is always from the UniProt
-            numbering to the PDB numbering regardless of the ``obj_id`` nature.
+            These are "unidirectional", i.e., the ``Mapping`` is always
+            from the UniProt numbering to the PDB numbering regardless
+            of the ``obj_id`` nature.
         """
         sel_column = self._categorize(obj_id)
 
@@ -375,22 +393,25 @@ class SIFTS(AbstractResource):
             raise MissingData('No SIFTS df found; try calling .parse() first')
 
         sub = self.df[self.df[sel_column] == obj_id]
-        LOGGER.debug(
-            f'Subset SIFTS by {sel_column}={obj_id}, records={len(sub)}')
+        LOGGER.debug(f'Subset SIFTS by {sel_column}={obj_id}, records={len(sub)}')
 
-        if not len(sub):
+        if len(sub) == 0:
             LOGGER.warning(f"Failed to find {obj_id} in SIFTS")
-            return None
+            yield None
 
-        groups = sub.groupby(['UniProt_ID', 'PDB_Chain'])
-        group_ids, dfs = unzip(groups)
+        group_ids, dfs = unzip(sub.groupby(['UniProt_ID', 'PDB_Chain']))
         segments = map(wrap_into_segments, dfs)
         mappings = starmap(map_segment_numbering, segments)
         yield from (
             Mapping(uni_id, pdb_chain, m)
-            for (uni_id, pdb_chain), m in zip(group_ids, mappings))
+            for (uni_id, pdb_chain), m in zip(group_ids, mappings)
+        )
 
-    def map_id(self, x: str) -> t.Optional[t.List[str]]:
+    def map_id(self, x: str) -> list[str] | None:
+        """
+        :param x: Identifier to map from.
+        :return: A list of IDs that `x` maps to.
+        """
         if self.id_mapping is None:
             self._prepare_id_map(self.df)
         res = self.id_mapping.get(x)
@@ -434,10 +455,16 @@ def wrap_into_segments(df: pd.DataFrame) -> tuple[list[Segment], list[Segment]]:
     if len(ids) > 1:
         raise ValueError(f'Expected single PDB chain for group {df}, got {ids}')
 
-    uniprot_segments, pdb_segments = map(list, unzip(
-        (Segment(row.UniProt_start, row.UniProt_end),
-         Segment(row.PDB_start, row.PDB_end))
-        for _, row in df.iterrows()))
+    uniprot_segments, pdb_segments = map(
+        list,
+        unzip(
+            (
+                Segment(row.UniProt_start, row.UniProt_end),
+                Segment(row.PDB_start, row.PDB_end),
+            )
+            for _, row in df.iterrows()
+        ),
+    )
 
     return uniprot_segments, pdb_segments
 

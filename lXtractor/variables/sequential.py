@@ -1,3 +1,6 @@
+"""
+Module defines variables calculated on sequences
+"""
 from __future__ import annotations
 
 import typing as t
@@ -17,13 +20,13 @@ K = t.TypeVar('K')
 _ProtFP = ProtFP()
 
 
-def try_map(p: T, m: abc.Mapping[T, V] | None):
+def _try_map(p: T, m: abc.Mapping[T, V] | None):
     try:
         if m is not None:
             return m[p]
         return p
-    except KeyError:
-        raise FailedCalculation(f'Missing {p} in mapping')
+    except KeyError as e:
+        raise FailedCalculation(f'Missing {p} in mapping') from e
 
 
 class SeqEl(SequenceVariable):
@@ -39,6 +42,7 @@ class SeqEl(SequenceVariable):
     1
 
     """
+
     __slots__ = ('p', 'seq_name')
 
     def __init__(self, p: int, seq_name: str = SeqNames.seq1):
@@ -56,10 +60,12 @@ class SeqEl(SequenceVariable):
     def rtype(self) -> str:
         return 'str'
 
-    def calculate(self, seq: abc.Sequence[T], mapping: t.Optional[MappingT] = None) -> T:
-        p = try_map(self.p, mapping)
+    def calculate(
+        self, obj: abc.Sequence[T], mapping: t.Optional[MappingT] = None
+    ) -> T:
+        p = _try_map(self.p, mapping)
         try:
-            return seq[p - 1]
+            return obj[p - 1]
         except IndexError:
             raise FailedCalculation(f'Missing index {p - 1} in sequence')
 
@@ -72,6 +78,7 @@ class PFP(SequenceVariable):
 
         :class:`lXtractor.variables.base.ProtFP`
     """
+
     __slots__ = ('p', 'i')
 
     def __init__(self, p: int, i: int):
@@ -90,14 +97,13 @@ class PFP(SequenceVariable):
         return float
 
     def calculate(
-            self, seq: abc.Sequence[str],
-            mapping: t.Optional[MappingT] = None
+        self, obj: abc.Sequence[str], mapping: t.Optional[MappingT] = None
     ) -> float:
-        p = try_map(self.p, mapping)
+        p = _try_map(self.p, mapping)
         try:
-            return _ProtFP[(seq[p - 1], self.i)]
-        except (KeyError, IndexError):
-            raise FailedCalculation(f'Failed to map {p - 1} with ProtFP')
+            return _ProtFP[(obj[p - 1], self.i)]
+        except (KeyError, IndexError) as e:
+            raise FailedCalculation(f'Failed to map {p - 1} with ProtFP') from e
 
 
 class SliceTransformReduce(SequenceVariable, t.Generic[T, V, K]):
@@ -116,13 +122,15 @@ class SliceTransformReduce(SequenceVariable, t.Generic[T, V, K]):
         :func:`make_str` -- a factory function to quickly make child classes.
 
     """
+
     __slots__ = ('start', 'stop', 'step', 'seq_name')
 
     def __init__(
-            self, start: int | None = None,
-            stop: int | None = None,
-            step: int | None = None,
-            seq_name: str = SeqNames.seq1
+        self,
+        start: int | None = None,
+        stop: int | None = None,
+        step: int | None = None,
+        seq_name: str = SeqNames.seq1,
     ):
         """
         .. note::
@@ -131,8 +139,8 @@ class SliceTransformReduce(SequenceVariable, t.Generic[T, V, K]):
         :param start: Start position
         :param stop: Stop position.
         :param step: Slicing step.
-        :param seq_name: Sequence name. Please use it in case a resulting variable
-            will be applied to seqs other than the primary sequence.
+        :param seq_name: Sequence name. Please use it in case a resulting
+            variable will be applied to seqs other than the primary sequence.
         """
         #: Start position.
         self.start = start
@@ -168,31 +176,33 @@ class SliceTransformReduce(SequenceVariable, t.Generic[T, V, K]):
         """
         return seq
 
-    def calculate(self, seq: abc.Iterable[K], mapping: t.Optional[MappingT] = None) -> V:
+    def calculate(
+        self, obj: abc.Iterable[K], mapping: t.Optional[MappingT] = None
+    ) -> V:
         start, stop, step = map(
-            lambda x: None if x is None else try_map(x, mapping),
-            [self.start, self.stop, self.step]
+            lambda x: None if x is None else _try_map(x, mapping),
+            [self.start, self.stop, self.step],
         )
 
         if start is not None:
             start -= 1
 
-        return self.reduce(self.transform(islice_extended(seq, start, stop, step)))
+        return self.reduce(self.transform(islice_extended(obj, start, stop, step)))
 
 
 def make_str(
-        reduce: abc.Callable[[abc.Iterable[T]], V],
-        rtype: t.Type,
-        transform: abc.Callable[[abc.Iterator[K]], abc.Iterable[T]] | None = None,
-        reduce_name: str | None = None,
-        transform_name: str | None = None,
+    reduce: abc.Callable[[abc.Iterable[T]], V],
+    rtype: t.Type,
+    transform: abc.Callable[[abc.Iterator[K]], abc.Iterable[T]] | None = None,
+    reduce_name: str | None = None,
+    transform_name: str | None = None,
 ) -> t.Type[SliceTransformReduce]:
     """
     Makes a non-abstract subclass of :class:`SliceTransformReduce`
     with specific transform and reduce operations.
 
-    To make things clearer, transform and reduce operations will have certain names
-    that will be incoroporated into a created class name.
+    To make things clearer, transform and reduce operations will have certain
+    names that will be incoroporated into a created class name.
 
     **Example 1: no transformation:**
 
@@ -211,11 +221,12 @@ def make_str(
 
     **Example 2: with transformation:**
 
-    Note that the first operatoiin -- slicing -- inevitably produces an iterator
-    over the input sequence. Hence, even if we aren't slicing, i.e., provide ``None``
-    for all :meth:`SliceTransformReduce.__init__` arguments, we still obtain an
-    iterator over characters. Therefore, we convert it to string and then apply the
-    necessary operation. Note that this feature makes transform ``map``-friendly.
+    Note that the first operatoiin -- slicing -- inevitably produces an
+    iterator over the input sequence. Hence, even if we aren't slicing,
+    i.e., provide ``None`` for all :meth:`SliceTransformReduce.__init__`
+    arguments, we still obtain an iterator over characters. Therefore,
+    we convert it to string and then apply the necessary operation.
+    Note that this feature makes transform ``map``-friendly.
 
     >>> count_x = lambda x: sum(1 for c in x if c == 'X')
     >>> upper = lambda x: "".join(x).upper()
@@ -227,25 +238,25 @@ def make_str(
     "SliceUpperCountx(start=None,stop=None,step=None,seq_name='seq1')"
 
     .. seealso::
-        :class:`SliceTransformReduce` -- a base abstract class from which this function
-        generates variables.
+        :class:`SliceTransformReduce` -- a base abstract class from which this
+        function generates variables.
 
     :param reduce: Reduce operation peferably producing a single output.
-    :param rtype: Return type of the reduce operation and, since this is the last operatoin,
-        of a variable itself.
-    :param transform: Optional transformation operation. It accepts an iterator over (optionally)
-        sliced input elements and returns an iterable over elements of potentially another type,
+    :param rtype: Return type of the reduce operation and, since this is the
+        last operatoin, of a variable itself.
+    :param transform: Optional transformation operation. It accepts an iterator
+        over (optionally) sliced input elements and returns an iterable over
+        elements of potentially another type,
         as long as they are supported by the `reduce`.
     :param reduce_name: The name of the reduce operation.
         Please provide it in case using ``lambda``.
     :param transform_name: The name of the transform operation.
         Please provide it in case using ``lambda``.
-    :return: An uninitialized subclass of :class:`SliceTransformReduce` encapsulating the provided
-        operations within the :meth:`SliceTransformReduce.calculate`.
+    :return: An uninitialized subclass of :class:`SliceTransformReduce`
+        encapsulating the provided operations within the
+        :meth:`SliceTransformReduce.calculate`.
     """
-    d = {
-        'reduce': staticmethod(reduce), 'rtype': property(lambda _: rtype)
-    }
+    d = {'reduce': staticmethod(reduce), 'rtype': property(lambda _: rtype)}
 
     if transform is None:
         transform_name = ''
@@ -255,11 +266,11 @@ def make_str(
 
     reduce_name = reduce_name or reduce.__name__
 
-    transform_name, reduce_name = map(lambda x: x.capitalize(), [transform_name, reduce_name])
-
-    return type(
-        f'Slice{transform_name}{reduce_name}', (SliceTransformReduce,), d
+    transform_name, reduce_name = map(
+        lambda x: x.capitalize(), [transform_name, reduce_name]
     )
+
+    return type(f'Slice{transform_name}{reduce_name}', (SliceTransformReduce,), d)
 
 
 if __name__ == '__main__':
