@@ -38,17 +38,17 @@ jobs:
           environment-file: environment.yml
           use-only-tar-bz2: true # IMPORTANT: This needs to be set for caching to work properly!
       - name: Install test packages
-        run: |
-          mamba install -c conda-forge -y pytest pytest-cov
+        run: mamba install -c conda-forge -y pytest pytest-cov
       - name: Run tests
         run: >
           pytest
           --ignore=test/test_variables.py
           --ignore=test/test_manager.py
-          --cov=lXtractor --cov-branch --cov-report term-missing
+          --cov=lXtractor 
+          --cov-branch 
+          --cov-report=term-missing
       - name: Publish cov
-        run: |
-          coveralls --service=github
+        run: coveralls --service=github
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache conda env
