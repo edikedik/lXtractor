@@ -47,10 +47,10 @@ jobs:
           --ignore=test/test_manager.py
           --cov=lXtractor --cov-branch --cov-report term-missing
       - name: Publish cov
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           coveralls --service=github
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache conda env
         uses: actions/cache@v2
         with:
