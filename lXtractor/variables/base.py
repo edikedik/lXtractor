@@ -14,17 +14,21 @@ from pathlib import Path
 import biotite.structure as bst
 import numpy as np
 import pandas as pd
+from toolz import curry
 
+from lXtractor.core.exceptions import FailedCalculation
 from lXtractor.ext import resources
 from lXtractor.util.io import read_n_col_table
 
 AggFns = {'min': np.min, 'max': np.max, 'mean': np.mean, 'median': np.median}
+
 LOGGER = logging.getLogger(__name__)
 
 MappingT: t.TypeAlias = abc.Mapping[int, t.Optional[int]]
 RT = t.TypeVar('RT')  # return type
 OT = t.TypeVar('OT', abc.Sequence, bst.AtomArray)  # object type
 T = t.TypeVar('T')
+V = t.TypeVar('V')
 
 
 class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
@@ -57,7 +61,7 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
                 return f"\'{v}\'"
             return v
 
-        init_params = inspect.signature(self.__init__).parameters
+        init_params = inspect.signature(self.__class__.__init__).parameters
         args = ','.join(
             map(lambda x: f'{x}={parse_value(getattr(self, x))}', init_params)
         )
@@ -70,7 +74,6 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
         Variable's return type, such that `rtype("result")` converts to
         the relevant type.
         """
-        raise NotImplementedError
 
     @abstractmethod
     def calculate(self, obj: OT, mapping: t.Optional[MappingT] = None) -> RT:
@@ -83,7 +86,6 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
         :return: Calculation result.
         :raises: :class:`FailedCalculation` if the calculation fails.
         """
-        raise NotImplementedError
 
 
 class StructureVariable(AbstractVariable[bst.AtomArray, RT]):
@@ -178,7 +180,7 @@ class Variables(UserDict):
         """
 
         try:
-            vs = read_n_col_table(path, 2)
+            vs = read_n_col_table(path, 2) or pd.DataFrame()
         except pd.errors.EmptyDataError:
             vs = pd.DataFrame()
         variables = cls()
@@ -210,7 +212,7 @@ class Variables(UserDict):
         return variables
 
     def write(
-        self, path: Path, skip_if_contains: t.Collection[str] | None = None
+        self, path: Path, skip_if_contains: abc.Sequence[str] | None = None
     ) -> None:
         """
         :param path: Path to a file.
@@ -218,7 +220,7 @@ class Variables(UserDict):
             provided strings.
         """
         items = (f'{v.id}\t{r}' for v, r in self.items())
-        if skip_if_contains:
+        if skip_if_contains is not None:
             items = filterfalse(
                 lambda it: any(x in it for x in skip_if_contains), items
             )
@@ -367,3 +369,13 @@ class ProtFP:
 
 if __name__ == '__main__':
     raise RuntimeError
+
+
+@curry
+def _try_map(p: T, m: abc.Mapping[T, V] | None):
+    try:
+        if m is not None:
+            return m[p]
+        return p
+    except KeyError as e:
+        raise FailedCalculation(f'Missing {p} in mapping') from e

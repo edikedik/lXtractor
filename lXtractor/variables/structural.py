@@ -16,28 +16,16 @@ from toolz import curry, pipe
 
 from lXtractor.core.exceptions import FailedCalculation, InitError
 from lXtractor.util.structure import calculate_dihedral
-from lXtractor.variables.base import StructureVariable, AggFns, MappingT
+from lXtractor.variables.base import StructureVariable, AggFns, MappingT, _try_map
 
 LOGGER = logging.getLogger(__name__)
-
-
-@curry
-def _map_pos(pos: int, mapping: t.Optional[MappingT] = None) -> int:
-    if mapping is None:
-        return pos
-    try:
-        return mapping[pos]
-    except KeyError as e:
-        raise FailedCalculation(
-            f'Missing position {pos} in the provided mapping.'
-        ) from e
 
 
 @curry
 def _get_residue_mask(
     pos: int, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
 ) -> np.ndarray:
-    pos = _map_pos(pos, mapping)
+    pos = _try_map(pos, mapping)
 
     mask = np.equal(array.res_id, pos)
 

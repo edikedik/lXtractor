@@ -11,22 +11,13 @@ from more_itertools import islice_extended
 
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import FailedCalculation
-from lXtractor.variables.base import SequenceVariable, MappingT, ProtFP
+from lXtractor.variables.base import SequenceVariable, MappingT, ProtFP, _try_map
 
 T = t.TypeVar('T')
 V = t.TypeVar('V')
 K = t.TypeVar('K')
 
 _ProtFP = ProtFP()
-
-
-def _try_map(p: T, m: abc.Mapping[T, V] | None):
-    try:
-        if m is not None:
-            return m[p]
-        return p
-    except KeyError as e:
-        raise FailedCalculation(f'Missing {p} in mapping') from e
 
 
 class SeqEl(SequenceVariable):
@@ -57,8 +48,8 @@ class SeqEl(SequenceVariable):
         self.seq_name = seq_name
 
     @property
-    def rtype(self) -> str:
-        return 'str'
+    def rtype(self) -> t.Type[str]:
+        return str
 
     def calculate(
         self, obj: abc.Sequence[T], mapping: t.Optional[MappingT] = None
@@ -190,6 +181,9 @@ class SliceTransformReduce(SequenceVariable, t.Generic[T, V, K]):
         return self.reduce(self.transform(islice_extended(obj, start, stop, step)))
 
 
+# TODO: isn't compatible with parallel computation because ABC aren't serializable
+# monitor https://github.com/uqfoundation/dill/issues/332 the solution in the next
+# versions of dill
 def make_str(
     reduce: abc.Callable[[abc.Iterable[T]], V],
     rtype: t.Type,
@@ -270,7 +264,10 @@ def make_str(
         lambda x: x.capitalize(), [transform_name, reduce_name]
     )
 
-    return type(f'Slice{transform_name}{reduce_name}', (SliceTransformReduce,), d)
+    cls_name = f'Slice{transform_name}{reduce_name}'
+    obj = type(cls_name, (SliceTransformReduce,), d)
+
+    return obj
 
 
 if __name__ == '__main__':

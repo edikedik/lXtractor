@@ -62,7 +62,7 @@ class SimpleCalculator(AbstractCalculator[OT, VT, RT]):
     def vmap(
         self, o: abc.Iterable[OT], v: VT, m: abc.Iterable[MappingT | None] | None
     ) -> abc.Iterator[ERT]:
-        if m is None:
+        if not isinstance(m, abc.Iterable):
             m = repeat(m)
         return starmap(
             lambda _o, _m: _try_calculate(_o, v, _m, self.valid_exceptions), zip(o, m)
@@ -92,7 +92,7 @@ class ParallelCalculator(AbstractCalculator):
         v: abc.Iterable[abc.Iterable[VT]],
         m: abc.Iterable[MappingT | None] | None,
     ) -> abc.Iterator[list[ERT]]:
-        if m is None:
+        if isinstance(m, dict) or m is None:
             m = repeat(m)
         with ProcessPoolExecutor(self.num_proc) as executor:
             results = executor.map(
@@ -110,7 +110,7 @@ class ParallelCalculator(AbstractCalculator):
     def vmap(
         self, o: abc.Iterable[OT], v: VT, m: abc.Iterable[MappingT | None]
     ) -> abc.Iterator[RT]:
-        if m is None:
+        if not isinstance(m, abc.Iterable):
             m = repeat(m)
         with ProcessPoolExecutor(self.num_proc) as executor:
             results = executor.map(
