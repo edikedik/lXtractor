@@ -57,7 +57,7 @@ LOGGER = logging.getLogger(__name__)
 
 def topo_iter(
     start_obj: T, iterator: abc.Callable[[T], abc.Iterator[T]]
-) -> abc.Generator[list[T]]:
+) -> abc.Generator[list[T], None, None]:
     """
     Iterate over sequences in topological order.
 
@@ -1419,7 +1419,9 @@ class Chain(AbstractChain):
         for c in self.children:
             c.write(
                 base_dir / dump_names.segments_dir / c.id,
-                dump_names=dump_names, str_fmt=str_fmt, write_children=write_children
+                dump_names=dump_names,
+                str_fmt=str_fmt,
+                write_children=write_children,
             )
 
     def add_structure(
@@ -2101,7 +2103,7 @@ class ChainList(abc.MutableSequence[CT]):
 
 @curry
 def _read_obj(
-        path: Path, obj_type: t.Type[CT], tolerate_failures: bool, **kwargs
+    path: Path, obj_type: t.Type[CT], tolerate_failures: bool, **kwargs
 ) -> CT | None:
     try:
         return obj_type.read(path, **kwargs)
@@ -2114,9 +2116,7 @@ def _read_obj(
 
 
 @curry
-def _write_obj(
-        obj: CT, path: Path, tolerate_failures: bool, **kwargs
-) -> Path | None:
+def _write_obj(obj: CT, path: Path, tolerate_failures: bool, **kwargs) -> Path | None:
     try:
         obj.write(path, **kwargs)
         return path
@@ -2309,6 +2309,7 @@ class InitializerCallback(t.Protocol):
     A protocol defining signature for a callback used with
     :class:`ChainInitializer`.
     """
+
     @t.overload
     def __call__(self, inp: CT) -> CT | None:
         ...
