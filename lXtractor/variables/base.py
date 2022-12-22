@@ -61,7 +61,7 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
                 return f"\'{v}\'"
             return v
 
-        init_params = inspect.signature(self.__class__.__init__).parameters
+        init_params = inspect.signature(self.__init__).parameters
         args = ','.join(
             map(lambda x: f'{x}={parse_value(getattr(self, x))}', init_params)
         )
