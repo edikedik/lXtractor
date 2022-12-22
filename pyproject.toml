@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "lXtractor"
 dynamic = ["version"]
 description = "Feature extraction library for sequences and structures"
-readme = "README.md"
+readme = "README.rst"
 requires-python = ">=3.10"
 license_file = { text = "LICENSE" }
 keywords = [
@@ -64,13 +64,14 @@ exclude = [
 [tool.hatch.build.targets.wheel]
 only-include = ['lXtractor']
 
-[tool.hatch.envs.default]
+[tool.hatch.envs.test]
 dependencies = [
-  "pytest",
-  "pytest-cov",
+    "pytest",
+    "pytest-cov",
+    "pytest-sugar",
 ]
 
-[tool.hatch.envs.default.scripts]
+[tool.hatch.envs.test.scripts]
 cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=tkp_finder --cov=tests {args}"
 no-cov = "cov --no-cov {args}"
 
@@ -81,20 +82,19 @@ python = ["310", "311"]
 branch = true
 parallel = true
 omit = [
-  "lXtractor/__about__.py",
+    "lXtractor/__about__.py",
 ]
 
 [tool.coverage.report]
 exclude_lines = [
-  "no cov",
-  "if __name__ == .__main__.:",
-  "if TYPE_CHECKING:",
+    "no cov",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
 ]
 
 [tool.pylint.format]
 max-line-length = "88"
 good-names = "i, j, k, x, df, l, m, n, f, fn, e"
-
 
 [tool.pylint."MESSAGES CONTROL"]
 disable = [
@@ -109,3 +109,25 @@ disable = [
     "exec-used",
     "broad-except"
 ]
+ignore_paths = [
+    "test"
+]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+no_implicit_optional = true
+exclude = ["scripts", "docs", "test"]
+
+[[tool.mypy.overrides]]
+module = "networkx.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "biotite.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "toolz.*"
+ignore_missing_imports = true
