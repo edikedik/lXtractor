@@ -13,6 +13,7 @@ from typing import runtime_checkable
 from lXtractor.core.config import DumpNames, _DumpNames
 
 T = t.TypeVar('T')
+_T = t.TypeVar('_T', contravariant=True)
 KT = t.TypeVar('KT', bound=abc.Hashable)
 VT = t.TypeVar('VT')
 
@@ -228,19 +229,19 @@ class AbstractChain(metaclass=ABCMeta):
 
 
 @t.runtime_checkable
-class Ord(t.Protocol[T]):
+class Ord(t.Protocol[_T]):
     """
     Any objects defining comparison operators.
     """
 
-    def __le__(self, other: T) -> bool:
-        pass
+    def __le__(self, other: _T) -> bool:
+        ...
 
-    def __ge__(self, other: T) -> bool:
-        pass
+    def __ge__(self, other: _T) -> bool:
+        ...
 
-    def __eq__(self, other: T) -> bool:
-        pass
+    def __eq__(self, other: object) -> bool:
+        ...
 
 
 @runtime_checkable
