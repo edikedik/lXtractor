@@ -22,28 +22,53 @@ _Getter = t.Callable[[T, t.Sequence[str]], t.Sequence[str]]
 
 _MapT = t.Dict[int, t.Optional[int]]
 
+_AminoAcids = [
+    ('ALA', 'A'),
+    ('CYS', 'C'),
+    ('THR', 'T'),
+    ('GLU', 'E'),
+    ('ASP', 'D'),
+    ('PHE', 'F'),
+    ('TRP', 'W'),
+    ('ILE', 'I'),
+    ('VAL', 'V'),
+    ('LEU', 'L'),
+    ('LYS', 'K'),
+    ('MET', 'M'),
+    ('ASN', 'N'),
+    ('GLN', 'Q'),
+    ('SER', 'S'),
+    ('ARG', 'R'),
+    ('TYR', 'Y'),
+    ('HIS', 'H'),
+    ('PRO', 'P'),
+    ('GLY', 'G'),
+]
 
-class SoftMapper(UserDict, t.Generic[KT, VT, T]):
-    """
-    A dict with ``[]`` syntax behaving as :meth:`dict.get`.
-    """
 
-    def __init__(self, *args, unk: T, **kwargs):
-        """
-
-        :param args: Passed to :class:`dict`.
-        :param unk: A value returned when `item` is not in dict.
-        :param kwargs: Passed to :class:`dict`.
-        """
-        self.unk = unk
-        super().__init__(*args, **kwargs)
-
-    def __getitem__(self, item: KT) -> VT | T:
-        return super().get(item, self.unk)
-        # try:
-        #     return super().__getitem__(item)
-        # except KeyError:
-        #     return self.unk
+# class SoftMapper(UserDict, t.Generic[KT, VT, T]):
+#     """
+#     A dict with ``[]`` syntax behaving as :meth:`dict.get`.
+#     """
+#
+#     def __init__(self, *args, unk: T, **kwargs):
+#         """
+#
+#         :param args: Passed to :class:`dict`.
+#         :param unk: A value returned when `item` is not in dict.
+#         :param kwargs: Passed to :class:`dict`.
+#         """
+#         self.unk = unk
+#         super().__init__(*args, **kwargs)
+#
+#     def __getitem__(self, item: KT) -> VT | T:
+#         # !!! Below fails with the recursion error !!!
+#         # return super().get(item, self.unk)
+#         try:
+#             return self.data[item]
+#             # return super().__getitem__(item)
+#         except KeyError:
+#             return self.unk
 
 
 class AminoAcidDict(UserDict):
@@ -70,64 +95,19 @@ class AminoAcidDict(UserDict):
         """
 
         self.any_unk = any_unk
+        self.aa1_unk = aa1_unk
+        self.aa3_unk = aa3_unk
 
-        self.three21: SoftMapper[str, str, str] = SoftMapper(
-            unk=aa1_unk,
-            **{
-                'ALA': 'A',
-                'CYS': 'C',
-                'THR': 'T',
-                'GLU': 'E',
-                'ASP': 'D',
-                'PHE': 'F',
-                'TRP': 'W',
-                'ILE': 'I',
-                'VAL': 'V',
-                'LEU': 'L',
-                'LYS': 'K',
-                'MET': 'M',
-                'ASN': 'N',
-                'GLN': 'Q',
-                'SER': 'S',
-                'ARG': 'R',
-                'TYR': 'Y',
-                'HIS': 'H',
-                'PRO': 'P',
-                'GLY': 'G',
-            },
-        )
-        self.one23: SoftMapper[str, str, str] = SoftMapper(
-            unk=aa3_unk,
-            **{
-                'A': 'ALA',
-                'C': 'CYS',
-                'T': 'THR',
-                'E': 'GLU',
-                'D': 'ASP',
-                'F': 'PHE',
-                'W': 'TRP',
-                'I': 'ILE',
-                'V': 'VAL',
-                'L': 'LEU',
-                'K': 'LYS',
-                'M': 'MET',
-                'N': 'ASN',
-                'Q': 'GLN',
-                'S': 'SER',
-                'R': 'ARG',
-                'Y': 'TYR',
-                'H': 'HIS',
-                'P': 'PRO',
-                'G': 'GLY',
-            },
-        )
+        self.three21 = dict(_AminoAcids)
+        self.one23 = dict((x[1], x[0]) for x in _AminoAcids)
+
         super().__init__(**self.three21, **self.one23)
 
     def __getitem__(self, item: str) -> str:
         if len(item) == 3:
-            return self.three21[item]
+            return self.three21.get(item, self.aa1_unk)
         if len(item) == 1:
-            return self.one23[item]
+            return self.one23.get(item, self.aa3_unk)
         if self.any_unk is not None:
             return self.any_unk
         raise KeyError(
