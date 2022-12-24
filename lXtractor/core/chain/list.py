@@ -6,7 +6,7 @@ from collections import abc
 from functools import partial
 from itertools import chain, zip_longest, tee
 
-from more_itertools import first_true, nth
+from more_itertools import nth
 
 from lXtractor.core.base import Ord, ApplyT
 from lXtractor.core.config import MetaNames
@@ -18,6 +18,9 @@ if t.TYPE_CHECKING:
     from lXtractor.core.chain.chain import Chain
 
     CT = t.TypeVar('CT', ChainStructure, ChainSequence, Chain)
+    CS = t.TypeVar('CS', ChainStructure, ChainSequence)
+else:
+    CT = t.TypeVar('CT')
 
 
 T = t.TypeVar('T')
@@ -42,6 +45,19 @@ def add_category(c: CT, cat: str):
         existing = meta[field].split(",")
         if cat not in existing:
             meta[field] += f",{cat}"
+
+
+# def _to_segment(s: abc.Sequence[int] | Segment) -> Segment:
+#     if isinstance(s, abc.Sequence):
+#         if len(s) != 2:
+#             raise TypeError("If providing sequences, it must contain "
+#                             f"exactly two elements; Found {len(s)}")
+#         start, end = s
+#         return Segment(start, end)
+#     elif isinstance(s, Segment):
+#         return s
+#     else:
+#         raise TypeError(f'Invalid type {type(s)} to convert')
 
 
 class ChainList(abc.MutableSequence[CT]):
@@ -127,11 +143,11 @@ class ChainList(abc.MutableSequence[CT]):
                     for _cat in cat:
                         add_category(c, _cat)
         self._chains: list[CT] = chains
-        self._type: str | None = None
-        self._check_match_and_set_type(self._infer_type(self._chains))
+        self._type: str | None = self._infer_type(self._chains)
+        self._check_match_and_set_type(self._type)
 
     @staticmethod
-    def _infer_type(objs: abc.Sequence[T]) -> t.Optional[str]:
+    def _infer_type(objs: abc.Sequence[T]) -> str | None:
         """
         Infer a type of objs.
         Populate :attr:`_type` with the inferred type if it's supported.
@@ -147,16 +163,17 @@ class ChainList(abc.MutableSequence[CT]):
         types = set(map(type, objs))
         if len(types) > 1:
             raise TypeError(f"ChainList elements must have single type; got {types}")
-        if objs:
-            match objs[0].__class__.__name__:
-                case 'Chain':
+        if len(objs) > 0:
+            from lXtractor.core import chain as lxc
+            match objs[0]:
+                case lxc.Chain():
                     return "chain"
-                case Segment():
+                case lxc.ChainSequence():
                     return "seq"
-                case ChainStructure():
+                case lxc.ChainStructure():
                     return "str"
                 case _:
-                    raise TypeError(f"Unsupported type {objs[0]}")
+                    raise TypeError(f"Unsupported type {type(objs[0])}")
         else:
             return None
 
@@ -186,7 +203,7 @@ class ChainList(abc.MutableSequence[CT]):
                     f"Supplied type doesn't match existing type {self._type}"
                 )
         else:
-            self._type = None
+            self._type = x
 
     def __len__(self) -> int:
         return len(self._chains)
@@ -196,13 +213,17 @@ class ChainList(abc.MutableSequence[CT]):
         ...
 
     @t.overload
-    def __getitem__(self, index: slice | str) -> ChainList[CT]:
+    def __getitem__(self, index: slice) -> ChainList[CT]:
+        ...
+
+    @t.overload
+    def __getitem__(self, index: str) -> ChainList[CT]:
         ...
 
     def __getitem__(self, index: t.SupportsIndex | slice | str) -> CT | ChainList[CT]:
         match index:
             case int():
-                return self._chains[index]
+                return self._chains.__getitem__(index)
             case slice():
                 return ChainList(self._chains[index])
             case str():
@@ -243,7 +264,8 @@ class ChainList(abc.MutableSequence[CT]):
             self._type = _type
         else:
             self._check_match_and_set_type(_type)
-        self._chains.__setitem__(index, value)
+        # mypy fails to recognize overloaded arguments
+        self._chains.__setitem__(index, value)  # type: ignore
 
     def __delitem__(self, index: t.SupportsIndex | int | slice):
         self._chains.__delitem__(index)
@@ -253,9 +275,10 @@ class ChainList(abc.MutableSequence[CT]):
     def __contains__(self, item: object) -> bool:
 
         if isinstance(item, str):
-            return first_true(
-                self._chains, default=False, pred=lambda c: c.id == item  # type: ignore
-            )
+            for c in self:
+                if c.id == item:
+                    return True
+            return False
         return item in self._chains
 
     def __add__(self, other: ChainList | abc.Iterable):
@@ -285,6 +308,7 @@ class ChainList(abc.MutableSequence[CT]):
         """
         Simultaneously iterate over topological levels of children.
 
+        >>> from lXtractor.core.chain.sequence import ChainSequence
         >>> s = ChainSequence.from_string('ABCDE', name='A')
         >>> child1 = s.spawn_child(1, 4)
         >>> child2 = child1.spawn_child(2, 3)
@@ -296,8 +320,10 @@ class ChainList(abc.MutableSequence[CT]):
 
         :return: An iterator over chain lists of children levels.
         """
+        # Mypy thinks zip_longest produces tuples of `object` types
+        # probably due to "*"
         yield from map(
-            lambda xs: ChainList(chain.from_iterable(xs)),
+            lambda xs: ChainList(chain.from_iterable(xs)),  # type: ignore
             zip_longest(*map(lambda c: c.iter_children(), self._chains), fillvalue=[]),
         )
 
@@ -324,6 +350,7 @@ class ChainList(abc.MutableSequence[CT]):
         Collapse all children of each object in this list into a single
         chain list.
 
+        >>> from lXtractor.core.chain.sequence import ChainSequence
         >>> s = ChainSequence.from_string('ABCDE', name='A')
         >>> child1 = s.spawn_child(1, 4)
         >>> child2 = child1.spawn_child(2, 3)
@@ -341,43 +368,42 @@ class ChainList(abc.MutableSequence[CT]):
         """
         :return: An iterator over :class:`ChainSequence`'s.
         """
-        match self._type:
-            case "chain" | "str":
-                for c in self._chains:
-                    yield c.seq
-            case _:
+        # mypy doesn't know the type is known at runtime
+        from lXtractor.core import chain as lxc
+        if len(self) > 0:
+            x = self[0]
+            if (
+                    isinstance(x, lxc.chain.Chain) or
+                    isinstance(x, lxc.structure.ChainStructure)
+            ):
+                yield from (c.seq for c in self._chains)
+            else:
                 yield from iter(self._chains)
+        else:
+            yield from iter([])
 
     def iter_structures(self) -> abc.Generator[ChainStructure, None, None]:
         """
         :return: An generator over :class:`ChainStructure`'s.
         """
-        match self._type:
-            case "chain":
+        # mypy doesn't know the type is known at runtime
+        from lXtractor.core import chain as lxc
+        if len(self) > 0:
+            x = self[0]
+            if isinstance(x, lxc.Chain):
                 yield from chain.from_iterable(c.structures for c in self._chains)
-            case "str":
-                yield from iter(self)
-            case _:
+            elif isinstance(x, lxc.ChainStructure):
+                yield from iter(self._chains)
+            else:
                 yield from iter([])
+        else:
+            yield from iter([])
 
     def iter_structure_sequences(self) -> abc.Generator[ChainSequence, None, None]:
         """
         :return: Iterate over :attr:`ChainStructure.seq` attributes.
         """
         yield from (s.seq for s in self.iter_structures())
-
-    @staticmethod
-    def _to_segment(s: abc.Sequence[int] | Segment) -> Segment:
-        match s:
-            case (start, end):
-                return Segment(start, end)
-            case (start, end, _):
-                raise TypeError("If providing sequences, it must contain "
-                                f"exactly two elements; Found {len(s)}")
-            case Segment():
-                return s
-            case _:
-                raise TypeError(f"Unsupported type {type(s)}")
 
     @staticmethod
     def _get_seg_matcher(
@@ -389,22 +415,26 @@ class ChainList(abc.MutableSequence[CT]):
             if map_name is not None:
                 # Get elements in the seq whose mapped sequence matches
                 # seg boundaries
-                start = seq.get_closest(map_name, seg.start)._asdict()[map_name]
-                end = seq.get_closest(map_name, seg.end, reverse=True)._asdict()[
-                    map_name
-                ]
-                # If not such elements -> no match
-                if start is None or end is None:
+                start_item = seq.get_closest(map_name, seg.start)
+                end_item = seq.get_closest(map_name, seg.end, reverse=True)
+                if start_item is None or end_item is None:
                     return False
+
+                start = start_item._asdict()[map_name]
+                end = end_item._asdict()[map_name]
+                # If not such elements -> no match
+
                 # Create a new temporary segment using the mapped boundaries
-                seq = Segment(start, end)
+                _seq: Segment | ChainSequence = Segment(start, end)
+            else:
+                _seq = seq
             match s:
                 case "overlap":
-                    return seq.overlaps(seg)
+                    return _seq.overlaps(seg)
                 case "bounded":
-                    return seq.bounded_by(seg)
+                    return _seq.bounded_by(seg)
                 case "bounding":
-                    return seq.bounds(seg)
+                    return _seq.bounds(seg)
                 case _:
                     raise ValueError(f"Invalid matching mode {s}")
 
@@ -415,7 +445,7 @@ class ChainList(abc.MutableSequence[CT]):
         ps: abc.Iterable[Ord],
     ) -> abc.Callable[[ChainSequence, t.Optional[str]], bool]:
         def matcher(seq: ChainSequence, map_name: t.Optional[str] = None) -> bool:
-            obj = seq
+            obj: abc.Sequence | ChainSequence = seq
             if map_name:
                 obj = seq[map_name]
             return all(p in obj for p in ps)
@@ -433,7 +463,7 @@ class ChainList(abc.MutableSequence[CT]):
             case Segment():
                 match_fn = partial(
                     self._get_seg_matcher(match_type),
-                    seg=self._to_segment(s),
+                    seg=s,
                     map_name=map_name,
                 )
             case abc.Collection():
@@ -446,7 +476,7 @@ class ChainList(abc.MutableSequence[CT]):
         self,
         structures: abc.Iterable[ChainStructure],
         match_type: str,
-        s: abc.Sequence[int] | Segment,
+        s: Segment | abc.Collection[Ord],
         map_name: t.Optional[str],
     ) -> abc.Iterator[bool]:
         return self._filter_seqs(
@@ -459,7 +489,7 @@ class ChainList(abc.MutableSequence[CT]):
         *,
         match_type: str = "overlap",
         map_name: t.Optional[str] = None,
-    ) -> ChainList[SS]:
+    ) -> ChainList[CS]:
         """
         Filter to objects encompassing certain consecutive position regions
         or arbitrary positions' collections.
@@ -496,12 +526,17 @@ class ChainList(abc.MutableSequence[CT]):
         :return: A list of hits of the same type.
         """
 
-        if self.type == "seq":
-            objs, fn = iter(self), self._filter_seqs
-        elif self.type == "chain":
-            objs, fn = self.iter_sequences(), self._filter_seqs
+        from lXtractor.core import chain as lxc
+        if len(self) > 0:
+            x = self[0]
+            if isinstance(x, lxc.Chain):
+                objs, fn = self.iter_sequences(), self._filter_seqs
+            elif isinstance(x, lxc.ChainSequence):
+                objs, fn = iter(self), self._filter_seqs
+            else:
+                objs, fn = iter(self), self._filter_str
         else:
-            objs, fn = iter(self), self._filter_str
+            return ChainList([])
 
         objs1, objs2 = tee(objs)
         mask = fn(objs1, match_type, s, map_name)
@@ -512,6 +547,7 @@ class ChainList(abc.MutableSequence[CT]):
 
     def filter(self, pred: abc.Callable[[CT], bool]) -> ChainList[CT]:
         """
+        >>> from lXtractor.core.chain.sequence import ChainSequence
         >>> cl = ChainList(
         ...     [ChainSequence.from_string('AAAX', name='A'),
         ...      ChainSequence.from_string('XXX', name='X')]

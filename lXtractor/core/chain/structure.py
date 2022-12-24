@@ -87,7 +87,7 @@ class ChainStructure:
         _validate_chain(self.pdb)
 
         #: Sequence of this structure.
-        self.seq: ChainSequence | None = seq
+        self.seq: ChainSequence
 
         #: Parent of this structure.
         self.parent: ChainStructure | None = parent
@@ -100,7 +100,7 @@ class ChainStructure:
         #: preferably using :meth:`spawn_child`.
         self.children: ChainList[ChainStructure] = _parse_children(children)
 
-        if self.seq is None:
+        if seq is None:
             seq1, seq3, num = (
                 list(x) for x in unzip(self.pdb.structure.get_sequence())
             )
@@ -109,6 +109,8 @@ class ChainStructure:
             self.seq = ChainSequence.from_string(
                 "".join(seq1), name=f"{pdb_id}{Sep.chain}{pdb_chain}", **seqs
             )
+        else:
+            self.seq = seq
 
         self.seq.meta[MetaNames.pdb_id] = pdb_id
         self.seq.meta[MetaNames.pdb_chain] = pdb_chain

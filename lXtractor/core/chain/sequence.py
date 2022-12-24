@@ -75,7 +75,8 @@ class ChainSequence(Segment):
         """
         if self.children is not None:
             yield from topo_iter(self, lambda x: x.children)
-        raise MissingData('No children to iterate over')
+        else:
+            yield from iter([])
 
     @property
     def fields(self) -> tuple[str, ...]:
