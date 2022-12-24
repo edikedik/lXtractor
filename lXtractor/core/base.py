@@ -10,21 +10,24 @@ from io import TextIOBase
 from pathlib import Path
 from typing import runtime_checkable
 
-from lXtractor.core.config import DumpNames
+from lXtractor.core.config import DumpNames, _DumpNames
 
 T = t.TypeVar('T')
+KT = t.TypeVar('KT', bound=abc.Hashable)
+VT = t.TypeVar('VT')
+
 _Fetcher = t.Callable[[t.Iterable[str]], T]
 _Getter = t.Callable[[T, t.Sequence[str]], t.Sequence[str]]
 
 _MapT = t.Dict[int, t.Optional[int]]
 
 
-class SoftMapper(UserDict):
+class SoftMapper(UserDict, t.Generic[KT, VT, T]):
     """
     A dict with ``[]`` syntax behaving as :meth:`dict.get`.
     """
 
-    def __init__(self, *args, unk: t.Any, **kwargs):
+    def __init__(self, *args, unk: T, **kwargs):
         """
 
         :param args: Passed to :class:`dict`.
@@ -34,11 +37,12 @@ class SoftMapper(UserDict):
         self.unk = unk
         super().__init__(*args, **kwargs)
 
-    def __getitem__(self, item):
-        try:
-            return super().__getitem__(item)
-        except KeyError:
-            return self.unk
+    def __getitem__(self, item: KT) -> VT | T:
+        return super().get(item, self.unk)
+        # try:
+        #     return super().__getitem__(item)
+        # except KeyError:
+        #     return self.unk
 
 
 class AminoAcidDict(UserDict):
@@ -66,7 +70,7 @@ class AminoAcidDict(UserDict):
 
         self.any_unk = any_unk
 
-        self.three21 = SoftMapper(
+        self.three21: SoftMapper[str, str, str] = SoftMapper(
             unk=aa1_unk,
             **{
                 'ALA': 'A',
@@ -91,7 +95,7 @@ class AminoAcidDict(UserDict):
                 'GLY': 'G',
             },
         )
-        self.one23 = SoftMapper(
+        self.one23: SoftMapper[str, str, str] = SoftMapper(
             unk=aa3_unk,
             **{
                 'A': 'ALA',
@@ -204,13 +208,13 @@ class AbstractChain(metaclass=ABCMeta):
 
     @classmethod
     @abstractmethod
-    def read(cls, path: Path, dump_names: DumpNames = DumpNames, **kwargs):
+    def read(cls, path: Path, dump_names: _DumpNames = DumpNames, **kwargs):
         """
         Read an object.
         """
 
     @abstractmethod
-    def write(self, path: Path, dump_names: DumpNames = DumpNames, **kwargs):
+    def write(self, path: Path, dump_names: _DumpNames = DumpNames, **kwargs):
         """
         Write an object to disk.
         """
@@ -223,6 +227,7 @@ class AbstractChain(metaclass=ABCMeta):
         """
 
 
+@t.runtime_checkable
 class Ord(t.Protocol[T]):
     """
     Any objects defining comparison operators.
@@ -325,6 +330,11 @@ class UrlGetter(t.Protocol):
     """
 
     def __call__(self, *args) -> str:
+        ...
+
+
+class ApplyT(t.Protocol):
+    def __call__(self, x: T, *args, **kwargs) -> T:
         ...
 
 

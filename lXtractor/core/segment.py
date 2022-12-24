@@ -20,13 +20,19 @@ from lXtractor.core.exceptions import LengthMismatch, NoOverlap, OverlapError
 from lXtractor.util.misc import is_valid_field_name
 from lXtractor.variables.base import Variables
 
-_I = t.TypeVar('_I', bound=t.Union[int, slice])
+_S = t.TypeVar('_S', bound='Segment', covariant=True)
+T = t.TypeVar('T')
 # _IterType = t.Union[abc.Iterator[tuple], abc.Iterator[namedtuple]]
 DATA_HANDLE_MODES = ('merge', 'self', 'other')
 LOGGER = logging.getLogger(__name__)
 
 
-class Segment(abc.Sequence):
+class _Item(t.Protocol):
+    def __call__(self, *args, **kwargs) -> tuple:
+        ...
+
+
+class Segment(abc.Sequence[tuple]):
     """
     An arbitrary segment with inclusive boundaries containing arbitrary number
     of sequences.
@@ -107,7 +113,7 @@ class Segment(abc.Sequence):
         name: str | None = None,
         seqs: dict[str, abc.Sequence[t.Any]] | None = None,
         parent: Segment | None = None,
-        children: abc.Sequence | None = None,
+        children: abc.MutableSequence[Segment] | None = None,
         meta: dict[str, t.Any] | None = None,
         variables: Variables | None = None,
     ):
@@ -136,8 +142,8 @@ class Segment(abc.Sequence):
         self.name = name
         self.parent = parent
         self.children = children or []
-        self.meta = meta or {}
-        self._seqs = seqs or {}
+        self.meta: dict[str, t.Any] = meta or {}
+        self._seqs: dict[str, abc.Sequence[t.Any]] = seqs or {}
         self.variables: Variables = variables or Variables()
 
         self._setup_and_validate()
@@ -158,7 +164,7 @@ class Segment(abc.Sequence):
         return f'{self.name}{Sep.start_end}{self.start}-{self.end}{parent}'
 
     @property
-    def item_type(self) -> namedtuple:
+    def item_type(self) -> _Item:
         """
         A factory to make an `Item` namedtuple object encapsulating sequence
         names contained within this instance. The first field is reserved
@@ -172,47 +178,66 @@ class Segment(abc.Sequence):
     def __repr__(self) -> str:
         return self.id
 
-    def __iter__(self) -> abc.Iterator[tuple] | abc.Iterator[namedtuple]:
-        items = range(self.start, self.end + 1)
-        item_type = self.item_type
+    def __iter__(
+        self,
+    ) -> abc.Iterator[tuple]:
+        enum = range(self.start, self.end + 1)
         if self._seqs:
-            items = (
+            item_type = self.item_type
+            return (
                 item_type(i, *x)
-                for i, x in zip(items, zip(*self._seqs.values()), strict=True)
+                for i, x in zip(enum, zip(*self._seqs.values()), strict=True)
             )
-        yield from items
+        return ((i, ) for i in enum)
+
+    @t.overload
+    def __getitem__(self, idx: int) -> tuple:
+        ...
+
+    @t.overload
+    def __getitem__(self, idx: slice) -> list[tuple]:
+        ...
+
+    @t.overload
+    def __getitem__(self, idx: str) -> abc.Sequence[t.Any]:
+        ...
 
     def __getitem__(
         self, idx: slice | int | str
-    ) -> (
-        abc.Iterator[tuple] | abc.Iterator[namedtuple] | tuple | namedtuple | t.Sequence
-    ):
+    ) -> abc.Iterator[tuple] | tuple | int | abc.Sequence[t.Any]:
         idx = _translate_idx(idx, self.start)
-        if isinstance(idx, slice):
-            stop = idx.stop + 1 if isinstance(idx.stop, int) else idx.stop
-            idx = slice(idx.start, stop, idx.step)
-            if idx.start and idx.start < 0:
-                return iter([])
-            return islice(iter(self), idx.start, idx.stop, idx.step)
-        if isinstance(idx, int):
-            return nth(iter(self), idx)
-        if isinstance(idx, str):
-            return self._seqs[idx]
-        raise TypeError(f'Unsupported idx type {type(idx)}')
+        match idx:
+            case slice():
+                stop = idx.stop + 1 if isinstance(idx.stop, int) else idx.stop
+                idx = slice(idx.start, stop, idx.step)
+                # if idx.start and idx.start < 0:
+                #     return iter([])
+                return list(islice(iter(self), idx.start, idx.stop, idx.step))
+            case int():
+                it = nth(iter(self), idx)
+                if it is None:
+                    raise IndexError(f'{idx} is not in segment')
+                return it
+            case str():
+                return self._seqs[idx]
+            case _:
+                raise TypeError(f'Unsupported idx type {type(idx)}')
 
     def __setitem__(self, key: str, value: t.Sequence[t.Any]) -> None:
         self._validate_seq(key, value)
         self._seqs[key] = value
 
-    def __reversed__(self) -> abc.Iterator[tuple] | abc.Iterator[namedtuple]:
+    def __reversed__(self) -> abc.Iterator[tuple]:
         return always_reversible(iter(self))
 
-    def __contains__(self, item: str | Ord) -> bool:
+    def __contains__(self, item: object) -> bool:
         match item:
             case str():
                 return item in self._seqs
-            case _:
+            case Ord():
                 return self.start <= item <= self.end
+            case _:
+                return False
 
     def __len__(self):
         return self.end - self.start + 1
@@ -255,7 +280,7 @@ class Segment(abc.Sequence):
             if len(seq) != len(self):
                 self._validate_seq(k, seq)
 
-    def add_seq(self, name: str, seq: t.Sequence[t.Any]) -> t.NoReturn:
+    def add_seq(self, name: str, seq: t.Sequence[t.Any]):
         """
         Add sequence to this segment.
 
@@ -324,7 +349,7 @@ class Segment(abc.Sequence):
         deep_copy: bool = True,
         handle_mode: str = 'merge',
         sep: str = '&',
-    ) -> Segment | None:
+    ) -> Segment:
         """
         Overlap this segment with other over common indices.
 
@@ -366,7 +391,7 @@ class Segment(abc.Sequence):
                 **subset_seqs(self._seqs, self.start, start, end),
                 **subset_seqs(other._seqs, other.start, start, end),
             }
-            name = sep.join(map(str, [self.name, other.name]))
+            name: str | None = sep.join(map(str, [self.name, other.name]))
         elif handle_mode == 'self':
             meta, name = self.meta, self.name
             seqs = subset_seqs(self._seqs, self.start, start, end)
@@ -434,7 +459,7 @@ class Segment(abc.Sequence):
         return self.sub_by(Segment(start, end), **kwargs)
 
 
-def _translate_idx(idx: _I, offset: int) -> _I:
+def _translate_idx(idx: T, offset: int) -> T:
     if isinstance(idx, slice):
         start = idx.start
         stop = idx.stop
@@ -442,9 +467,11 @@ def _translate_idx(idx: _I, offset: int) -> _I:
             start = max(start - offset, 0)
         if stop is not None:
             stop -= offset
-        return slice(start, stop, idx.step)
+        # Mypy fails at type narrowing here.
+        # See https://github.com/python/mypy/issues/14045
+        return t.cast(T, slice(start, stop, idx.step))
     if isinstance(idx, int):
-        return idx - offset
+        return t.cast(T, idx - offset)
     return idx
 
 
@@ -480,7 +507,7 @@ def resolve_overlaps(
     value_fn: abc.Callable[[Segment], float] = len,
     max_it: int | None = None,
     verbose: bool = False,
-) -> abc.Generator[Segment]:
+) -> abc.Generator[Segment, None, None]:
     """
     Eliminate overlapping segments.
 
@@ -514,10 +541,10 @@ def resolve_overlaps(
         if len(cc) == 1:
             yield cc.pop()
         else:
-            sets = powerset(cc)
+            sets: abc.Iterable | list = powerset(cc)
             if verbose:
                 sets = tqdm(sets, desc=f'Resolving cc {i} with size: {len(cc)}')
-            if max_it is not None:
+            if max_it is not None and max_it > 0:
                 sets = take(max_it, sets)
             overlapping_subsets = filterfalse(do_overlap, sets)
             yield from max(overlapping_subsets, key=lambda xs: sum(map(value_fn, xs)))
@@ -525,7 +552,7 @@ def resolve_overlaps(
 
 def map_segment_numbering(
     segments_from: t.Sequence[Segment], segments_to: t.Sequence[Segment]
-) -> abc.Iterator[tuple[int, int]]:
+) -> abc.Iterator[tuple[int, int | None]]:
     """
     Create a continuous mapping between the numberings of two segment
     collections. They must contain the same number of equal length
