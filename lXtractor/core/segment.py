@@ -29,7 +29,7 @@ LOGGER = logging.getLogger(__name__)
 
 class _Item(t.Protocol):
     def __call__(self, *args, **kwargs) -> NamedTupleT:
-    ...
+        ...
 
 
 class Segment(abc.Sequence[tuple]):
@@ -179,14 +179,14 @@ class Segment(abc.Sequence[tuple]):
         return self.id
 
     def __iter__(self) -> abc.Iterator[NamedTupleT]:
-    item_type = self.item_type
-    enum = range(self.start, self.end + 1)
-    if self._seqs:
-        return (
-            item_type(i, *x)
-            for i, x in zip(enum, zip(*self._seqs.values()), strict=True)
-        )
-    return (item_type(i) for i in enum)
+        item_type = self.item_type
+        enum = range(self.start, self.end + 1)
+        if self._seqs:
+            return (
+                item_type(i, *x)
+                for i, x in zip(enum, zip(*self._seqs.values()), strict=True)
+            )
+        return (item_type(i) for i in enum)
 
     @t.overload
     def __getitem__(self, idx: int) -> NamedTupleT:
@@ -203,16 +203,16 @@ class Segment(abc.Sequence[tuple]):
     def __getitem__(
     self, idx: slice | int | str
 ) -> abc.Iterator[NamedTupleT] | NamedTupleT | int | abc.Sequence[t.Any]:
-    idx = _translate_idx(idx, self.start)
-    match idx:
-        case slice():
-            stop = idx.stop + 1 if isinstance(idx.stop, int) else idx.stop
-            idx = slice(idx.start, stop, idx.step)
-            # if idx.start and idx.start < 0:
-            #     return iter([])
-            return list(islice(iter(self), idx.start, idx.stop, idx.step))
-        case int():
-            it = nth(iter(self), idx)
+        idx = _translate_idx(idx, self.start)
+        match idx:
+            case slice():
+                stop = idx.stop + 1 if isinstance(idx.stop, int) else idx.stop
+                idx = slice(idx.start, stop, idx.step)
+                # if idx.start and idx.start < 0:
+                #     return iter([])
+                return list(islice(iter(self), idx.start, idx.stop, idx.step))
+            case int():
+                it = nth(iter(self), idx)
                 if it is None:
                     raise IndexError(f'{idx} is not in segment')
                 return it

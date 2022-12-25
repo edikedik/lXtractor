@@ -231,20 +231,20 @@ class ChainList(abc.MutableSequence[CT]):
 
     def __setitem__(self, index: t.SupportsIndex | slice, value: CT | abc.Iterable[CT]):
 
-    if not is_chain_type(value) and not isinstance(value, list):
-        # mypy fails to recognize the type must be Iterable[CT]
-        value = list(value)  # type: ignore
+        if not is_chain_type(value) and not isinstance(value, list):
+            # mypy fails to recognize the type must be Iterable[CT]
+            value = list(value)  # type: ignore
 
-    if isinstance(index, t.SupportsIndex) and is_chain_type(value):
-        is_chain_type_sequence([self._chains[0], value])
-    # ignoring type because type narrowing above fails
-    elif isinstance(index, slice) and is_chain_type_sequence(value):  # type: ignore
-        is_chain_type_sequence([self._chains[0], *value])
-    else:
-        raise TypeError("Unsupported types' combination for index and value.")
+        if isinstance(index, t.SupportsIndex) and is_chain_type(value):
+            is_chain_type_sequence([self._chains[0], value])
+        # ignoring type because type narrowing above fails
+        elif isinstance(index, slice) and is_chain_type_sequence(value):  # type: ignore
+            is_chain_type_sequence([self._chains[0], *value])
+        else:
+            raise TypeError("Unsupported types' combination for index and value.")
 
-    # mypy fails to recognize overloaded arguments
-    self._chains.__setitem__(index, value)  # type: ignore
+        # mypy fails to recognize overloaded arguments
+        self._chains.__setitem__(index, value)  # type: ignore
 
     def __delitem__(self, index: t.SupportsIndex | int | slice):
         self._chains.__delitem__(index)
@@ -283,9 +283,9 @@ class ChainList(abc.MutableSequence[CT]):
         return self._chains.index(value, start, stop)
 
     def insert(self, index: int, value: CT):
-    if len(self) > 0:
-        _check_chain_types([self[0], value])
-    self._chains.insert(index, value)
+        if len(self) > 0:
+            _check_chain_types([self[0], value])
+        self._chains.insert(index, value)
 
     def iter_children(self) -> abc.Generator[ChainList[CT], None, None]:
         """
