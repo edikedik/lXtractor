@@ -319,5 +319,13 @@ class ApplyT(t.Protocol):
         ...
 
 
+class NamedTupleT(t.Protocol):
+    def __getattr__(self, item):
+        ...
+
+    def _asdict(self) -> dict[str, t.Any]:
+        ...
+
+
 if __name__ == '__main__':
     raise RuntimeError

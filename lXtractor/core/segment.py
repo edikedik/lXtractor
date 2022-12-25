@@ -14,7 +14,7 @@ import networkx as nx
 from more_itertools import nth, always_reversible, powerset, take
 from tqdm.auto import tqdm
 
-from lXtractor.core.base import Ord
+from lXtractor.core.base import Ord, NamedTupleT
 from lXtractor.core.config import Sep
 from lXtractor.core.exceptions import LengthMismatch, NoOverlap, OverlapError
 from lXtractor.util.misc import is_valid_field_name
@@ -28,8 +28,8 @@ LOGGER = logging.getLogger(__name__)
 
 
 class _Item(t.Protocol):
-    def __call__(self, *args, **kwargs) -> tuple:
-        ...
+    def __call__(self, *args, **kwargs) -> NamedTupleT:
+    ...
 
 
 class Segment(abc.Sequence[tuple]):
@@ -178,24 +178,22 @@ class Segment(abc.Sequence[tuple]):
     def __repr__(self) -> str:
         return self.id
 
-    def __iter__(
-        self,
-    ) -> abc.Iterator[tuple]:
-        enum = range(self.start, self.end + 1)
-        if self._seqs:
-            item_type = self.item_type
-            return (
-                item_type(i, *x)
-                for i, x in zip(enum, zip(*self._seqs.values()), strict=True)
-            )
-        return ((i, ) for i in enum)
+    def __iter__(self) -> abc.Iterator[NamedTupleT]:
+    item_type = self.item_type
+    enum = range(self.start, self.end + 1)
+    if self._seqs:
+        return (
+            item_type(i, *x)
+            for i, x in zip(enum, zip(*self._seqs.values()), strict=True)
+        )
+    return (item_type(i) for i in enum)
 
     @t.overload
-    def __getitem__(self, idx: int) -> tuple:
+    def __getitem__(self, idx: int) -> NamedTupleT:
         ...
 
     @t.overload
-    def __getitem__(self, idx: slice) -> list[tuple]:
+    def __getitem__(self, idx: slice) -> list[NamedTupleT]:
         ...
 
     @t.overload
@@ -203,18 +201,18 @@ class Segment(abc.Sequence[tuple]):
         ...
 
     def __getitem__(
-        self, idx: slice | int | str
-    ) -> abc.Iterator[tuple] | tuple | int | abc.Sequence[t.Any]:
-        idx = _translate_idx(idx, self.start)
-        match idx:
-            case slice():
-                stop = idx.stop + 1 if isinstance(idx.stop, int) else idx.stop
-                idx = slice(idx.start, stop, idx.step)
-                # if idx.start and idx.start < 0:
-                #     return iter([])
-                return list(islice(iter(self), idx.start, idx.stop, idx.step))
-            case int():
-                it = nth(iter(self), idx)
+    self, idx: slice | int | str
+) -> abc.Iterator[NamedTupleT] | NamedTupleT | int | abc.Sequence[t.Any]:
+    idx = _translate_idx(idx, self.start)
+    match idx:
+        case slice():
+            stop = idx.stop + 1 if isinstance(idx.stop, int) else idx.stop
+            idx = slice(idx.start, stop, idx.step)
+            # if idx.start and idx.start < 0:
+            #     return iter([])
+            return list(islice(iter(self), idx.start, idx.stop, idx.step))
+        case int():
+            it = nth(iter(self), idx)
                 if it is None:
                     raise IndexError(f'{idx} is not in segment')
                 return it

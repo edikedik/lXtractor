@@ -1,24 +1,21 @@
 from __future__ import annotations
 
 import typing as t
-from collections import abc, namedtuple
-from io import TextIOBase
+from collections import abc
 from itertools import filterfalse, starmap
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-from more_itertools import first_true
 
 from lXtractor.core.alignment import Alignment
-from lXtractor.core.base import AminoAcidDict, AlignMethod, Ord, SeqReader
+from lXtractor.core.base import AminoAcidDict, AlignMethod, Ord, NamedTupleT
 from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.list import _parse_children
-from lXtractor.core.config import SeqNames, MetaNames, DumpNames, _SeqNames, _MetaNames
+from lXtractor.core.config import SeqNames, MetaNames, _SeqNames, _MetaNames
 from lXtractor.core.exceptions import MissingData, InitError, AmbiguousMapping
 from lXtractor.core.segment import Segment
 from lXtractor.util.io import get_files, get_dirs
-from lXtractor.util.seq import mafft_align, map_pairs_numbering, read_fasta
+from lXtractor.util.seq import mafft_align, map_pairs_numbering
 from lXtractor.variables.base import Variables
 
 
@@ -109,7 +106,7 @@ class ChainSequence(Segment):
         return list(range(self.start, self.end + 1))
 
     @property
-    def seq1(self) -> str:
+    def seq1(self) -> abc.Sequence[str]:
         """
         :return: the primary sequence.
         """
@@ -134,10 +131,10 @@ class ChainSequence(Segment):
         Categories are kept under "category" field in :attr:`meta`
         as a ","-separated list of strings. For instance, "domain,family_x".
         """
-        cat = self.meta.get(MetaNames.category)
+        cat: str = self.meta.get(MetaNames.category, '')
         return cat.split(",") if cat else []
 
-    def _setup_and_validate(self):
+    def _setup_and_validate(self) -> None:
         super()._setup_and_validate()
 
         if SeqNames.seq1 not in self:
@@ -155,7 +152,7 @@ class ChainSequence(Segment):
 
         self.meta[MetaNames.id] = self.id
         self.meta[MetaNames.name] = self.name
-        self.children: ChainList[ChainSequence] = _parse_children(self.children)
+        self.children = _parse_children(self.children)
 
     def map_numbering(
         self,
@@ -235,30 +232,30 @@ class ChainSequence(Segment):
         return mapped_numbering
 
     def map_boundaries(
-        self, start: Ord, end: Ord, map_name: str, closest: bool = False
-    ) -> tuple[namedtuple, namedtuple]:
-        """
-        Map the provided boundaries onto sequence.
+    self, start: Ord, end: Ord, map_name: str, closest: bool = False
+) -> tuple[tuple, tuple]:
+    """
+    Map the provided boundaries onto sequence.
 
-        A convenient interface for common task where one wants to find sequence
-        elements corresponding to arbitrary boundaries.
+    A convenient interface for common task where one wants to find sequence
+    elements corresponding to arbitrary boundaries.
 
-        >>> s = ChainSequence.from_string('XXSEQXX', name='CS')
-        >>> s.add_seq('NCS', list(range(10, 17)))
-        >>> s.map_boundaries(1, 3, 'i')
-        (Item(i=1, seq1='X', NCS=10), Item(i=3, seq1='S', NCS=12))
-        >>> s.map_boundaries(5, 12, 'NCS', closest=True)
-        (Item(i=1, seq1='X', NCS=10), Item(i=3, seq1='S', NCS=12))
+    >>> s = ChainSequence.from_string('XXSEQXX', name='CS')
+    >>> s.add_seq('NCS', list(range(10, 17)))
+    >>> s.map_boundaries(1, 3, 'i')
+    (Item(i=1, seq1='X', NCS=10), Item(i=3, seq1='S', NCS=12))
+    >>> s.map_boundaries(5, 12, 'NCS', closest=True)
+    (Item(i=1, seq1='X', NCS=10), Item(i=3, seq1='S', NCS=12))
 
-        :param start: Some orderable object.
-        :param end: Some orderable object.
-        :param map_name: Use this sequence to search for boundaries.
-            It is assumed that ``map_name in self is True``.
-        :param closest: If true, instead of exact mapping, search for
-            the closest elements.
-        :return: a tuple with two items corresponding to mapped
-            `start` and `end`.
-        """
+    :param start: Some orderable object.
+    :param end: Some orderable object.
+    :param map_name: Use this sequence to search for boundaries.
+        It is assumed that ``map_name in self is True``.
+    :param closest: If true, instead of exact mapping, search for
+        the closest elements.
+    :return: a tuple with two items corresponding to mapped
+        `start` and `end`.
+    """
         if closest:
             mapping = list(filterfalse(lambda x: x is None, self[map_name]))
             map_min, map_max = min(mapping), max(mapping)
@@ -369,64 +366,64 @@ class ChainSequence(Segment):
             self.meta.update(cov)
         return cov
 
-    def get_map(self, key: str) -> dict[t.Any, namedtuple]:
-        """
-        Obtain the mapping of the form "key->item(seq_name=*,...)".
+    def get_map(self, key: str) -> dict[t.Any, NamedTupleT]:
+    """
+    Obtain the mapping of the form "key->item(seq_name=*,...)".
 
-        >>> s = ChainSequence.from_string('ABC', name='CS')
-        >>> s.get_map('i')
-        {1: Item(i=1, seq1='A'), 2: Item(i=2, seq1='B'), 3: Item(i=3, seq1='C')}
-        >>> s.get_map('seq1')
-        {'A': Item(i=1, seq1='A'), 'B': Item(i=2, seq1='B'), 'C': Item(i=3, seq1='C')}
+    >>> s = ChainSequence.from_string('ABC', name='CS')
+    >>> s.get_map('i')
+    {1: Item(i=1, seq1='A'), 2: Item(i=2, seq1='B'), 3: Item(i=3, seq1='C')}
+    >>> s.get_map('seq1')
+    {'A': Item(i=1, seq1='A'), 'B': Item(i=2, seq1='B'), 'C': Item(i=3, seq1='C')}
 
-        :param key: map name.
-        :return: `dict` mapping key values to items.
-        """
+    :param key: map name.
+    :return: `dict` mapping key values to items.
+    """
         keys = (x.i for x in self) if key == "i" else self[key]
         return dict(zip(keys, iter(self)))
 
-    def get_item(self, key: str, value: t.Any) -> namedtuple:
-        """
-        Get a specific item. Same as :meth:`get_map`, but uses `value`
-        to retrieve the needed item immediately.
+    def get_item(self, key: str, value: t.Any) -> NamedTupleT:
+    """
+    Get a specific item. Same as :meth:`get_map`, but uses `value`
+    to retrieve the needed item immediately.
 
-        **(!) Use it when a single item is needed.** For multiple queries
-        for the same sequence, please use :meth:`get_map`.
+    **(!) Use it when a single item is needed.** For multiple queries
+    for the same sequence, please use :meth:`get_map`.
 
-        >>> s = ChainSequence.from_string('ABC', name='CS')
-        >>> s.get_item('seq1', 'B').i
-        2
+    >>> s = ChainSequence.from_string('ABC', name='CS')
+    >>> s.get_item('seq1', 'B').i
+    2
 
-        :param key: map name.
-        :param value: sequence value of the sequence under the `key` name.
-        :return: an item correpsonding to the desired sequence element.
-        """
+    :param key: map name.
+    :param value: sequence value of the sequence under the `key` name.
+    :return: an item correpsonding to the desired sequence element.
+    """
         return self.get_map(key)[value]
 
     def get_closest(
-        self, key: str, value: Ord, *, reverse: bool = False
-    ) -> t.Optional[namedtuple]:
-        """
-        Find the closest item for which item.key ``>=/<=`` value.
-        By default, the search starts from the sequence's beginning,
-        and expands towards the end until the first element for which
-        the retrieved `value` >= the provided `value`.
-        If the `reverse` is ``True``, the search direction is reversed,
-        and the comparison operator becomes ``<=``
+    self, key: str, value: Ord, *, reverse: bool = False
+) -> t.Optional[NamedTupleT]:
+    """
+    Find the closest item for which item.key ``>=/<=`` value.
+    By default, the search starts from the sequence's beginning,
+    and expands towards the end until the first element for which
+    the retrieved `value` >= the provided `value`.
+    If the `reverse` is ``True``, the search direction is reversed,
+    and the comparison operator becomes ``<=``
 
-        >>> s = ChainSequence(1, 4, 'CS', seqs={'seq1': 'ABCD', 'X': [5, 6, 7, 8]})
-        >>> s.get_closest('seq1', 'D')
-        Item(i=4, seq1='D', X=8)
-        >>> s.get_closest('X', 0)
-        Item(i=1, seq1='A', X=5)
-        >>> assert s.get_closest('X', 0, reverse=True) is None
+    >>> s = ChainSequence(1, 4, 'CS', seqs={'seq1': 'ABCD', 'X': [5, 6, 7, 8]})
+    >>> s.get_closest('seq1', 'D')
+    Item(i=4, seq1='D', X=8)
+    >>> s.get_closest('X', 0)
+    Item(i=1, seq1='A', X=5)
+    >>> assert s.get_closest('X', 0, reverse=True) is None
 
-        :param key: map name.
-        :param value: map value. Must support comparison operators.
-        :param reverse: reverse the sequence order and the comparison operator.
-        :return: The first relevant item or `None` if no relevant items
-            were found.
-        """
+    :param key: map name.
+    :param value: map value. Must support comparison operators.
+    :param reverse: reverse the sequence order and the comparison operator.
+    :return: The first relevant item or `None` if no relevant items
+        were found.
+    """
 
         def pred(kv: tuple[Ord | None, t.Any]) -> bool:
             if kv[0] is None:

@@ -19,9 +19,9 @@ if t.TYPE_CHECKING:
 
     CT = t.TypeVar('CT', ChainStructure, ChainSequence, Chain)
     CS = t.TypeVar('CS', ChainStructure, ChainSequence)
+    CTU: t.TypeAlias = ChainSequence | ChainStructure | Chain
 else:
     CT = t.TypeVar('CT')
-
 
 T = t.TypeVar('T')
 
@@ -47,17 +47,33 @@ def add_category(c: CT, cat: str):
             meta[field] += f",{cat}"
 
 
-# def _to_segment(s: abc.Sequence[int] | Segment) -> Segment:
-#     if isinstance(s, abc.Sequence):
-#         if len(s) != 2:
-#             raise TypeError("If providing sequences, it must contain "
-#                             f"exactly two elements; Found {len(s)}")
-#         start, end = s
-#         return Segment(start, end)
-#     elif isinstance(s, Segment):
-#         return s
-#     else:
-#         raise TypeError(f'Invalid type {type(s)} to convert')
+def is_seq_of(s: abc.Sequence[t.Any], _type: t.Type[T]) -> t.TypeGuard[abc.Sequence[T]]:
+    return all(isinstance(x, _type) for x in s)
+
+
+def is_type(x: t.Any, _type: t.Type[T]) -> t.TypeGuard[T]:
+    return isinstance(x, _type)
+
+
+def is_chain_type_sequence(s: abc.Sequence[t.Any]) -> t.TypeGuard[abc.Sequence[CTU]]:
+    from lXtractor.core import chain as lxc
+
+    return any(
+        is_seq_of(s, _t) for _t in [lxc.ChainSequence, lxc.ChainStructure, lxc.Chain]
+    )
+
+
+def is_chain_type(s: t.Any) -> t.TypeGuard[CTU]:
+    from lXtractor.core import chain as lxc
+
+    return any(
+        is_type(s, _t) for _t in [lxc.ChainSequence, lxc.ChainStructure, lxc.Chain]
+    )
+
+
+def _check_chain_types(objs: abc.Sequence[T]):
+    if not is_chain_type_sequence(objs):
+        raise TypeError('A sequence of objects is not a Chain*-type sequence')
 
 
 class ChainList(abc.MutableSequence[CT]):
@@ -121,7 +137,7 @@ class ChainList(abc.MutableSequence[CT]):
     [X|1-3]
 
     """
-    __slots__ = ("_chains", "_type")
+    __slots__ = ("_chains",)
 
     def __init__(
         self,
@@ -133,8 +149,12 @@ class ChainList(abc.MutableSequence[CT]):
         :param categories: An optional list of categories.
             If provided, they will be assigned to inputs' `meta` attributes.
         """
+
         if not isinstance(chains, list):
             chains = list(chains)
+
+        _check_chain_types(chains)
+
         if categories is not None:
             for c, cat in zip(chains, categories, strict=True):
                 if isinstance(cat, str):
@@ -142,51 +162,9 @@ class ChainList(abc.MutableSequence[CT]):
                 else:
                     for _cat in cat:
                         add_category(c, _cat)
+
+        #: Protected container. One should NOT change it directly.
         self._chains: list[CT] = chains
-        self._type: str | None = self._infer_type(self._chains)
-        self._check_match_and_set_type(self._type)
-
-    @staticmethod
-    def _infer_type(objs: abc.Sequence[T]) -> str | None:
-        """
-        Infer a type of objs.
-        Populate :attr:`_type` with the inferred type if it's supported.
-        Otherwise, raise an error.
-
-        If objs do not belong to a single type, raise an error.
-
-        :param objs: Arbitrary sequence or arbitrary objects.
-        :return: One of ('chain', 'seq', and 'str') for
-            (:class:`Chain`, :class:`ChainSequence`, and
-            :class:`ChainStructure`).
-        """
-        types = set(map(type, objs))
-        if len(types) > 1:
-            raise TypeError(f"ChainList elements must have single type; got {types}")
-        if len(objs) > 0:
-            from lXtractor.core import chain as lxc
-            match objs[0]:
-                case lxc.Chain():
-                    return "chain"
-                case lxc.ChainSequence():
-                    return "seq"
-                case lxc.ChainStructure():
-                    return "str"
-                case _:
-                    raise TypeError(f"Unsupported type {type(objs[0])}")
-        else:
-            return None
-
-    @property
-    def type(self) -> str | None:
-        """
-        A type of the contained elements.
-
-        :return: One of ('chain', 'seq', and 'str') for
-            (:class:`Chain`, :class:`ChainSequence`,
-            and :class:`ChainStructure`). None if the chain list is empty.
-        """
-        return self._type
 
     @property
     def categories(self) -> abc.Set[str]:
@@ -195,15 +173,6 @@ class ChainList(abc.MutableSequence[CT]):
             objects.
         """
         return set(chain.from_iterable(map(lambda c: c.categories, self)))
-
-    def _check_match_and_set_type(self, x: str | None):
-        if self._type is not None:
-            if x != self._type:
-                raise TypeError(
-                    f"Supplied type doesn't match existing type {self._type}"
-                )
-        else:
-            self._type = x
 
     def __len__(self) -> int:
         return len(self._chains)
@@ -253,24 +222,32 @@ class ChainList(abc.MutableSequence[CT]):
         raise AttributeError
 
     @t.overload
-    def __setitem__(self, index: int, value: CT): ...
+    def __setitem__(self, index: int, value: CT):
+        ...
 
     @t.overload
-    def __setitem__(self, index: slice, value: abc.Iterable[CT]): ...
+    def __setitem__(self, index: slice, value: abc.Iterable[CT]):
+        ...
 
     def __setitem__(self, index: t.SupportsIndex | slice, value: CT | abc.Iterable[CT]):
-        _type = self._infer_type([value])
-        if len(self) == 1 and index == 0:
-            self._type = _type
-        else:
-            self._check_match_and_set_type(_type)
-        # mypy fails to recognize overloaded arguments
-        self._chains.__setitem__(index, value)  # type: ignore
+
+    if not is_chain_type(value) and not isinstance(value, list):
+        # mypy fails to recognize the type must be Iterable[CT]
+        value = list(value)  # type: ignore
+
+    if isinstance(index, t.SupportsIndex) and is_chain_type(value):
+        is_chain_type_sequence([self._chains[0], value])
+    # ignoring type because type narrowing above fails
+    elif isinstance(index, slice) and is_chain_type_sequence(value):  # type: ignore
+        is_chain_type_sequence([self._chains[0], *value])
+    else:
+        raise TypeError("Unsupported types' combination for index and value.")
+
+    # mypy fails to recognize overloaded arguments
+    self._chains.__setitem__(index, value)  # type: ignore
 
     def __delitem__(self, index: t.SupportsIndex | int | slice):
         self._chains.__delitem__(index)
-        if len(self) == 0:
-            self._type = None
 
     def __contains__(self, item: object) -> bool:
 
@@ -284,8 +261,13 @@ class ChainList(abc.MutableSequence[CT]):
     def __add__(self, other: ChainList | abc.Iterable):
         match other:
             case ChainList():
+                if len(self._chains) > 0:
+                    _check_chain_types([self._chains[0], *other])
                 return ChainList(self._chains + other._chains)
             case abc.Iterable():
+                if len(self._chains) > 0:
+                    other = list(other)
+                    _check_chain_types([self._chains[0], *other])
                 return ChainList(self._chains + list(other))
             case _:
                 raise TypeError(f"Unsupported type {type(other)}")
@@ -301,8 +283,9 @@ class ChainList(abc.MutableSequence[CT]):
         return self._chains.index(value, start, stop)
 
     def insert(self, index: int, value: CT):
-        self._check_match_and_set_type(self._infer_type([value]))
-        self._chains.insert(index, value)
+    if len(self) > 0:
+        _check_chain_types([self[0], value])
+    self._chains.insert(index, value)
 
     def iter_children(self) -> abc.Generator[ChainList[CT], None, None]:
         """
@@ -370,11 +353,11 @@ class ChainList(abc.MutableSequence[CT]):
         """
         # mypy doesn't know the type is known at runtime
         from lXtractor.core import chain as lxc
+
         if len(self) > 0:
             x = self[0]
-            if (
-                    isinstance(x, lxc.chain.Chain) or
-                    isinstance(x, lxc.structure.ChainStructure)
+            if isinstance(x, lxc.chain.Chain) or isinstance(
+                    x, lxc.structure.ChainStructure
             ):
                 yield from (c.seq for c in self._chains)
             else:
@@ -388,6 +371,7 @@ class ChainList(abc.MutableSequence[CT]):
         """
         # mypy doesn't know the type is known at runtime
         from lXtractor.core import chain as lxc
+
         if len(self) > 0:
             x = self[0]
             if isinstance(x, lxc.Chain):
@@ -462,9 +446,7 @@ class ChainList(abc.MutableSequence[CT]):
         match s:
             case Segment():
                 match_fn = partial(
-                    self._get_seg_matcher(match_type),
-                    seg=s,
-                    map_name=map_name,
+                    self._get_seg_matcher(match_type), seg=s, map_name=map_name
                 )
             case abc.Collection():
                 match_fn = partial(self._get_pos_matcher(s), map_name=map_name)
@@ -527,6 +509,7 @@ class ChainList(abc.MutableSequence[CT]):
         """
 
         from lXtractor.core import chain as lxc
+
         if len(self) > 0:
             x = self[0]
             if isinstance(x, lxc.Chain):
@@ -580,7 +563,7 @@ class ChainList(abc.MutableSequence[CT]):
         return ChainList([fn(c, *args, **kwargs) for c in self])
 
 
-def _parse_children(children):
+def _parse_children(children: abc.Iterable[CT]) -> ChainList[CT]:
     if children:
         if not isinstance(children, ChainList):
             return ChainList(children)
@@ -590,6 +573,3 @@ def _parse_children(children):
 
 if __name__ == '__main__':
     raise RuntimeError
-
-
-
