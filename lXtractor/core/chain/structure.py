@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import typing as t
 from collections import abc
-from itertools import repeat, starmap
 from pathlib import Path
 
 import numpy as np
@@ -97,12 +96,11 @@ class ChainStructure:
         self.children: ChainList[ChainStructure] = _wrap_children(children)
 
         if seq is None:
-            seq1: list[str]
-            seq1, seq3, num = starmap(
-                lambda i, a: [x[i] for x in a],
-                zip(range(3), repeat(self.pdb.structure.get_sequence(), 3)),
-            )
-            seqs = {
+            str_seq = list(self.pdb.structure.get_sequence())
+            seq1: list[str] = [x[0] for x in str_seq]
+            seq3: list[str] = [x[1] for x in str_seq]
+            num: list[int] = [x[2] for x in str_seq]
+            seqs: dict[str, list[int] | list[str]] = {
                 SeqNames.seq3: seq3,
                 SeqNames.enum: num,
             }
@@ -165,7 +163,7 @@ class ChainStructure:
     def from_structure(
         cls,
         structure: bst.AtomArray | GenericStructure,
-        pdb_id: t.Optional[str] = None,
+        pdb_id: str | None = None,
     ) -> ChainStructure:
         """
         :param structure: An `AtomArray` or `GenericStructure`,
@@ -180,7 +178,7 @@ class ChainStructure:
         chain_id = structure.array.chain_id[0]
 
         if pdb_id is None:
-            pdb_id = structure.pdb_id
+            pdb_id = structure.pdb_id or 'Unk'
 
         return cls(pdb_id, chain_id, structure)
 
@@ -431,7 +429,8 @@ class ChainStructure:
 
         if write_children:
             for child in self.children:
-                child_dir = base_dir / DumpNames.segments_dir / child.seq.name
+                child_name = child.seq.name or 'Unk'
+                child_dir = base_dir / DumpNames.segments_dir / child_name
                 child.write(child_dir, fmt, dump_names=dump_names, write_children=True)
 
 
