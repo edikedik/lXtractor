@@ -32,9 +32,11 @@ from lXtractor.util.seq import (
 )
 
 _Idx = t.Union[int, t.Tuple[int, ...]]
+T = t.TypeVar('T')
 
 
 class Alignment:
+    # TODO: consider directly inheriting from MutableSequence
     """
     An MSA resource: a collection of aligned sequences.
     """
@@ -66,7 +68,7 @@ class Alignment:
         """
         return len(self.seqs), len(self.seqs[0][1])
 
-    def __contains__(self, item: str | tuple[str, str]) -> bool:
+    def __contains__(self, item: object) -> bool:
         if isinstance(item, str):
             return item in self._seqs_map
         if isinstance(item, tuple):
@@ -79,7 +81,21 @@ class Alignment:
     def __iter__(self) -> abc.Iterator[tuple[str, str]]:
         return iter(self.seqs)
 
-    def __getitem__(self, item: str | int | slice) -> tuple[str, str] | str:
+    @t.overload
+    def __getitem__(self, item: int) -> tuple[str, str]:
+        ...
+
+    @t.overload
+    def __getitem__(self, item: slice) -> list[tuple[str, str]]:
+        ...
+
+    @t.overload
+    def __getitem__(self, item: str) -> str:
+        ...
+
+    def __getitem__(
+        self, item: str | int | slice
+    ) -> tuple[str, str] | str | list[tuple[str, str]]:
         match item:
             case str():
                 return self._seqs_map[item]
@@ -88,7 +104,9 @@ class Alignment:
             case _:
                 raise TypeError(f'Unsupported item type {type(item)}')
 
-    def __eq__(self, other: Alignment):
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Alignment):
+            return False
         return self.seqs == other.seqs
 
     def __add__(self, other: Alignment) -> Alignment:
@@ -119,6 +137,7 @@ class Alignment:
         :param join: Join columns into a string.
         :return: An iterator over columns.
         """
+        cols: abc.Iterator[list[str]] | abc.Iterator[str]
         cols = chunked(interleave(*map(op.itemgetter(1), self.seqs)), len(self))
         if join:
             cols = map(''.join, cols)
@@ -163,7 +182,7 @@ class Alignment:
         return Alignment(map(slice_one, self.seqs))
 
     def align(
-        self, seq: abc.Iterable[tuple[str, str]] | tuple[str, str] | Alignment, **kwargs
+        self, seq: abc.Iterable[tuple[str, str]] | tuple[str, str] | Alignment
     ) -> Alignment:
         """
         Align (add) sequences to this alignment via :attr:`add_method`.
@@ -177,14 +196,21 @@ class Alignment:
 
         :param seq: A sequence, iterable over sequences, or another
             :class:`Alignment`.
-        :param kwargs: Passed to :attr:`add_method`.
         :return: A new alignment object with sequences from `seq`.
             The original number of columns should be preserved,
             which is true when using the default :attr:`add_method`.
         """
+
+        def is_pair(x: object) -> t.TypeGuard[tuple[str, str]]:
+            return isinstance(x, tuple) and len(x) == 2
+
         if isinstance(seq, tuple):
-            seq = [seq]
-        seqs = self.add_method(self, seq, **kwargs)
+            if is_pair(seq):
+                seq = [seq]
+            else:
+                raise ValueError(f'Expected two-element tuple, got {len(seq)} elements')
+
+        seqs = self.add_method(self, seq)
         return Alignment(seqs)
 
     def realign(self):
@@ -202,7 +228,6 @@ class Alignment:
     def add(
         self,
         other: abc.Iterable[tuple[str, str]] | tuple[str, str] | Alignment,
-        **kwargs,
     ) -> Alignment:
         """
         Add sequences to existing ones using :meth:`add`.
@@ -216,11 +241,10 @@ class Alignment:
 
         :param other: A sequence, iterable over sequences,
             or another :class:`Alignment`.
-        :param kwargs: passed to :meth:`add`
         :return: A new :class:`Alignment` object with added sequences.
         """
 
-        aligned_other = self.align(other, **kwargs)
+        aligned_other = self.align(other)
         return self + aligned_other
 
     def remove(
@@ -228,7 +252,6 @@ class Alignment:
         item: str | tuple[str, str] | t.Iterable[str] | t.Iterable[tuple[str, str]],
         error_if_missing: bool = True,
         realign: bool = False,
-        **kwargs,
     ) -> Alignment:
         """
         Remove a sequence or collection of sequences.
@@ -257,8 +280,6 @@ class Alignment:
         :param error_if_missing: Raise an error if
             any of the items are missing.
         :param realign: Realign seqs after removal.
-        :param kwargs: passed to :attr:`align_method` if
-            `realign` is ``True``.
         :return: A new :class:`Alignment` object with
             the remaining sequences.
         """
@@ -276,7 +297,7 @@ class Alignment:
         getter = op.itemgetter(0) if isinstance(items[0], str) else identity
         seqs = filter(lambda x: getter(x) not in items, self.seqs)
         if realign:
-            seqs = self.align_method(seqs, **kwargs)
+            return Alignment(self.align_method(seqs))
         return Alignment(seqs)
 
     def filter(self, fn: SeqFilter) -> Alignment:
@@ -357,7 +378,6 @@ class Alignment:
         read_method: SeqReader = read_fasta,
         add_method: AddMethod = mafft_add,
         align_method: AlignMethod = mafft_align,
-        **kwargs,
     ) -> Alignment:
         """
         Read sequences and create an alignment.
@@ -371,13 +391,10 @@ class Alignment:
             :class:`Alignment` object.
         :param align_method: An alignment method for a new
             :class:`Alignment` object.
-        :param kwargs: passed to `read_method`
         :return: An alignment with sequences read parsed from
             the provided input.
         """
-        return cls(
-            read_method(inp, **kwargs), add_method=add_method, align_method=align_method
-        )
+        return cls(read_method(inp), add_method=add_method, align_method=align_method)
 
     @classmethod
     def make(
@@ -386,7 +403,6 @@ class Alignment:
         method: AlignMethod = mafft_align,
         add_method: AddMethod = mafft_add,
         align_method: AlignMethod = mafft_align,
-        **kwargs,
     ) -> Alignment:
         """
         Create a new alignment from a collection of unaligned sequences.
@@ -399,12 +415,9 @@ class Alignment:
             a new :class:`Alignment` object.
         :param align_method: An alignment method for
             a new :class:`Alignment` object.
-        :param kwargs: Passed to `method`.
         :return: An alignment created from aligned `seqs`.
         """
-        return cls(
-            method(seqs, **kwargs), add_method=add_method, align_method=align_method
-        )
+        return cls(method(seqs), add_method=add_method, align_method=align_method)
 
     @classmethod
     def read_make(
@@ -413,8 +426,6 @@ class Alignment:
         read_method: SeqReader = read_fasta,
         add_method: AddMethod = mafft_add,
         align_method: AlignMethod = mafft_align,
-        kwargs_read: dict | None = None,
-        kwargs_align: dict | None = None,
     ) -> Alignment:
         """
         A shortcut combining :meth:`read` and :meth:`make`.
@@ -431,32 +442,25 @@ class Alignment:
             :class:`Alignment` object.
         :param align_method: An alignment method for a new
             :class:`Alignment` object.
-        :param kwargs_read: Passed to the `read_method`.
-        :param kwargs_align: Passed to the `align_method`.
         :return: An alignment from parsed and aligned `inp` sequences.
         """
 
-        kwargs_read = kwargs_read or {}
-        kwargs_align = kwargs_align or {}
         return cls(
-            align_method(read_method(inp, **kwargs_read), **kwargs_align),
+            align_method(read_method(inp)),
             add_method=add_method,
             align_method=align_method,
         )
 
-    def write(
-        self, out: Path | SupportsWrite, write_method: SeqWriter = write_fasta, **kwargs
-    ) -> t.NoReturn:
+    def write(self, out: Path | SupportsWrite, write_method: SeqWriter = write_fasta):
         """
         Write an alignment.
 
         :param out: Any object with the `write` method.
         :param write_method: The writing function itself, accepting sequences
             and `out`. By default, use `read_fasta` to write in fasta format.
-        :param kwargs: Passed to `write_method`.
         :return: Nothing.
         """
-        write_method(self.seqs, out, **kwargs)
+        write_method(self.seqs, out)
 
 
 if __name__ == '__main__':

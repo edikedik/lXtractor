@@ -11,7 +11,7 @@ from more_itertools import peekable
 from pyhmmer.easel import DigitalSequence, TextSequence, DigitalSequenceBlock
 from pyhmmer.plan7 import HMM, HMMFile, Pipeline, TopHits, Alignment, Domain
 
-from lXtractor.core.chain import ChainSequence, CT, ChainStructure, Chain
+from lXtractor.core.chain import ChainSequence, ChainStructure, Chain
 from lXtractor.core.exceptions import MissingData
 
 LOGGER = logging.getLogger(__name__)
@@ -19,6 +19,7 @@ LOGGER = logging.getLogger(__name__)
 HMM_DEFAULT_NAME = 'HMM'
 _ChainT: t.TypeAlias = Chain | ChainStructure | ChainSequence
 _HmmInpT: t.TypeAlias = HMM | HMMFile | Path | str
+CT = t.TypeVar('CT', bound=t.Union[ChainSequence, ChainStructure, Chain])
 
 
 # TODO: verify non-domain HMM types (e.g., Motif, Family) yield valid Domain hits

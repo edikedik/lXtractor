@@ -6,18 +6,20 @@ from collections import abc
 from functools import partial
 from itertools import chain, zip_longest, tee
 
-from more_itertools import nth
+from more_itertools import nth, peekable
+from typing_extensions import reveal_type
 
 from lXtractor.core.base import Ord, ApplyT
+from lXtractor.core.chain.base import is_chain_type_iterable, is_chain_type
 from lXtractor.core.config import MetaNames
+from lXtractor.core.exceptions import MissingData
 from lXtractor.core.segment import Segment
 
 if t.TYPE_CHECKING:
-    from lXtractor.core.chain.sequence import ChainSequence
-    from lXtractor.core.chain.structure import ChainStructure
-    from lXtractor.core.chain.chain import Chain
+    from lXtractor.core.chain import ChainSequence, ChainStructure, Chain
 
     CT = t.TypeVar('CT', ChainStructure, ChainSequence, Chain)
+    # CT = t.TypeVar('CT', bound=t.Union[ChainSequence, ChainStructure, Chain])
     CS = t.TypeVar('CS', ChainStructure, ChainSequence)
     CTU: t.TypeAlias = ChainSequence | ChainStructure | Chain
 else:
@@ -26,7 +28,7 @@ else:
 T = t.TypeVar('T')
 
 
-def add_category(c: CT, cat: str):
+def add_category(c: t.Any, cat: str):
     """
     :param c: A Chain*-type object.
     :param cat: Category name.
@@ -47,32 +49,8 @@ def add_category(c: CT, cat: str):
             meta[field] += f",{cat}"
 
 
-def is_seq_of(s: abc.Sequence[t.Any], _type: t.Type[T]) -> t.TypeGuard[abc.Sequence[T]]:
-    return all(isinstance(x, _type) for x in s)
-
-
-def is_type(x: t.Any, _type: t.Type[T]) -> t.TypeGuard[T]:
-    return isinstance(x, _type)
-
-
-def is_chain_type_sequence(s: abc.Sequence[t.Any]) -> t.TypeGuard[abc.Sequence[CTU]]:
-    from lXtractor.core import chain as lxc
-
-    return any(
-        is_seq_of(s, _t) for _t in [lxc.ChainSequence, lxc.ChainStructure, lxc.Chain]
-    )
-
-
-def is_chain_type(s: t.Any) -> t.TypeGuard[CTU]:
-    from lXtractor.core import chain as lxc
-
-    return any(
-        is_type(s, _t) for _t in [lxc.ChainSequence, lxc.ChainStructure, lxc.Chain]
-    )
-
-
 def _check_chain_types(objs: abc.Sequence[T]):
-    if not is_chain_type_sequence(objs):
+    if not is_chain_type_iterable(objs):
         raise TypeError('A sequence of objects is not a Chain*-type sequence')
 
 
@@ -231,20 +209,26 @@ class ChainList(abc.MutableSequence[CT]):
 
     def __setitem__(self, index: t.SupportsIndex | slice, value: CT | abc.Iterable[CT]):
 
-        if not is_chain_type(value) and not isinstance(value, list):
-            # mypy fails to recognize the type must be Iterable[CT]
-            value = list(value)  # type: ignore
-
-        if isinstance(index, t.SupportsIndex) and is_chain_type(value):
-            is_chain_type_sequence([self._chains[0], value])
-        # ignoring type because type narrowing above fails
-        elif isinstance(index, slice) and is_chain_type_sequence(value):  # type: ignore
-            is_chain_type_sequence([self._chains[0], *value])
+        if len(self) == 0:
+            raise MissingData('Not possible to use __setitem__ when ChainList is empty')
+        self_type = type(self._chains[0])
+        if is_chain_type(value):
+            other_type = type(value)
         else:
-            raise TypeError("Unsupported types' combination for index and value.")
+            if is_chain_type_iterable(value):
+                # Doesn't accept unions for some reason
+                value = peekable(value)  # type: ignore
+                other_type = type(value.peek())
+            else:
+                raise TypeError('Incompatible value type')
 
-        # mypy fails to recognize overloaded arguments
-        self._chains.__setitem__(index, value)  # type: ignore
+        if self_type is other_type or id(self_type) == id(other_type):
+            self._chains[index] = value  # type: ignore  # overloading failure
+        else:
+            raise TypeError(
+                f'Value type {other_type} conflicts with existing '
+                f'items type {self_type}'
+            )
 
     def __delitem__(self, index: t.SupportsIndex | int | slice):
         self._chains.__delitem__(index)
@@ -357,7 +341,7 @@ class ChainList(abc.MutableSequence[CT]):
         if len(self) > 0:
             x = self[0]
             if isinstance(x, lxc.chain.Chain) or isinstance(
-                    x, lxc.structure.ChainStructure
+                x, lxc.structure.ChainStructure
             ):
                 yield from (c.seq for c in self._chains)
             else:
@@ -440,18 +424,16 @@ class ChainList(abc.MutableSequence[CT]):
         self,
         seqs: abc.Iterable[ChainSequence],
         match_type: str,
-        s: Segment | abc.Collection[Ord],
+        s: Segment | abc.Iterable[Ord],
         map_name: t.Optional[str],
     ) -> abc.Iterator[bool]:
-        match s:
-            case Segment():
-                match_fn = partial(
-                    self._get_seg_matcher(match_type), seg=s, map_name=map_name
-                )
-            case abc.Collection():
-                match_fn = partial(self._get_pos_matcher(s), map_name=map_name)
-            case _:
-                raise TypeError(f"Unsupported type to match {type(s)}")
+        if isinstance(s, Segment):
+            match_fn = partial(
+                self._get_seg_matcher(match_type), seg=s, map_name=map_name
+            )
+        else:
+            match_fn = partial(self._get_pos_matcher(s), map_name=map_name)
+
         return map(match_fn, seqs)
 
     def _filter_str(
@@ -563,9 +545,10 @@ class ChainList(abc.MutableSequence[CT]):
         return ChainList([fn(c, *args, **kwargs) for c in self])
 
 
-def _parse_children(children: abc.Iterable[CT]) -> ChainList[CT]:
+def _wrap_children(children: abc.Iterable[CT] | None) -> ChainList[CT]:
     if children:
         if not isinstance(children, ChainList):
+            assert is_chain_type_iterable(children)
             return ChainList(children)
         return children
     return ChainList([])

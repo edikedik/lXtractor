@@ -54,7 +54,9 @@ def col2col(df: pd.DataFrame, col_fr: str, col_to: str):
     :return: Mapping between values of a pair of columns.
     """
     sub = df[[col_fr, col_to]].drop_duplicates().sort_values([col_fr, col_to])
-    groups = groupby(zip(sub[col_fr], sub[col_to]), key=lambda x: x[0])
+    groups = groupby(
+        zip(sub[col_fr], sub[col_to]), key=lambda x: x[0]  # type: ignore  # No Any
+    )
     return {k: [x[1] for x in group] for k, group in groups}
 
 

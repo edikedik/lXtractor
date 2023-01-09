@@ -3,13 +3,13 @@ from __future__ import annotations
 import logging
 import typing as t
 from collections import abc
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, Future
 from itertools import repeat, chain
 from pathlib import Path
 
 from biotite import structure as bst
 from more_itertools import unzip, split_into, collapse
-from toolz import valmap, keymap, keyfilter
+from toolz import valmap, keymap, keyfilter, curry
 from tqdm.auto import tqdm
 
 from lXtractor.core.alignment import Alignment
@@ -21,6 +21,7 @@ from lXtractor.core.exceptions import InitError, LengthMismatch
 from lXtractor.core.structure import GenericStructure
 
 CT = t.TypeVar('CT', ChainStructure, ChainSequence, Chain)
+_O: t.TypeAlias = ChainSequence | ChainStructure | list[ChainStructure] | None
 LOGGER = logging.getLogger(__name__)
 
 
@@ -48,7 +49,12 @@ class InitializerCallback(t.Protocol):
         ...
 
 
-def _read_path(x, tolerate_failures, supported_seq_ext, supported_str_ext):
+def _read_path(
+    x: Path,
+    tolerate_failures: bool,
+    supported_seq_ext: abc.Container[str],
+    supported_str_ext: abc.Container[str],
+) -> ChainSequence | list[ChainStructure] | None:
     if x.suffix in supported_seq_ext:
         return ChainSequence.from_file(x)
     if x.suffix in supported_str_ext:
@@ -61,33 +67,42 @@ def _read_path(x, tolerate_failures, supported_seq_ext, supported_str_ext):
     raise InitError(f"Suffix {x.suffix} of the path {x} is not supported")
 
 
-def _init(x, tolerate_failures, supported_seq_ext, supported_str_ext, callbacks):
-    match x:
+def _init(
+    inp: t.Any,
+    tolerate_failures: bool,
+    supported_seq_ext: list[str],
+    supported_str_ext: list[str],
+    callbacks: list[InitializerCallback] | None,
+) -> _O:
+    res: _O
+    match inp:
         case ChainSequence() | ChainStructure():
-            res = x
+            res = inp
         case [str(), str()]:
-            res = ChainSequence.from_string(x[1], name=x[0])
+            res = ChainSequence.from_string(inp[1], name=inp[0])
         case [Path(), xs]:
             structures = _read_path(
-                x[0], tolerate_failures, supported_seq_ext, supported_str_ext
+                inp[0], tolerate_failures, supported_seq_ext, supported_str_ext
             )
             structures = [s for s in structures if s.pdb.chain in xs]
             res = structures or None
         case GenericStructure():
-            res = ChainStructure.from_structure(x)
+            res = ChainStructure.from_structure(inp)
         case Path():
-            res = _read_path(x, tolerate_failures, supported_seq_ext, supported_str_ext)
+            res = _read_path(
+                inp, tolerate_failures, supported_seq_ext, supported_str_ext
+            )
         case _:
             res = None
             if not tolerate_failures:
-                raise InitError(f"Unsupported input type {type(x)}")
+                raise InitError(f"Unsupported input type {type(inp)}")
     if callbacks:
         for c in callbacks:
             res = c(res)
     return res
 
 
-def _map_numbering(seq1, seq2):
+def _map_numbering(seq1: ChainSequence, seq2: ChainSequence) -> list[None | int]:
     return seq1.map_numbering(seq2, save=False)
 
 
@@ -170,13 +185,17 @@ def map_numbering_many2many(
         with ProcessPoolExecutor(num_proc) as executor:
             results = executor.map(_map_numbering, seqs, objs, chunksize=1)
             if verbose:
-                results = tqdm(results, desc="Mapping numberings")
-            yield from split_into(results, group_sizes)
+                yield from split_into(
+                    tqdm(results, desc="Mapping numberings"), group_sizes
+                )
+            else:
+                yield from split_into(results, group_sizes)
     else:
         results = (s.map_numbering(o, save=False) for o, s in staged)
         if verbose:
-            results = tqdm(results, desc="Mapping numberings")
-        yield from split_into(results, group_sizes)
+            yield from split_into(tqdm(results, desc="Mapping numberings"), group_sizes)
+        else:
+            yield from split_into(results, group_sizes)
 
 
 class ChainInitializer:
@@ -233,8 +252,9 @@ class ChainInitializer:
             | tuple[str, str]
             | GenericStructure
         ],
+        non_blocking: bool = False,
         callbacks: list[InitializerCallback] | None = None,
-    ) -> abc.Generator[ChainSequence | ChainStructure]:
+    ) -> abc.Generator[_O | Future, None, None]:
         """
         Initialize :class:`ChainSequence`s or/and :class:`ChainStructure`'s
         from (possibly heterogeneous) iterable.
@@ -247,51 +267,52 @@ class ChainInitializer:
                 4) A pair (header, seq) to initialize a :class:`ChainSequence`.
                 5) A :class:`GenericStructure` with a single chain.
 
+        :param non_blocking: Return ``Future`` objects without attempting to
+            access results.
         :param callbacks: A sequence of callables accepting and returning an
             initialized object.
         :return: A generator yielding initialized chain sequences and
             structures parsed from the inputs.
         """
+
+        def yield_output(_future: tuple[object, Future]) -> _O:
+            x, f = _future
+            try:
+                res: ChainSequence | ChainStructure | list[
+                    ChainStructure
+                ] | None = f.result()
+                return res
+            except Exception as e:
+                LOGGER.warning(f"Input {x} failed with an error {e}")
+                # LOGGER.exception(e)
+                if not self.tolerate_failures:
+                    raise e
+                return None
+
+        __init = curry(_init)(
+            tolerate_failures=self.tolerate_failures,
+            supported_seq_ext=self.supported_seq_ext,
+            supported_str_ext=self.supported_str_ext,
+            callbacks=callbacks,
+        )
+
         if self.num_proc is not None:
             with ProcessPoolExecutor(self.num_proc) as executor:
-                futures = [
-                    (
-                        x,
-                        executor.submit(
-                            _init,
-                            x,
-                            self.tolerate_failures,
-                            self.supported_seq_ext,
-                            self.supported_str_ext,
-                            callbacks,
-                        ),
-                    )
-                    for x in it
-                ]
-                if self.verbose:
-                    futures = tqdm(futures, desc="Initializing objects in parallel")
-                for x, future in futures:
-                    try:
-                        yield future.result()
-                    except Exception as e:
-                        LOGGER.warning(f"Input {x} failed with an error {e}")
-                        # LOGGER.exception(e)
-                        if not self.tolerate_failures:
-                            raise e
-                        yield None
+                futures = ((x, executor.submit(__init, x)) for x in it)
+                if non_blocking:
+                    yield from (x[1] for x in futures)
+                else:
+                    if self.verbose:
+                        yield from map(
+                            yield_output,
+                            tqdm(futures, desc="Initializing objects in parallel"),
+                        )
+                    else:
+                        yield from map(yield_output, futures)
         else:
             if self.verbose:
                 it = tqdm(it, desc="Initializing objects sequentially")
-            yield from (
-                _init(
-                    x,
-                    self.tolerate_failures,
-                    self.supported_seq_ext,
-                    self.supported_str_ext,
-                    callbacks,
-                )
-                for x in it
-            )
+            yield from map(__init, it)
 
     def from_mapping(
         self,
@@ -406,3 +427,7 @@ class ChainInitializer:
                             raise e
 
         return list(m_new)
+
+
+if __name__ == '__main__':
+    raise RuntimeError

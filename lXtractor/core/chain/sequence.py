@@ -2,23 +2,34 @@ from __future__ import annotations
 
 import typing as t
 from collections import abc
+from io import TextIOBase
 from itertools import filterfalse, starmap
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from more_itertools import first_true
+from more_itertools import first_true, always_reversible
+from typing_extensions import Self
 
 from lXtractor.core.alignment import Alignment
-from lXtractor.core.base import AminoAcidDict, AlignMethod, Ord, NamedTupleT
+from lXtractor.core.base import AminoAcidDict, AlignMethod, Ord, NamedTupleT, SeqReader
 from lXtractor.core.chain.base import topo_iter
-from lXtractor.core.chain.list import _parse_children, add_category
-from lXtractor.core.config import SeqNames, MetaNames, _SeqNames, _MetaNames, DumpNames
+from lXtractor.core.chain.list import _wrap_children, add_category, ChainList
+from lXtractor.core.config import (
+    SeqNames,
+    MetaNames,
+    _SeqNames,
+    _MetaNames,
+    DumpNames,
+    _DumpNames,
+)
 from lXtractor.core.exceptions import MissingData, InitError, AmbiguousMapping
 from lXtractor.core.segment import Segment
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.seq import mafft_align, map_pairs_numbering, read_fasta
 from lXtractor.variables.base import Variables
+
+UNK_NAME = 'Unk'
 
 
 class ChainSequence(Segment):
@@ -58,7 +69,9 @@ class ChainSequence(Segment):
 
     __slots__ = ()
 
-    def iter_children(self) -> abc.Generator[list[ChainSequence], None, None]:
+    def iter_children(
+        self,
+    ) -> abc.Generator[ChainList[ChainSequence], None, None]:
         """
         Iterate over a child tree in topological order.
 
@@ -73,9 +86,12 @@ class ChainSequence(Segment):
             :class:`ChainSequence` instances within this attribute.
         """
         if self.children is not None:
-            yield from topo_iter(self, lambda x: x.children)
+            # self.children: ChainList[ChainSequence]
+            yield from map(
+                lambda x: ChainList(x), topo_iter(self, lambda x: x.children)
+            )
         else:
-            yield from iter([])
+            yield from iter(ChainList([]))
 
     @property
     def fields(self) -> tuple[str, ...]:
@@ -108,11 +124,14 @@ class ChainSequence(Segment):
         return list(range(self.start, self.end + 1))
 
     @property
-    def seq1(self) -> abc.Sequence[str]:
+    def seq1(self) -> str:
         """
         :return: the primary sequence.
         """
-        return self[SeqNames.seq1]
+        s = self[SeqNames.seq1]
+        if not isinstance(s, str):
+            return "".join(s)
+        return s
 
     @property
     def seq3(self) -> t.Sequence[str]:
@@ -154,7 +173,7 @@ class ChainSequence(Segment):
 
         self.meta[MetaNames.id] = self.id
         self.meta[MetaNames.name] = self.name
-        self.children = _parse_children(self.children)
+        self.children = _wrap_children(self.children)
 
     def map_numbering(
         self,
@@ -178,7 +197,7 @@ class ChainSequence(Segment):
         [None, 1, 2, 3, 4, 5, None]
         >>> assert 'map_aln' in s
 
-        :param other: another chain sequence.
+        :param other: another chain seq.
         :param align_method: a method to use for alignment.
         :param save: save the numbering as a sequence.
         :param name: a name to use if `save` is ``True``.
@@ -187,29 +206,29 @@ class ChainSequence(Segment):
         """
 
         if isinstance(other, str):
+            name = name or UNK_NAME
             other = ChainSequence.from_string(other)
         elif isinstance(other, tuple):
             name = other[0]
             other = ChainSequence.from_string(other[1], name=name)
 
+        mapping: abc.Iterable[tuple]
+
         if isinstance(other, ChainSequence):
-            mapping = filter(
-                lambda x: x[0] is not None,
-                map_pairs_numbering(
-                    self.seq1,
-                    self.numbering,
-                    other.seq1,
-                    other.numbering,
-                    align=True,
-                    align_method=align_method,
-                    **kwargs,
-                ),
+            mapping = map_pairs_numbering(
+                self.seq1,
+                self.numbering,
+                other.seq1,
+                other.numbering,
+                align=True,
+                align_method=align_method,
+                **kwargs,
             )
             if not name:
                 name = f"map_{other.name}"
         elif isinstance(other, Alignment):
-            aligned_aln = other.align((name, self.seq1))
-            aligned_other = aligned_aln[name]
+            self_name = self.name or UNK_NAME
+            aligned_other = other.align((self_name, self.seq1))[self_name]
             aligned_other_num = [
                 i for (i, c) in enumerate(aligned_other, start=1) if c != "-"
             ]
@@ -227,15 +246,15 @@ class ChainSequence(Segment):
         else:
             raise TypeError(f"Unsupported type {type(other)}")
 
-        mapped_numbering = [x[1] for x in mapping]
+        mapped_numbering = [x[1] for x in mapping if x[0] is not None]
         if save:
             self[name] = mapped_numbering
 
         return mapped_numbering
 
     def map_boundaries(
-    self, start: Ord, end: Ord, map_name: str, closest: bool = False
-) -> tuple[tuple, tuple]:
+        self, start: Ord, end: Ord, map_name: str, closest: bool = False
+    ) -> tuple[NamedTupleT, NamedTupleT]:
         """
         Map the provided boundaries onto sequence.
 
@@ -368,7 +387,7 @@ class ChainSequence(Segment):
             self.meta.update(cov)
         return cov
 
-    def get_map(self, key: str) -> dict[t.Any, NamedTupleT]:
+    def get_map(self, key: str) -> dict[t.Hashable, NamedTupleT]:
         """
         Obtain the mapping of the form "key->item(seq_name=*,...)".
 
@@ -403,8 +422,8 @@ class ChainSequence(Segment):
         return self.get_map(key)[value]
 
     def get_closest(
-    self, key: str, value: Ord, *, reverse: bool = False
-) -> t.Optional[NamedTupleT]:
+        self, key: str, value: Ord, *, reverse: bool = False
+    ) -> t.Optional[NamedTupleT]:
         """
         Find the closest item for which item.key ``>=/<=`` value.
         By default, the search starts from the sequence's beginning,
@@ -434,9 +453,9 @@ class ChainSequence(Segment):
                 return kv[0] <= value
             return kv[0] >= value
 
-        items = self.get_map(key).items()
+        items = iter(self.get_map(key).items())
         if reverse:
-            items = reversed(items)
+            items = always_reversible(items)
         result = first_true(items, default=None, pred=pred)
         if result:
             return result[1]
@@ -448,7 +467,7 @@ class ChainSequence(Segment):
         :return: The pandas DataFrame representation of the sequence where
             each column correspond to a sequence or map.
         """
-        return pd.DataFrame(iter(self))
+        return pd.DataFrame(list(iter(self)))
 
     # @lru_cache
     def as_np(self) -> np.ndarray:
@@ -497,7 +516,7 @@ class ChainSequence(Segment):
         :return: Spawned sub-sequence.
         """
         if map_from:
-            start, end = map(
+            start, end = map(  # type: ignore  # incompatible assignment wrong
                 lambda x: x._asdict()["i"],
                 self.map_boundaries(start, end, map_from, map_closest),
             )
@@ -514,6 +533,7 @@ class ChainSequence(Segment):
             add_category(child, category)
 
         if keep:
+            self.children: ChainList[ChainSequence]
             self.children.append(child)
 
         return child
@@ -594,7 +614,7 @@ class ChainSequence(Segment):
         df: Path | pd.DataFrame,
         name: t.Optional[str] = None,
         meta: dict[str, t.Any] | None = None,
-    ):
+    ) -> Self:
         """
         Init sequence from a data frame.
 
@@ -609,7 +629,9 @@ class ChainSequence(Segment):
             raise InitError('Must contain the "i" column')
         assert len(df) >= 1
         start, end = df["i"].iloc[0], df["i"].iloc[-1]
-        seqs = {col: list(df[col]) for col in df.columns if col != "i"}
+        seqs: dict[str, t.Sequence[object]] = {
+            col: list(df[col]) for col in map(str, df.columns) if col != "i"
+        }
         return cls(start, end, name, meta=meta, seqs=seqs)
 
     @classmethod
@@ -617,9 +639,9 @@ class ChainSequence(Segment):
         cls,
         base_dir: Path,
         *,
-        dump_names: DumpNames = DumpNames,
+        dump_names: _DumpNames = DumpNames,
         search_children: bool = False,
-    ) -> ChainSequence:
+    ) -> Self:
         """
         Initialize chain sequence from dump created using :meth:`write`.
 
@@ -664,9 +686,7 @@ class ChainSequence(Segment):
 
         return seq
 
-    def write_seq(
-        self, path: Path, fields: t.Optional[t.Container[str]] = None, sep: str = "\t"
-    ) -> t.NoReturn:
+    def write_seq(self, path: Path, fields: list[str] | None = None, sep: str = "\t"):
         """
         Write the sequence (and all its maps) as a table.
 
@@ -680,7 +700,7 @@ class ChainSequence(Segment):
             path, index=False, columns=fields, sep=sep
         )
 
-    def write_meta(self, path: Path, sep="\t") -> t.NoReturn:
+    def write_meta(self, path: Path, sep="\t"):
         """
         Write meta information as {key}{sep}{value} lines.
 
@@ -699,9 +719,9 @@ class ChainSequence(Segment):
         self,
         base_dir: Path,
         *,
-        dump_names: DumpNames = DumpNames,
+        dump_names: _DumpNames = DumpNames,
         write_children: bool = False,
-    ) -> t.NoReturn:
+    ):
         """
         Dump this chain sequence. Creates `sequence.tsv` and `meta.tsv`
         in `base_dir` using :meth:`write_seq` and :meth:`write_meta`.
@@ -719,7 +739,9 @@ class ChainSequence(Segment):
                 self.variables.write(base_dir / dump_names.variables)
         if write_children:
             for child in self.children:
-                child_dir = base_dir / dump_names.segments_dir / child.name
+                child_dir = (
+                    base_dir / dump_names.segments_dir / (child.name or UNK_NAME)
+                )
                 child.write(
                     child_dir, dump_names=dump_names, write_children=write_children
                 )

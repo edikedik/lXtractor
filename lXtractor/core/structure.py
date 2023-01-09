@@ -13,13 +13,13 @@ import biotite.structure as bst
 import biotite.structure.io as strio
 import numpy as np
 
-from lXtractor.core.base import AminoAcidDict, AbstractStructure
+from lXtractor.core.base import AminoAcidDict
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
 from lXtractor.core.segment import Segment
 from lXtractor.util.structure import filter_selection
 
 
-class GenericStructure(AbstractStructure):
+class GenericStructure:
     """
     A generic macromolecular structure with possibly many chains holding
     a single :class:`biotite.structure.AtomArray` instance.
@@ -35,7 +35,7 @@ class GenericStructure(AbstractStructure):
         #: Atom array object.
         self.array: bst.AtomArray = array
         #: PDB ID of a structure in `array`.
-        self.pdb_id: str = pdb_id
+        self.pdb_id: str | None = pdb_id
 
     @classmethod
     def read(cls, path: Path) -> GenericStructure:
@@ -47,7 +47,7 @@ class GenericStructure(AbstractStructure):
             )
         return cls(array, path.stem)
 
-    def write(self, path: Path | PathLike | str) -> t.NoReturn:
+    def write(self, path: Path | PathLike | str):
         """
         A one-line wrapper around :func:`biotite.structure.io.save_structure`.
 
@@ -183,6 +183,7 @@ class PDB_Chain:
     """
     A container to hold the data of a single structural chain.
     """
+
     id: str
     chain: str
     structure: GenericStructure

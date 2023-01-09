@@ -28,7 +28,7 @@ GAP_CHARS = ('-',)
 
 def read_fasta(
     inp: Path | TextIOBase | abc.Iterable[str], strip_id: bool = True
-) -> abc.Generator[tuple[str, str]]:
+) -> abc.Generator[tuple[str, str], None, None]:
     """
     Simple lazy fasta reader.
 
@@ -117,9 +117,9 @@ def mafft_add(
     add_handle.seek(0)
 
     # Run the subprocess command
-    keeplength = '--keeplength' if keeplength else ''
+    keep = '--keeplength' if keeplength else ''
     cmd = (
-        f'{mafft} --add {add_handle.name} {keeplength} --anysymbol '
+        f'{mafft} --add {add_handle.name} {keep} --anysymbol '
         f'--inputorder --thread {thread} {msa_path}'
     )
 
@@ -211,7 +211,8 @@ def remove_gap_columns(
     :return: Initial seqs with gap columns removed and removed columns' indices.
     """
     # Convert sequences into a matrix
-    arrays = np.vstack(list(map(list, seqs)))
+
+    arrays: np.ndarray = np.vstack([list(seq) for seq in seqs])
 
     # Calculate fraction of gaps for each column
     fraction_of_gaps = (np.isin(arrays, GAP_CHARS)).sum(axis=0) / arrays.shape[0]
@@ -254,7 +255,9 @@ def parse_cdhit(clstr_file: Path) -> t.List[t.List[str]]:
     with clstr_file.open() as f:
         return list(
             map(
-                lambda cc: list(map(lambda c: c.split('>')[1].split('...')[0], cc)),
+                lambda cc: list(
+                    map(lambda c: c.split('>')[1].split('...')[0], cc)  # type: ignore
+                ),
                 filter(bool, split_at(f, lambda x: x.startswith('>'))),
             )
         )
@@ -363,14 +366,14 @@ def parse_cdhit(clstr_file: Path) -> t.List[t.List[str]]:
 
 def map_pairs_numbering(
     s1: str,
-    s1_numbering: t.Iterable[int],
+    s1_numbering: abc.Iterable[int],
     s2: str,
-    s2_numbering: t.Iterable[int],
+    s2_numbering: abc.Iterable[int],
     align: bool = True,
     align_method: AlignMethod = mafft_align,
     empty: t.Any = None,
     **kwargs,
-) -> t.Iterator[t.Tuple[t.Optional[int], t.Optional[int]]]:
+) -> abc.Generator[tuple[int | None, int | None], None, None]:
     """
     Map numbering between a pair of sequences.
 
@@ -390,7 +393,8 @@ def map_pairs_numbering(
         One of `a` or `b` in a pair can be `empty` to represent a gap.
     """
 
-    s1_numbering, s2_numbering = map(list, [s1_numbering, s2_numbering])
+    def rm_dash(s: str) -> str:
+        return s.replace('-', '')
 
     if align:
         s1_aln, s2_aln = map(
@@ -399,11 +403,13 @@ def map_pairs_numbering(
     else:
         s1_aln, s2_aln = s1, s2
 
-    s1_raw, s2_raw = map(lambda s: s.replace('-', ''), [s1_aln, s2_aln])
+    s1_raw, s2_raw = map(rm_dash, [s1_aln, s2_aln])
 
-    if len(s1_raw) > len(s1_numbering):
+    s1_num, s2_num = list(s1_numbering), list(s2_numbering)
+
+    if len(s1_raw) > len(s1_num):
         raise LengthMismatch('s1 is larger than a corresponding numbering')
-    if len(s2_raw) > len(s2_numbering):
+    if len(s2_raw) > len(s2_num):
         raise LengthMismatch('s2 is larger than a corresponding numbering')
     if len(s1_aln) != len(s2_aln):
         raise LengthMismatch(
@@ -411,7 +417,7 @@ def map_pairs_numbering(
             f'(len(s1)={len(s1)} != len(s2)={len(s2)})'
         )
 
-    s1_pool, s2_pool = map(iter, [s1_numbering, s2_numbering])
+    s1_pool, s2_pool = iter(s1_num), iter(s2_num)
 
     for c1, c2 in zip(s1_aln, s2_aln):
         try:

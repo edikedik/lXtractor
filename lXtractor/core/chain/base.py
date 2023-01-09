@@ -2,20 +2,24 @@ from __future__ import annotations
 import typing as t
 
 from collections import abc
-from itertools import chain
+from itertools import chain, tee
+
+from lXtractor.util.typing import is_iterable_of, is_type
 
 if t.TYPE_CHECKING:
-    from lXtractor.core.chain.sequence import ChainSequence
-    from lXtractor.core.chain.structure import ChainStructure
-    from lXtractor.core.chain.chain import Chain
+    from lXtractor.core.chain import ChainSequence, ChainStructure, Chain
 
-    CT = t.TypeVar('CT', ChainStructure, ChainSequence, Chain)
+    # CT = t.TypeVar('CT', bound=t.Union[ChainSequence, ChainStructure, Chain])
+    CT = t.TypeVar('CT', ChainSequence, ChainStructure, Chain)
+    CTU: t.TypeAlias = ChainSequence | ChainStructure | Chain
+else:
+    CT = t.TypeVar('CT')
 
 T = t.TypeVar('T')
 
 
 def topo_iter(
-    start_obj: T, iterator: abc.Callable[[T], abc.Iterator[T]]
+    start_obj: T, iterator: abc.Callable[[T], abc.Iterable[T]]
 ) -> abc.Generator[list[T], None, None]:
     """
     Iterate over sequences in topological order.
@@ -35,7 +39,7 @@ def topo_iter(
         and representing topological levels with the root in `start_obj`.
     """
 
-    def get_level(objs: abc.Iterable[T]) -> abc.Iterator[T]:
+    def get_level(objs: abc.Iterable[T]) -> abc.Iterable[T]:
         return chain.from_iterable(map(iterator, objs))
 
     curr_level = list(iterator(start_obj))
@@ -45,6 +49,32 @@ def topo_iter(
         curr_level = list(get_level(curr_level))
         if not curr_level:
             return
+
+
+def is_chain_type_iterable(
+    s: t.Any,
+) -> t.TypeGuard[
+    abc.Iterable[Chain] | abc.Iterable[ChainSequence] | abc.Iterable[ChainStructure]
+]:
+    from lXtractor.core import chain as lxc
+
+    if not isinstance(s, abc.Iterable):
+        return False
+
+    ss = tee(s, 3)
+
+    return any(
+        is_iterable_of(_s, _t)
+        for _t, _s in zip([lxc.ChainSequence, lxc.ChainStructure, lxc.Chain], ss)
+    )
+
+
+def is_chain_type(s: t.Any) -> t.TypeGuard[CTU]:
+    from lXtractor.core import chain as lxc
+
+    return any(
+        is_type(s, _t) for _t in [lxc.ChainSequence, lxc.ChainStructure, lxc.Chain]
+    )
 
 
 if __name__ == '__main__':

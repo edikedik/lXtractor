@@ -12,10 +12,10 @@ from tqdm.auto import tqdm
 from lXtractor.core.chain.chain import Chain
 from lXtractor.core.chain.sequence import ChainSequence
 from lXtractor.core.chain.structure import ChainStructure
-from lXtractor.core.config import DumpNames
+from lXtractor.core.config import DumpNames, _DumpNames
 from lXtractor.util.io import get_dirs
 
-CT = t.TypeVar('CT')
+CT = t.TypeVar('CT', ChainSequence, ChainStructure, Chain)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -57,7 +57,7 @@ class ChainIO:
         num_proc: None | int = None,
         verbose: bool = False,
         tolerate_failures: bool = False,
-        dump_names: DumpNames = DumpNames,
+        dump_names: _DumpNames = DumpNames,
     ):
         """
         :param num_proc: The number of parallel processes. Using more processes
@@ -85,7 +85,7 @@ class ChainIO:
         path: Path | abc.Iterable[Path],
         non_blocking: bool = False,
         **kwargs,
-    ) -> t.Optional[CT] | abc.Iterator[t.Optional[CT]]:
+    ) -> abc.Generator[CT | Future | None, None, None]:
 
         if isinstance(path, Path):
             dirs = get_dirs(path)
@@ -100,29 +100,34 @@ class ChainIO:
             yield _read(path)
             return
 
-        dirs = dirs.values()
+        paths = iter(dirs.values())
 
         if self.num_proc is None:
 
             if self.verbose:
-                dirs = tqdm(dirs, desc=f"Reading {obj_type}")
-
-            yield from map(_read, dirs)
+                yield from map(_read, tqdm(paths, desc=f"Reading {obj_type}"))
+            else:
+                yield from map(_read, paths)
 
         else:
 
             with ProcessPoolExecutor(self.num_proc) as executor:
 
-                futures = as_completed([executor.submit(_read, d) for d in dirs])
+                futures: abc.Iterator[Future] = as_completed(
+                    [executor.submit(_read, d) for d in paths]
+                )
 
                 if non_blocking:
                     yield from futures
 
-                if self.verbose:
-                    futures = tqdm(futures, desc=f"Reading {obj_type}")
+                _futures = (
+                    tqdm(futures, desc=f"Reading {obj_type}")
+                    if self.verbose
+                    else futures
+                )
 
-                for future in futures:
-                    yield future.result()
+                for f in _futures:
+                    yield f.result()
 
     def write(
         self,
@@ -130,7 +135,7 @@ class ChainIO:
         base: Path,
         non_blocking: bool = False,
         **kwargs,
-    ) -> abc.Generator[Future] | abc.Generator[Path] | t.NoReturn:
+    ) -> abc.Generator[Path | None | Future, None, None]:
         """
         :param objs: A single or multiple objects to write.
             Each must have a `write` method accepting a directory.
@@ -161,15 +166,18 @@ class ChainIO:
                     if non_blocking:
                         yield from futures
 
-                    if self.verbose:
-                        futures = tqdm(futures, desc="Writing objects")
+                    _futures = (
+                        tqdm(futures, desc=f"Writing objects")
+                        if self.verbose
+                        else futures
+                    )
 
-                    for future in futures:
-                        yield future.result()
+                    for f in _futures:
+                        yield f.result()
 
     def read_chain(
         self, path: Path | abc.Iterable[Path], **kwargs
-    ) -> Chain | abc.Iterator[Chain | None] | None:
+    ) -> abc.Generator[Chain | Future | None, None, None]:
         """
         Read :class:`Chain`'s from the provided path.
 
@@ -187,7 +195,7 @@ class ChainIO:
 
     def read_chain_seq(
         self, path: Path | abc.Iterable[Path], **kwargs
-    ) -> t.Optional[ChainSequence] | abc.Iterator[t.Optional[ChainSequence]]:
+    ) -> abc.Generator[ChainSequence | Future | None, None, None]:
         """
         Read :class:`ChainSequence`'s from the provided path.
 
@@ -205,7 +213,7 @@ class ChainIO:
 
     def read_chain_struc(
         self, path: Path | abc.Iterable[Path], **kwargs
-    ) -> t.Optional[ChainStructure] | abc.Iterator[t.Optional[ChainStructure]]:
+    ) -> abc.Generator[ChainStructure | Future | None, None, None]:
         """
         Read :class:`ChainStructure`'s from the provided path.
 
@@ -220,3 +228,7 @@ class ChainIO:
             :class:`ChainStructure` objects read sequentially or in parallel.
         """
         return self._read(ChainStructure, path, **kwargs)
+
+
+if __name__ == '__main__':
+    raise RuntimeError

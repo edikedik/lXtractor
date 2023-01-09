@@ -118,6 +118,7 @@ warn_return_any = true
 warn_unused_configs = true
 no_implicit_optional = true
 exclude = ["scripts", "docs", "test"]
+plugins = ["numpy.typing.mypy_plugin"]
 
 [[tool.mypy.overrides]]
 module = "networkx.*"

@@ -6,19 +6,21 @@ from collections import abc
 from io import TextIOBase
 from pathlib import Path
 
-from lXtractor.core.base import AbstractChain, SeqReader
-from lXtractor.core.chain.list import ChainList, _parse_children
+from typing_extensions import Self
+
+from lXtractor.core.base import SeqReader
+from lXtractor.core.chain.list import ChainList, _wrap_children
 from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.sequence import ChainSequence
 from lXtractor.core.chain.structure import ChainStructure
-from lXtractor.core.config import DumpNames, SeqNames
+from lXtractor.core.config import DumpNames, SeqNames, _DumpNames
 from lXtractor.core.exceptions import AmbiguousMapping, MissingData, NoOverlap
 from lXtractor.util.seq import read_fasta
 
 LOGGER = logging.getLogger(__name__)
 
 
-class Chain(AbstractChain):
+class Chain:
     """
     A container, encompassing a :class:`ChainSequence` and possibly many
     :class:`ChainStructure`'s corresponding to a single protein chain.
@@ -53,7 +55,7 @@ class Chain(AbstractChain):
         seq: ChainSequence,
         structures: abc.Iterable[ChainStructure] | None = None,
         parent: Chain | None = None,
-        children: abc.Sequence[Chain] | None = None,
+        children: abc.Iterable[Chain] | None = None,
     ):
         """
 
@@ -75,11 +77,11 @@ class Chain(AbstractChain):
         self.structures: ChainList[ChainStructure] = structures
 
         #: A parent chain this chain had descended from.
-        self.parent = parent
+        self.parent: Chain | None = parent
 
         #: A collection of children preferably obtained using
         #: :meth:`spawn_child`.
-        self.children: ChainList[Chain] = _parse_children(children)
+        self.children: ChainList[Chain] = _wrap_children(children)
 
     @property
     def id(self) -> str:
@@ -120,7 +122,7 @@ class Chain(AbstractChain):
     # def __contains__(self, item: Chain) -> bool:
     #     return item in self.children
 
-    def iter_children(self) -> abc.Generator[list[Chain]]:
+    def iter_children(self) -> abc.Generator[list[Chain], None, None]:
         """
         Iterate :attr:`children` in topological order.
 
@@ -130,18 +132,27 @@ class Chain(AbstractChain):
         """
         return topo_iter(self, lambda x: x.children)
 
+    @classmethod
     @t.overload
     def from_seq(
-        self,
-        inp: Path | TextIOBase | abc.Iterable[str],
+        cls,
+        inp: Path | TextIOBase,
         read_method: SeqReader = read_fasta,
-    ) -> ChainList[Chain]:
+    ) -> ChainList[Self]:
         ...
 
+    @classmethod
+    @t.overload
+    def from_seq(cls, inp: str, read_method: SeqReader = read_fasta) -> Self:
+        ...
+
+    @classmethod
     @t.overload
     def from_seq(
-        self, inp: str | tuple[str, str], read_method: SeqReader = read_fasta
-    ) -> Chain:
+        cls,
+        inp: abc.Iterable[str] | tuple[str, str],
+        read_method: SeqReader = read_fasta,
+    ) -> Self | ChainList[Self]:
         ...
 
     @classmethod
@@ -149,7 +160,7 @@ class Chain(AbstractChain):
         cls,
         inp: str | tuple[str, str] | Path | TextIOBase | abc.Iterable[str],
         read_method: SeqReader = read_fasta,
-    ) -> Chain | ChainList[Chain]:
+    ) -> Self | ChainList[Self]:
         """
 
         :param inp: A string of with a sequence or a pair (header, seq).
@@ -178,7 +189,7 @@ class Chain(AbstractChain):
         cls,
         path: Path,
         *,
-        dump_names: DumpNames = DumpNames,
+        dump_names: _DumpNames = DumpNames,
         search_children: bool = False,
     ) -> Chain:
         """
@@ -208,10 +219,10 @@ class Chain(AbstractChain):
         self,
         base_dir: Path,
         *,
-        dump_names: DumpNames = DumpNames,
+        dump_names: _DumpNames = DumpNames,
         str_fmt: str = "cif",
         write_children: bool = True,
-    ) -> t.NoReturn:
+    ):
         """
         Create a disk dump of this chain data.
         Created dumps can be reinitialized via :meth:`read`.
@@ -250,7 +261,7 @@ class Chain(AbstractChain):
         map_to_seq: bool = True,
         map_name: str = SeqNames.map_canonical,
         **kwargs,
-    ) -> t.NoReturn:
+    ):
         """
         Add a structure to :attr:`structures`.
 
@@ -283,7 +294,7 @@ class Chain(AbstractChain):
         link_map: str = SeqNames.map_canonical,
         link_map_points_to: str = "i",
         **kwargs,
-    ) -> t.NoReturn:
+    ):
         """
         Transfer sequence mapping to each :attr:`ChainStructure.seq` within
         :attr:`structures`.
@@ -398,9 +409,15 @@ class Chain(AbstractChain):
 
         structures = None
         if subset_structures:
-            structures = list(filter(bool, map(subset_structure, self.structures)))
+            structures = [
+                s for s in map(subset_structure, self.structures) if s is not None
+            ]
 
         child = Chain(seq, structures, self)
         if keep:
             self.children.append(child)
         return child
+
+
+if __name__ == '__main__':
+    raise RuntimeError

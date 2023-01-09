@@ -6,7 +6,13 @@ import typing as t
 from collections import abc
 
 from lXtractor.core.base import UrlGetter
-from lXtractor.core.chain import CT
+
+if t.TYPE_CHECKING:
+    from lXtractor.core.chain import ChainSequence, ChainStructure, Chain
+
+    CT = t.TypeVar('CT', ChainSequence, ChainStructure, Chain)
+else:
+    CT = t.TypeVar('CT')
 
 
 @t.runtime_checkable

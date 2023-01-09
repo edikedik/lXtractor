@@ -13,6 +13,7 @@ from itertools import islice, combinations, filterfalse, chain
 import networkx as nx
 from more_itertools import nth, always_reversible, powerset, take
 from tqdm.auto import tqdm
+from typing_extensions import Self
 
 from lXtractor.core.base import Ord, NamedTupleT
 from lXtractor.core.config import Sep
@@ -20,7 +21,7 @@ from lXtractor.core.exceptions import LengthMismatch, NoOverlap, OverlapError
 from lXtractor.util.misc import is_valid_field_name
 from lXtractor.variables.base import Variables
 
-_S = t.TypeVar('_S', bound='Segment', covariant=True)
+_S = t.TypeVar('_S', bound='Segment', contravariant=True)
 T = t.TypeVar('T')
 # _IterType = t.Union[abc.Iterator[tuple], abc.Iterator[namedtuple]]
 DATA_HANDLE_MODES = ('merge', 'self', 'other')
@@ -32,7 +33,7 @@ class _Item(t.Protocol):
         ...
 
 
-class Segment(abc.Sequence[tuple]):
+class Segment(abc.Sequence[NamedTupleT]):
     """
     An arbitrary segment with inclusive boundaries containing arbitrary number
     of sequences.
@@ -112,8 +113,8 @@ class Segment(abc.Sequence[tuple]):
         end: int,
         name: str | None = None,
         seqs: dict[str, abc.Sequence[t.Any]] | None = None,
-        parent: Segment | None = None,
-        children: abc.MutableSequence[Segment] | None = None,
+        parent: Self | None = None,
+        children: abc.MutableSequence[Self] | None = None,
         meta: dict[str, t.Any] | None = None,
         variables: Variables | None = None,
     ):
@@ -201,8 +202,8 @@ class Segment(abc.Sequence[tuple]):
         ...
 
     def __getitem__(
-    self, idx: slice | int | str
-) -> abc.Iterator[NamedTupleT] | NamedTupleT | int | abc.Sequence[t.Any]:
+        self, idx: slice | int | str
+    ) -> abc.Iterator[NamedTupleT] | NamedTupleT | int | abc.Sequence[t.Any]:
         idx = _translate_idx(idx, self.start)
         match idx:
             case slice():
@@ -225,7 +226,7 @@ class Segment(abc.Sequence[tuple]):
         self._validate_seq(key, value)
         self._seqs[key] = value
 
-    def __reversed__(self) -> abc.Iterator[tuple]:
+    def __reversed__(self) -> abc.Iterator[NamedTupleT]:
         return always_reversible(iter(self))
 
     def __contains__(self, item: object) -> bool:
@@ -347,7 +348,7 @@ class Segment(abc.Sequence[tuple]):
         deep_copy: bool = True,
         handle_mode: str = 'merge',
         sep: str = '&',
-    ) -> Segment:
+    ) -> Self:
         """
         Overlap this segment with other over common indices.
 
@@ -408,7 +409,7 @@ class Segment(abc.Sequence[tuple]):
 
         return self.__class__(start, end, name=name, seqs=seqs, parent=self, meta=meta)
 
-    def overlap(self, start: int, end: int) -> Segment:
+    def overlap(self, start: int, end: int) -> Self:
         """
         Create new segment from the current instance using overlapping boundaries.
 
@@ -423,7 +424,7 @@ class Segment(abc.Sequence[tuple]):
 
         return self.overlap_with(other, True, 'self')
 
-    def sub_by(self, other: Segment, **kwargs) -> Segment:
+    def sub_by(self, other: Segment, **kwargs) -> Self:
         """
         A specialized version of :meth:`overlap_with` used in cases
         where `other` is assumed to be a part of the current segment
@@ -445,7 +446,7 @@ class Segment(abc.Sequence[tuple]):
 
         return self.overlap_with(other, **kwargs)
 
-    def sub(self, start: int, end: int, **kwargs) -> Segment:
+    def sub(self, start: int, end: int, **kwargs) -> Self:
         """
         Subset current segment using provided boundaries.
         Will create a new segment and call :meth:`sub_by`.

@@ -13,6 +13,7 @@ import numpy as np
 from more_itertools import unzip
 
 from lXtractor.core.exceptions import LengthMismatch, MissingData
+from lXtractor.util.typing import is_sequence_of
 
 LOGGER = logging.getLogger(__name__)
 
@@ -38,16 +39,18 @@ def calculate_dihedral(
     dihedral-angle-given-cartesian-coordinates
     """
 
-    v1, v2, v3 = map(
-        lambda v: v / np.linalg.norm(v), [atom2 - atom1, atom3 - atom2, atom4 - atom3]
-    )
+    def vnorm(v: np.ndarray) -> np.ndarray:
+        return v / np.linalg.norm(v)  # type: ignore  # thinks is "Any"
+
+    v1, v2, v3 = map(vnorm, [atom2 - atom1, atom3 - atom2, atom4 - atom3])
 
     n1 = np.cross(v1, v2)
     n2 = np.cross(v2, v3)
     x = n1.dot(n2)
     y = np.cross(n1, n2).dot(v2)
 
-    return np.arctan2(y, x)
+    res: float = np.arctan2(y, x)
+    return res
 
 
 def filter_selection(
@@ -69,14 +72,18 @@ def filter_selection(
     if res_id is None:
         res_id, _ = bst.get_residues(array)
 
-    if atom_names is None or isinstance(atom_names[0], str):
-        atom_names: abc.Iterator[abc.Sequence[str] | None] = repeat(
-            atom_names, len(res_id)
-        )
+    _atom_names: abc.Iterable[None] | abc.Iterable[abc.Sequence[str]]
+
+    if atom_names is None:
+        _atom_names = repeat(None, len(res_id))
+    elif is_sequence_of(atom_names, str):
+        _atom_names = repeat(atom_names, len(res_id))
+    else:
+        _atom_names = atom_names
 
     mask = np.zeros_like(array, bool)
 
-    for r_id, a_names in zip(res_id, atom_names, strict=True):
+    for r_id, a_names in zip(res_id, _atom_names, strict=True):
         mask_local = array.res_id == r_id
         if a_names is not None:
             mask_local &= np.isin(array.atom_name, a_names)
@@ -140,14 +147,15 @@ def filter_to_common_atoms(
         )
 
     mask1, mask2 = map(
-        lambda x: np.concatenate(list(x)),
+        # numpy + mypy = confusion
+        lambda x: np.concatenate(list(x)),  # type: ignore
         unzip(starmap(process_pair, zip(a1_it, a2_it, strict=True))),
     )
 
     return mask1, mask2
 
 
-def iter_canonical(a: bst.AtomArray) -> abc.Generator[bst.AtomArray | None]:
+def iter_canonical(a: bst.AtomArray) -> abc.Generator[bst.AtomArray | None, None, None]:
     """
     :param a: Arbitrary atom array.
     :return: Generator of canonical versions of residues in `a` or ``None``
@@ -173,7 +181,7 @@ def get_missing_atoms(
     a: bst.AtomArray,
     excluding_names: abc.Sequence[str] | None = ('OXT',),
     excluding_elements: abc.Sequence[str] | None = ('H',),
-) -> abc.Generator[list[str | None]]:
+) -> abc.Generator[list[str | None] | None, None, None]:
     """
     For each residue, compare with the one stored in CCD, and find missing
     atoms.
@@ -201,7 +209,7 @@ def get_observed_atoms_frac(
     a: bst.AtomArray,
     excluding_names: abc.Sequence[str] | None = ('OXT',),
     excluding_elements: abc.Sequence[str] | None = ('H',),
-) -> abc.Generator[list[str | None]]:
+) -> abc.Generator[list[str | None] | None, None, None]:
     """
     Find fractions of observed atoms compared to canonical residue versions
     stored in CCD.

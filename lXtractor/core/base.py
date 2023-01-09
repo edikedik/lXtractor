@@ -153,59 +153,59 @@ class AbstractResource(metaclass=ABCMeta):
         raise NotImplementedError
 
 
-class AbstractStructure(metaclass=ABCMeta):
-    """
-    Generic structure abstract interface.
-    """
+# class AbstractStructure(metaclass=ABCMeta):
+#     """
+#     Generic structure abstract interface.
+#     """
+#
+#     __slots__ = ()
+#
+#     @classmethod
+#     @abstractmethod
+#     def read(cls, path: Path):
+#         """
+#         Read an object.
+#         """
+#
+#     @abstractmethod
+#     def write(self, path: Path):
+#         """
+#         Write an object to disk.
+#         """
+#
+#     @abstractmethod
+#     def get_sequence(self) -> abc.Iterable[tuple[str, int]]:
+#         """
+#         Get sequence (e.g., residues) and its numbering.
+#         """
 
-    __slots__ = ()
 
-    @classmethod
-    @abstractmethod
-    def read(cls, path: Path):
-        """
-        Read an object.
-        """
-
-    @abstractmethod
-    def write(self, path: Path):
-        """
-        Write an object to disk.
-        """
-
-    @abstractmethod
-    def get_sequence(self) -> abc.Iterable[tuple[str, int]]:
-        """
-        Get sequence (e.g., residues) and its numbering.
-        """
-
-
-class AbstractChain(metaclass=ABCMeta):
-    """
-    Chain basic interface definition.
-    """
-
-    __slots__ = ()
-
-    @classmethod
-    @abstractmethod
-    def read(cls, path: Path, dump_names: _DumpNames = DumpNames, **kwargs):
-        """
-        Read an object.
-        """
-
-    @abstractmethod
-    def write(self, path: Path, dump_names: _DumpNames = DumpNames, **kwargs):
-        """
-        Write an object to disk.
-        """
-
-    @property
-    @abstractmethod
-    def id(self) -> str:
-        """
-        Unique identifier.
-        """
+# class AbstractChain(metaclass=ABCMeta):
+#     """
+#     Chain basic interface definition.
+#     """
+#
+#     __slots__ = ()
+#
+#     @classmethod
+#     @abstractmethod
+#     def read(cls, path: Path, dump_names: _DumpNames = DumpNames, **kwargs):
+#         """
+#         Read an object.
+#         """
+#
+#     @abstractmethod
+#     def write(self, path: Path, dump_names: _DumpNames = DumpNames, **kwargs):
+#         """
+#         Write an object to disk.
+#         """
+#
+#     @property
+#     @abstractmethod
+#     def id(self) -> str:
+#         """
+#         Unique identifier.
+#         """
 
 
 @t.runtime_checkable
@@ -247,7 +247,7 @@ class AddMethod(t.Protocol):
         self,
         msa: abc.Iterable[tuple[str, str]] | Path,
         seqs: abc.Iterable[tuple[str, str]],
-        **kwargs,
+        # **kwargs,
     ) -> abc.Iterable[tuple[str, str]]:
         ...
 
@@ -259,7 +259,8 @@ class AlignMethod(t.Protocol):
     """
 
     def __call__(
-        self, seqs: abc.Iterable[tuple[str, str]] | Path, **kwargs
+        self,
+        seqs: abc.Iterable[tuple[str, str]] | Path,
     ) -> abc.Iterable[tuple[str, str]]:
         ...
 
@@ -270,7 +271,8 @@ class SeqReader(t.Protocol):
     """
 
     def __call__(
-        self, inp: Path | TextIOBase | abc.Iterable[str], **kwargs
+        self,
+        inp: Path | TextIOBase | abc.Iterable[str],
     ) -> abc.Iterable[tuple[str, str]]:
         ...
 
@@ -281,7 +283,10 @@ class SeqWriter(t.Protocol):
     """
 
     def __call__(
-        self, inp: abc.Iterable[tuple[str, str]], out: Path | SupportsWrite, **kwargs
+        self,
+        inp: abc.Iterable[tuple[str, str]],
+        out: Path | SupportsWrite,
+        # **kwargs
     ) -> None:
         ...
 

@@ -14,7 +14,7 @@ from lXtractor.util.io import fetch_files
 T = t.TypeVar('T')
 
 
-def url_getters() -> dict[str, UrlGetter]:
+def url_getters() -> dict[str, abc.Callable[..., str]]:
     """
     :return: A dictionary with {name: getter} where getter is a function
         accepting string args and returning a valid URL.
@@ -48,7 +48,7 @@ class AlphaFold(ApiBase):
         *,
         callback: abc.Callable[[str], T] | None = None,
         overwrite: bool = False,
-    ) -> tuple[list[tuple[tuple[str, str], str | Path | T]], list[tuple[str, str]]]:
+    ) -> tuple[list[tuple[tuple[str, ...], str | Path | T]], list[tuple[str, ...]]]:
         """
         Fetch structures from the AlphaFold2 database.
 
@@ -94,7 +94,7 @@ class AlphaFold(ApiBase):
         dir_: Path | None = None,
         *,
         overwrite: bool = False,
-    ) -> tuple[list[tuple[str, dict]], list[str]]:
+    ) -> tuple[list[tuple[str, dict | str]], list[str]]:
         """
 
         .. seealso::

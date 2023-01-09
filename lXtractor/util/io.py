@@ -10,7 +10,7 @@ import typing as t
 import urllib
 from collections import abc
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
-from itertools import filterfalse, starmap, chain
+from itertools import filterfalse, starmap, chain, repeat
 from os import PathLike
 from pathlib import Path
 
@@ -23,7 +23,8 @@ from lXtractor.core.base import UrlGetter
 
 T = t.TypeVar('T')
 V = t.TypeVar('V')
-_U = t.TypeVar('_U', str, tuple[str, ...])
+# _U = t.TypeVar('_U', str, tuple[str, ...])
+_U: t.TypeAlias = str | tuple[str, ...]
 _F = t.TypeVar('_F', str, Path)
 LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ LOGGER = logging.getLogger(__name__)
 # =================================== Fetching =========================================
 
 
-def fetch_text(url: str, decode: bool = True, **kwargs) -> t.Union[str, bytes]:
+def fetch_text(url: str, decode: bool = True, **kwargs) -> str | bytes:
     """
     :param url: Link.
     :param decode: Decode text to utf-8 (while receiving bytes).
@@ -82,9 +83,9 @@ def fetch_to_file(
     if not text or url.startswith('ftp'):
         urllib.request.urlretrieve(url, fpath, **kwargs)
     else:
-        text = fetch_text(url, decode=True, **kwargs)
+        res = fetch_text(url, decode=True, **kwargs)
         with fpath.open('w') as f:
-            print(text, file=f)
+            print(res, file=f)
     return fpath
 
 
@@ -93,7 +94,7 @@ def fetch_chunks(
     fetcher: abc.Callable[[list[V]], T],
     chunk_size: int = 100,
     **kwargs,
-) -> abc.Generator[tuple[list[V], T | Future]]:
+) -> abc.Generator[tuple[list[V], T | Future], None, None]:
     """
     A wrapper for fetching multiple links with :class:`ThreadPoolExecutor`.
 
@@ -118,7 +119,10 @@ def fetch_iterable(
     verbose: bool = False,
     blocking: bool = True,
     allow_failure: bool = True,
-) -> abc.Generator[tuple[V, T | Future]]:
+) -> (
+    abc.Generator[tuple[V, T], None, None]
+    | abc.Generator[tuple[V, Future[T]], None, None]
+):
     """
     :param it: Iterable over some objects accepted by the `fetcher`,
         e.g., links.
@@ -136,7 +140,7 @@ def fetch_iterable(
         second object is the fetched data.
     """
 
-    def _try_get_result(inp, future=None):
+    def _try_get_result(inp: V, future: Future | None) -> tuple[V, T] | None:
         try:
             return inp, fetcher(inp) if future is None else future.result()
         except Exception as e:
@@ -145,16 +149,18 @@ def fetch_iterable(
             if verbose:
                 LOGGER.warning(f'Failed to fetch input {inp} due to error {e}')
                 LOGGER.exception(e)
+            return None
 
+    results: (abc.Iterable[tuple[V, T]] | abc.Iterable[tuple[V, Future[T]]])
     if num_threads is None:
-        results = filterfalse(lambda x: x is None, map(_try_get_result, it))
+        results = (x for x in starmap(_try_get_result, zip(it, repeat(None))) if x)
         if verbose:
             results = tqdm(results, desc='Fetching')
         yield from results
     else:
         with ThreadPoolExecutor(num_threads) as executor:
             futures_map = {executor.submit(fetcher, x): x for x in it}
-            futures = as_completed(list(futures_map))
+            futures: abc.Iterable[Future] = as_completed(list(futures_map))
 
             if verbose:
                 futures = tqdm(futures, desc='Fetching', total=len(futures_map))
@@ -232,7 +238,7 @@ def fetch_files(
     max_trials: int = 1,
     num_threads: int | None = None,
     verbose: bool = False,
-) -> tuple[list[tuple[_U, _F | T]], list[_U]]:
+) -> tuple[list[tuple[_U, _F]], list[_U]]:
     """
     :param url_getter: A callable accepting two or more strings and returning
         a valid url to fetch. The last argument is reserved for `fmt`.
@@ -260,30 +266,32 @@ def fetch_files(
         The latter is a list of names that failed to fetch.
     """
 
-    def fetch_one(args: _U) -> _F | T:
+    # TODO: fix typing issues
+
+    def fetch_one(args: _U) -> str | Path | T:
         url = url_getter(args) if isinstance(args, str) else url_getter(*args)
         if dir_ is None:
-            content = fetch_text(url)
-            if callback:
-                content = callback(content)
-            return content
-        fname_base = args if isinstance(args, str) else args[fname_idx]
+            text = fetch_text(url)
+            assert isinstance(text, str), 'Text is decoded'
+            return callback(text) if callback else text
+        fname_base: str = args if isinstance(args, str) else args[fname_idx]
         return fetch_to_file(url, fname=f'{fname_base}.{fmt}', root_dir=dir_)
 
-    def fetcher(chunk: abc.Iterable[_U]) -> list[tuple[_U, _F | T]]:
+    def fetcher(
+        chunk: abc.Iterable[_U],
+    ) -> list[tuple[_U, str]] | list[tuple[_U, Path]] | list[tuple[_U, T]]:
         chunk = peekable(chunk)
         if not chunk.peek(False):
             return []
-        return list(
-            fetch_iterable(
-                chunk, fetcher=fetch_one, num_threads=num_threads, verbose=verbose
-            )
+        fetched: abc.Iterable[tuple[_U, str | Path | T]] = fetch_iterable(
+            chunk, fetcher=fetch_one, num_threads=num_threads, verbose=verbose
         )
+        return list(fetched)
 
     def get_remaining(
         fetched: abc.Iterable[tuple[_U, _F | T]], _remaining: list[_U]
     ) -> list[_U]:
-        args, _ = unzip(fetched)
+        args = [x[0] for x in fetched]
         return list(set(_remaining) - set(args))
 
     def filter_existing(args):
@@ -339,7 +347,7 @@ def setup_logger(
     )
     if logger is None:
         logger = logging.getLogger(__name__)
-
+    handler: logging.FileHandler | logging.StreamHandler
     if log_path is not None:
         level = file_level or logging.DEBUG
         handler = logging.FileHandler(log_path, 'w')
@@ -387,13 +395,17 @@ def run_sp(cmd: str, split: bool = True):
         ``shell=True``.
     :return: Result of a subprocess with captured output.
     """
-    cmd = cmd.split() if split else cmd
+    command: str | list[str] = cmd.split() if split else cmd
     try:
-        res = sp.run(cmd, capture_output=True, text=True, check=True, shell=not split)
+        res = sp.run(
+            command, capture_output=True, text=True, check=True, shell=not split
+        )
     except sp.CalledProcessError as e:
-        res = sp.run(cmd, capture_output=True, text=True, check=False, shell=not split)
+        res = sp.run(
+            command, capture_output=True, text=True, check=False, shell=not split
+        )
         raise ValueError(
-            f'Command {cmd} failed with an error {e}, '
+            f'Command {command} failed with an error {e}, '
             f'stdout {res.stdout}, stderr {res.stderr}'
         ) from e
     return res

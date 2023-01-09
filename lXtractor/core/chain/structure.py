@@ -2,24 +2,22 @@ from __future__ import annotations
 
 import typing as t
 from collections import abc
+from itertools import repeat, starmap
 from pathlib import Path
 
 import numpy as np
 from biotite import structure as bst
-from more_itertools import unzip
+from typing_extensions import Self
 
 from lXtractor.core.chain.base import topo_iter
-from lXtractor.core.chain.list import _parse_children
+from lXtractor.core.chain.list import _wrap_children, ChainList
 from lXtractor.core.chain.sequence import ChainSequence
-from lXtractor.core.config import SeqNames, Sep, MetaNames, DumpNames
+from lXtractor.core.config import SeqNames, Sep, MetaNames, DumpNames, _DumpNames
 from lXtractor.core.exceptions import LengthMismatch, InitError
 from lXtractor.core.structure import GenericStructure, PDB_Chain, _validate_chain
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.structure import filter_selection
 from lXtractor.variables.base import Variables
-
-if t.TYPE_CHECKING:
-    from lXtractor.core.chain.list import ChainList
 
 
 class ChainStructure:
@@ -60,9 +58,7 @@ class ChainStructure:
         pdb_structure: GenericStructure,
         seq: ChainSequence | None = None,
         parent: ChainStructure | None = None,
-        children: abc.Sequence[ChainStructure]
-        | ChainList[ChainStructure]
-        | None = None,
+        children: abc.Iterable[ChainStructure] | None = None,
         variables: t.Optional[Variables] = None,
     ):
         """
@@ -98,16 +94,22 @@ class ChainStructure:
 
         #: Any sub-structures descended from this one,
         #: preferably using :meth:`spawn_child`.
-        self.children: ChainList[ChainStructure] = _parse_children(children)
+        self.children: ChainList[ChainStructure] = _wrap_children(children)
 
         if seq is None:
-            seq1, seq3, num = (
-                list(x) for x in unzip(self.pdb.structure.get_sequence())
+            seq1: list[str]
+            seq1, seq3, num = starmap(
+                lambda i, a: [x[i] for x in a],
+                zip(range(3), repeat(self.pdb.structure.get_sequence(), 3)),
             )
-            seqs: dict[str, list[int] | list[str]] = {
-                SeqNames.seq3: seq3, SeqNames.enum: num}
+            seqs = {
+                SeqNames.seq3: seq3,
+                SeqNames.enum: num,
+            }
             self.seq = ChainSequence.from_string(
-                "".join(seq1), name=f"{pdb_id}{Sep.chain}{pdb_chain}", **seqs
+                "".join(seq1),
+                name=f"{pdb_id}{Sep.chain}{pdb_chain}",
+                **seqs,  # type: ignore  # Fails to recognize kwargs
             )
         else:
             self.seq = seq
@@ -121,7 +123,7 @@ class ChainStructure:
     def __repr__(self) -> str:
         return self.id
 
-    def iter_children(self) -> abc.Generator[list[ChainStructure]]:
+    def iter_children(self) -> abc.Generator[list[ChainStructure], None, None]:
         """
         Iterate :attr:`children` in topological order.
 
@@ -236,24 +238,30 @@ class ChainStructure:
             (see func:`biotite.structure.superimpose` for details).
         """
 
-        def _get_mask(c: ChainStructure, map_name: str) -> np.ndarray:
+        def _get_mask(
+            c: ChainStructure,
+            map_name: str | None,
+            _atom_names: abc.Sequence[abc.Sequence[str]] | None,
+        ) -> np.ndarray:
+
             if res_id is None:
                 return np.ones_like(c.array, bool)
-            _res_id = (
-                res_id
-                if not map_name or res_id is None
-                else [
-                    c.seq.get_item(map_name, x)._asdict()[SeqNames.enum] for x in res_id
-                ]
-            )
-            return filter_selection(c.array, _res_id, atom_names)
+
+            if not map_name or res_id is None:
+                _res_id = res_id
+            else:
+                mapping = c.seq.get_map(map_name)
+                _res_id = [mapping[x]._asdict()[SeqNames.enum] for x in res_id]
+
+            return filter_selection(c.array, _res_id, _atom_names)
 
         match atom_names:
             case [str(), *_]:
                 if res_id is not None:
-                    atom_names = [atom_names] * len(res_id)
+                    # Fails to infer Sequence[str] type
+                    atom_names = [atom_names] * len(res_id)  # type: ignore
             case [[str(), *_], *_]:
-                if len(res_id) != len(atom_names):
+                if res_id is not None and len(res_id) != len(atom_names):
                     raise LengthMismatch(
                         "When specifying `atom_names` per residue, the number of "
                         f"residues must match the number of atom name groups; "
@@ -262,9 +270,9 @@ class ChainStructure:
                     )
 
         if mask_self is None:
-            mask_self = _get_mask(self, map_name_self)
+            mask_self = _get_mask(self, map_name_self, atom_names)
         if mask_other is None:
-            mask_other = _get_mask(other, map_name_other)
+            mask_other = _get_mask(other, map_name_other, atom_names)
 
         superposed, rmsd, transformation = self.pdb.structure.superpose(
             other.pdb.structure, mask_self=mask_self, mask_other=mask_other
@@ -335,11 +343,10 @@ class ChainStructure:
             deep_copy=deep_copy,
             keep=keep_seq_child,
         )
-        structure = None
-        if self.pdb.structure:
-            enum_field = seq.field_names().enum
-            start, end = seq[enum_field][0], seq[enum_field][-1]
-            structure = self.pdb.structure.sub_structure(start, end)
+
+        enum_field = seq.field_names().enum
+        start, end = seq[enum_field][0], seq[enum_field][-1]
+        structure = self.pdb.structure.sub_structure(start, end)
 
         child = ChainStructure(self.pdb.id, self.pdb.chain, structure, seq, self)
         if keep:
@@ -351,9 +358,9 @@ class ChainStructure:
         cls,
         base_dir: Path,
         *,
-        dump_names: DumpNames = DumpNames,
+        dump_names: _DumpNames = DumpNames,
         search_children: bool = False,
-    ) -> ChainStructure:
+    ) -> Self:
         """
         Read the chain structure from a file disk dump.
 
@@ -386,13 +393,11 @@ class ChainStructure:
         if dump_names.variables in files:
             variables = Variables.read(files[dump_names.variables]).structure
 
-        cs = ChainStructure(pdb_id, chain_id, structure, seq, variables=variables)
+        cs = cls(pdb_id, chain_id, structure, seq, variables=variables)
 
         if search_children and dump_names.segments_dir in dirs:
             for path in (base_dir / dump_names.segments_dir).iterdir():
-                child = ChainStructure.read(
-                    path, dump_names=dump_names, search_children=True
-                )
+                child = cls.read(path, dump_names=dump_names, search_children=True)
                 child.parent = cs
                 cs.children.append(child)
 
@@ -403,9 +408,9 @@ class ChainStructure:
         base_dir: Path,
         fmt: str = "cif",
         *,
-        dump_names: DumpNames = DumpNames,
+        dump_names: _DumpNames = DumpNames,
         write_children: bool = False,
-    ) -> t.NoReturn:
+    ):
         """
         Dump chain structure to disk.
 
@@ -428,3 +433,7 @@ class ChainStructure:
             for child in self.children:
                 child_dir = base_dir / DumpNames.segments_dir / child.seq.name
                 child.write(child_dir, fmt, dump_names=dump_names, write_children=True)
+
+
+if __name__ == '__main__':
+    raise RuntimeError

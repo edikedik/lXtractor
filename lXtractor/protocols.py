@@ -23,20 +23,20 @@ from lXtractor.util.structure import filter_selection, filter_to_common_atoms
 LOGGER = logging.getLogger(__name__)
 
 _Diff = namedtuple(
-    'SubsetDiff', ['SuperposeFixed', 'RmsdFixed', 'SuperposeMobile', 'RmsdMobile']
+    '_Diff', ['SuperposeFixed', 'RmsdFixed', 'SuperposeMobile', 'RmsdMobile']
 )
 _StagedSupInpStrict: t.TypeAlias = tuple[str, bst.AtomArray, bst.AtomArray]
 _StagedSupInpFlex: t.TypeAlias = tuple[str, ChainStructure, ChainStructure]
 _StagedSupInp = t.TypeVar('_StagedSupInp', _StagedSupInpStrict, _StagedSupInpFlex)
 
 _SupOutputStrict = namedtuple(
-    'OutputStrict', ['ID1', 'ID2', 'RmsdSuperpose', 'RmsdTarget', 'Transformation']
+    '_SupOutputStrict', ['ID1', 'ID2', 'RmsdSuperpose', 'RmsdTarget', 'Transformation']
 )
 _SupOutputStrictT: t.TypeAlias = tuple[
     str, str, float, float, tuple[np.ndarray, np.ndarray, np.ndarray]
 ]
 _SupOutputFlex = namedtuple(
-    'OutputFlex',
+    '_SupOutputFlex',
     [
         'ID1',
         'ID2',
@@ -56,13 +56,13 @@ _SupOutputFlexT: t.TypeAlias = tuple[
     tuple[float, float, float, float],
     tuple[float, float, float, float],
 ]
-_SupOutputT = t.TypeVar('_SupOutputT', _SupOutputStrict, _SupOutputFlex)
+# _SupOutputT = t.TypeVar('_SupOutputT', _SupOutputStrict, _SupOutputFlex)
 
 
 def filter_selection_extended(
     c: ChainStructure,
     pos: abc.Sequence[int] | None = None,
-    atom_names: abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None = None,
+    atom_names: abc.Sequence[abc.Sequence[str]] | abc.Sequence[str] | None = None,
     map_name: str | None = None,
     exclude_hydrogen: bool = False,
     tolerate_missing: bool = False,
@@ -89,14 +89,14 @@ def filter_selection_extended(
     if pos is not None and map_name:
         _map = c.seq.get_map(map_name)
 
-        pos = [(p, _map.get(p, None)) for p in pos]
+        mapped_pairs = [(p, _map.get(p, None)) for p in pos]
 
         if not tolerate_missing:
-            for p, p_mapped in pos:
+            for p, p_mapped in mapped_pairs:
                 if p_mapped is None:
                     raise MissingData(f'Position {p} failed to map')
 
-        pos = [x[1].numbering for x in pos if x[1] is not None]
+        pos = [x[1].numbering for x in mapped_pairs if x[1] is not None]
 
         if len(pos) == 0:
             LOGGER.warning('No positions were selected.')
@@ -146,6 +146,7 @@ def subset_to_matching(
         if reference.seq[skip_if_match] == c.seq[skip_if_match]:
             return reference, c
 
+    pos_pairs: abc.Iterable[tuple[int, int | None]]
     if not map_name:
         pos2 = reference.seq.map_numbering(c.seq, **kwargs)
         pos1 = reference.seq[SeqNames.enum]
@@ -156,13 +157,13 @@ def subset_to_matching(
         )
 
     pos_pairs = filter(lambda x: x[0] is not None and x[1] is not None, pos_pairs)
-    pos1, pos2 = map(list, unzip(pos_pairs))
+    _pos1, _pos2 = unzip(pos_pairs)
 
-    c1_new, c2_new = map(
-        lambda x: ChainStructure.from_structure(
-            x[0].array[filter_selection(x[0].array, x[1])]
+    c1_new, c2_new = starmap(
+        lambda ref, pos: ChainStructure.from_structure(
+            ref.array[filter_selection(ref.array, list(pos))]
         ),
-        [(reference, pos1), (c, pos2)],
+        [(reference, _pos1), (c, _pos2)],
     )
 
     return c1_new, c2_new
@@ -210,11 +211,11 @@ def _stage_inp(
     c: ChainStructure,
     selection_superpose: tuple[
         abc.Sequence[int] | None,
-        abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None,
+        abc.Sequence[abc.Sequence[str]] | abc.Sequence[str] | None,
     ],
     selection_rmsd: tuple[
         abc.Sequence[int] | None,
-        abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None,
+        abc.Sequence[abc.Sequence[str]] | abc.Sequence[str] | None,
     ],
     map_name: str | None,
     exclude_hydrogen: bool,
@@ -266,7 +267,7 @@ def _yield_staged_pairs(
     fixed: abc.Iterable[ChainStructure],
     mobile: abc.Iterable[ChainStructure] | None,
     stage: abc.Callable[[ChainStructure], _StagedSupInp],
-) -> abc.Generator[_StagedSupInp, _StagedSupInp]:
+) -> abc.Generator[tuple[_StagedSupInp, _StagedSupInp], None, None]:
     _fixed = map(stage, fixed)
     if mobile is None:
         yield from combinations(_fixed, 2)
@@ -343,7 +344,7 @@ def superpose_pairwise(
     verbose: bool = False,
     num_proc: int | None = None,
     **kwargs,
-) -> abc.Generator[_SupOutputT]:
+) -> abc.Generator[_SupOutputFlex | _SupOutputStrict, None, None]:
     """
 
     Superpose pairs of structures.
@@ -404,7 +405,10 @@ def superpose_pairwise(
         :func:`biotite.structure.superimpose_apply`.
     """
 
-    def wrap_output(res):
+    # TODO: does it require wrapping the output?
+    # TODO: should I create a separate signature for flex and strict to simplify typing?
+
+    def wrap_output(res) -> _SupOutputFlex | _SupOutputStrict:
         if strict:
             return _SupOutputStrict(*res)
         id1, id2, rmsd_sup, rmsd_tar, tr, diff_seq, diff_atoms = res
@@ -437,7 +441,7 @@ def superpose_pairwise(
             skip_aln_if_match=skip_aln_if_match
         )
     )
-
+    results: abc.Iterable[_SupOutputFlex | _SupOutputStrict]
     if num_proc is not None and num_proc > 1:
         with ProcessPoolExecutor(num_proc) as executor:
             results = map(wrap_output, executor.map(fn, *unzip(pairs), **kwargs))
