@@ -108,9 +108,6 @@ disable = [
     "exec-used",
     "broad-except"
 ]
-ignore_paths = [
-    "test"
-]
 
 [tool.mypy]
 python_version = "3.10"
