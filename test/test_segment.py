@@ -26,9 +26,13 @@ def test_init():
 
 def test_iter():
     s = Segment(1, 3)
-    assert list(iter(s)) == [1, 2, 3]
+    assert list(map(tuple, iter(s))) == [(1,), (2,), (3,)]
     s = Segment(1, 3, seqs={'a': ['one', 'two', 'three'], 'b': '123'})
-    assert list(map(tuple, iter(s))) == [(1, 'one', '1'), (2, 'two', '2'), (3, 'three', '3')]
+    assert list(map(tuple, iter(s))) == [
+        (1, 'one', '1'),
+        (2, 'two', '2'),
+        (3, 'three', '3'),
+    ]
 
 
 def test_slice():
@@ -96,7 +100,7 @@ def test_resolving_overlaps():
         Segment(1, 3, 'x', meta={'s': 1}),
         Segment(2, 5, 'y', meta={'s': 3}),
         Segment(4, 6, 'z', meta={'s': 1}),
-        Segment(8, 9, 'q', meta={'s': 1})
+        Segment(8, 9, 'q', meta={'s': 1}),
     ]
     filtered = list(resolve_overlaps(segments))
     assert len(filtered) == 3
