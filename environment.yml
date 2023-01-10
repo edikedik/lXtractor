@@ -12,6 +12,7 @@ dependencies:
   - networkx >= 2.8.6
   - numpy >= 1.23
   - toolz >= 0.12
+  - typing_extensions >= 4.3.0
   - tqdm >= 4.64
   - pandas >= 1.5
   - pyhmmer >= 0.6.3
