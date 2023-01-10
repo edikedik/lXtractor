@@ -44,7 +44,7 @@ def _calc_on_object(
     m: MappingT | None,
     valid_exceptions: abc.Sequence[t.Type[Exception]] | None,
 ) -> abc.Iterator[ERT]:
-    return (_try_calculate(o, v, m, valid_exceptions) for v in vs)
+    return [_try_calculate(o, v, m, valid_exceptions) for v in vs]
 
 
 def calculate(
@@ -73,8 +73,7 @@ def calculate(
         )
     else:
         with ProcessPoolExecutor(num_proc) as executor:
-            results = executor.map(_calc_on_object, o, v, m, repeat(valid_exceptions))
-            yield from results
+            yield from executor.map(_calc_on_object, o, v, m, repeat(valid_exceptions))
 
 
 class GenericCalculator(AbstractCalculator):
