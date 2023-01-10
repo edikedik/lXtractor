@@ -12,11 +12,19 @@ from itertools import starmap
 import biotite.structure as bst
 import numpy as np
 from more_itertools import unique_justseen
+from numpy import floating
 from toolz import curry, pipe
+from typing_extensions import reveal_type
 
 from lXtractor.core.exceptions import FailedCalculation, InitError
 from lXtractor.util.structure import calculate_dihedral
-from lXtractor.variables.base import StructureVariable, AggFns, MappingT, _try_map
+from lXtractor.variables.base import (
+    StructureVariable,
+    AggFns,
+    MappingT,
+    _try_map,
+    AggFn,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -27,7 +35,7 @@ def _get_residue_mask(
 ) -> np.ndarray:
     pos = _try_map(pos, mapping)
 
-    mask = np.equal(array.res_id, pos)
+    mask: np.ndarray = np.equal(array.res_id, pos)
 
     residue_atoms = array[mask]
     if not residue_atoms.array_length():
@@ -44,7 +52,7 @@ def _get_residue_mask(
 
 @curry
 def _get_residue(
-    pos: int, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+    pos: int, array: bst.AtomArray, mapping: MappingT | None = None
 ) -> bst.AtomArray:
     mask = _get_residue_mask(pos, array, mapping)
     return array[mask]
@@ -67,22 +75,26 @@ def _get_atom(array: bst.AtomArray, name: str) -> bst.Atom:
 
 @curry
 def _get_coord(
-    residue: bst.AtomArray, atom_name: t.Optional[str], agg_fn: t.Optional[str] = 'mean'
+    residue: bst.AtomArray, atom_name: t.Optional[str], agg_fn: AggFn = AggFns['mean']
 ) -> np.ndarray:
     if atom_name is None:
-        fn = AggFns[agg_fn]
-        return fn(residue.coord, axis=0)
+        coord = agg_fn(residue.coord, axis=0)
+    else:
+        coord = _get_atom(residue, atom_name).coord
+    assert isinstance(coord, np.ndarray) and coord.shape == (3,)
+    return coord
 
-    return _get_atom(residue, atom_name).coord
 
-
-def _agg_dist(
-    r1: bst.AtomArray, r2: bst.AtomArray, agg_fn: t.Callable[[np.ndarray], float]
-) -> float:
+def _agg_dist(r1: bst.AtomArray, r2: bst.AtomArray, agg_fn: AggFn) -> float:
     """
     Calculate the aggregated distance between two residues
     """
-    return agg_fn(np.linalg.norm(r1.coord[:, np.newaxis] - r2.coord, axis=2))
+    res = agg_fn(np.linalg.norm(r1.coord[:, np.newaxis] - r2.coord, axis=2))
+    assert (
+        isinstance(res, float) and res >= 0,
+        f"Result {type(res)} = float and {res} >=0",
+    )
+    return res
 
 
 def _verify_consecutive(positions: abc.Iterable[int]) -> None:
@@ -122,9 +134,9 @@ class Dist(StructureVariable):
         #: Position 2.
         self.p2: int = p2
         #: Atom name 1.
-        self.a1: str = a1
+        self.a1: str | None = a1
         #: Atom name 2.
-        self.a2: str = a2
+        self.a2: str | None = a2
         #: Use center of mass instead of concrete atoms.
         self.com: bool = com
 
@@ -140,14 +152,12 @@ class Dist(StructureVariable):
 
     def calculate(
         self, obj: bst.AtomArray, mapping: t.Optional[MappingT] = None
-    ) -> float:
-        xyz1, xyz2 = starmap(
-            lambda p, a: pipe(
-                _get_residue(p, obj, mapping),
-                _get_coord(atom_name=a),  # pylint: disable=no-value-for-parameter
-            ),
-            [(self.p1, self.a1), (self.p2, self.a2)],
-        )
+    ) -> floating:
+        def get_coord(p: int, a: str | None) -> np.ndarray:
+            return _get_coord(_get_residue(p, obj, mapping), a)  # type: ignore
+
+        xyz1, xyz2 = get_coord(self.p1, self.a1), get_coord(self.p2, self.a2)
+
         return np.linalg.norm(xyz2 - xyz1)
 
 
@@ -191,7 +201,11 @@ class AggDist(StructureVariable):
     def calculate(
         self, obj: bst.AtomArray, mapping: t.Optional[MappingT] = None
     ) -> float:
-        res1, res2 = map(lambda p: _get_residue(p, obj, mapping), [self.p1, self.p2])
+        res1, res2 = map(
+            # no type info for biotite
+            lambda p: _get_residue(p, obj, mapping),  # type: ignore
+            [self.p1, self.p2],
+        )
         return _agg_dist(res1, res2, AggFns[self.key])
 
 
@@ -284,8 +298,8 @@ class Dihedral(StructureVariable):
     ) -> float:
         # Map positions to the PDB numbering
         coordinates = starmap(
-            lambda p, a: pipe(
-                _get_residue(p, obj, mapping),
+            lambda p, a: pipe(  # type: ignore  # no type info for biotite
+                _get_residue(p, obj, mapping),  # type: ignore
                 _get_coord(atom_name=a),  # pylint: disable=no-value-for-parameter
             ),
             zip(self.positions, self.atoms),

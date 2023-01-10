@@ -20,7 +20,7 @@ K = t.TypeVar('K')
 _ProtFP = ProtFP()
 
 
-class SeqEl(SequenceVariable):
+class SeqEl(SequenceVariable[T, T]):
     """
     A sequence element variable. It doesn't encompass any calculation.
     Rather, it simply accesses sequence at certain position.
@@ -34,9 +34,9 @@ class SeqEl(SequenceVariable):
 
     """
 
-    __slots__ = ('p', 'seq_name')
+    __slots__ = ('p', '_rtype', 'seq_name')
 
-    def __init__(self, p: int, seq_name: str = SeqNames.seq1):
+    def __init__(self, p: int, rtype: str = 'str', seq_name: str = SeqNames.seq1):
         """
         :param p: Position, starting from 1.
         :param seq_name: The name of the sequence used to distinguish variables
@@ -44,21 +44,24 @@ class SeqEl(SequenceVariable):
         """
         #: Position, starting from 1.
         self.p = p
+        #: Return type specified explicitly since it can be any valid sequence
+        #: element
+        self._rtype = rtype
         #: Sequence name for which the element is accessed
         self.seq_name = seq_name
 
     @property
-    def rtype(self) -> t.Type[str]:
-        return str
+    def rtype(self) -> t.Type[T]:
+        return eval(self._rtype)
 
     def calculate(
         self, obj: abc.Sequence[T], mapping: t.Optional[MappingT] = None
     ) -> T:
-        p = _try_map(self.p, mapping)
+        p: int = _try_map(self.p, mapping)
         try:
             return obj[p - 1]
-        except IndexError:
-            raise FailedCalculation(f'Missing index {p - 1} in sequence')
+        except IndexError as e:
+            raise FailedCalculation(f'Missing index {p - 1} in sequence') from e
 
 
 class PFP(SequenceVariable):
@@ -144,7 +147,7 @@ class SliceTransformReduce(SequenceVariable, t.Generic[T, V, K]):
 
     @staticmethod
     @abstractmethod
-    def reduce(seq: abc.Iterable[T]) -> V:
+    def reduce(seq: abc.Iterable[T] | abc.Iterable[K]) -> V:
         """
         Reduce the input iterable into the variable result.
 
@@ -155,7 +158,7 @@ class SliceTransformReduce(SequenceVariable, t.Generic[T, V, K]):
         raise NotImplementedError
 
     @staticmethod
-    def transform(seq: abc.Iterator[K]) -> abc.Iterable[T]:
+    def transform(seq: abc.Iterable[K]) -> abc.Iterable[T] | abc.Iterable[K]:
         """
         Optionally transform the slicing result.
         If not used, it is the identity operation.

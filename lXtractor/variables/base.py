@@ -8,27 +8,37 @@ import logging
 import typing as t
 from abc import abstractmethod, ABCMeta
 from collections import UserDict, abc
-from itertools import filterfalse
 from pathlib import Path
 
 import biotite.structure as bst
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from toolz import curry
+from typing_extensions import reveal_type
 
 from lXtractor.core.exceptions import FailedCalculation
 from lXtractor.ext import resources
 from lXtractor.util.io import read_n_col_table
 
-AggFns = {'min': np.min, 'max': np.max, 'mean': np.mean, 'median': np.median}
+
+class AggFn(t.Protocol):
+    def __call__(self, a: npt.ArrayLike, **kwargs) -> np.ndarray | float:
+        ...
+
+
+AggFns: dict[str, AggFn] = dict(
+    min=np.min, max=np.max, mean=np.mean, median=np.median  # type: ignore
+)
 
 LOGGER = logging.getLogger(__name__)
-
-MappingT: t.TypeAlias = abc.Mapping[int, t.Optional[int]]
-RT = t.TypeVar('RT')  # return type
-OT = t.TypeVar('OT', abc.Sequence, bst.AtomArray)  # object type
 T = t.TypeVar('T')
 V = t.TypeVar('V')
+
+MappingT: t.TypeAlias = abc.Mapping[int, t.Optional[int]]
+OT = t.TypeVar('OT', bst.AtomArray, abc.Sequence)  # object type
+RT = t.TypeVar('RT')  # return type
+ERT: t.TypeAlias = tuple[bool, RT]  # extended return type
 
 
 class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
@@ -61,7 +71,9 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
                 return f"\'{v}\'"
             return v
 
-        init_params = inspect.signature(self.__init__).parameters
+        # Complains about accessing init of an instance since it can change
+        # with each instance -- which is exactly the purpose of this method!
+        init_params = inspect.signature(self.__init__).parameters  # type: ignore
         args = ','.join(
             map(lambda x: f'{x}={parse_value(getattr(self, x))}', init_params)
         )
@@ -88,7 +100,7 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
         """
 
 
-class StructureVariable(AbstractVariable[bst.AtomArray, RT]):
+class StructureVariable(AbstractVariable[bst.AtomArray, RT], t.Generic[RT]):
     """
     A type of variable whose :meth:`calculate` method requires protein
     structure.
@@ -107,7 +119,7 @@ class StructureVariable(AbstractVariable[bst.AtomArray, RT]):
         """
 
 
-class SequenceVariable(AbstractVariable[abc.Sequence[t.Any], RT]):
+class SequenceVariable(AbstractVariable[abc.Sequence[T], RT], t.Generic[T, RT]):
     """
     A type of variable whose :meth:`calculate` method requires protein
     sequence.
@@ -117,7 +129,7 @@ class SequenceVariable(AbstractVariable[abc.Sequence[t.Any], RT]):
 
     @abstractmethod
     def calculate(
-        self, obj: abc.Sequence[t.Any], mapping: t.Optional[MappingT] = None
+        self, obj: abc.Sequence[T], mapping: t.Optional[MappingT] = None
     ) -> RT:
         """
         :param obj: Some sequence.
@@ -211,19 +223,13 @@ class Variables(UserDict):
 
         return variables
 
-    def write(
-        self, path: Path, skip_if_contains: abc.Sequence[str] | None = None
-    ) -> None:
+    def write(self, path: Path) -> None:
         """
         :param path: Path to a file.
         :param skip_if_contains: Skip if a variable ID contains any of the
             provided strings.
         """
         items = (f'{v.id}\t{r}' for v, r in self.items())
-        if skip_if_contains is not None:
-            items = filterfalse(
-                lambda it: any(x in it for x in skip_if_contains), items
-            )
         path.write_text('\n'.join(items))
 
     def as_df(self) -> pd.DataFrame:
@@ -237,15 +243,33 @@ class Variables(UserDict):
         )
 
 
-class AbstractCalculator(t.Generic[OT, VT, RT], metaclass=ABCMeta):
+class AbstractCalculator(t.Generic[OT], metaclass=ABCMeta):
     """
     Class defining variables' calculation strategy.
     """
 
     __slots__ = ()
 
+    @t.overload
+    def __call__(self, o: OT, v: VT, m: MappingT | None) -> ERT:
+        ...
+
+    @t.overload
+    def __call__(
+        self,
+        o: abc.Iterable[OT],
+        v: abc.Iterable[VT] | abc.Iterable[abc.Iterable[VT]],
+        m: abc.Iterable[MappingT | None] | None,
+    ) -> abc.Iterable[abc.Iterable[ERT]]:
+        ...
+
     @abstractmethod
-    def __call__(self, o: OT, v: VT, m: MappingT | None) -> RT:
+    def __call__(
+        self,
+        o: OT | abc.Iterable[OT],
+        v: VT | abc.Iterable[VT] | abc.Iterable[abc.Iterable[VT]],
+        m: MappingT | abc.Iterable[MappingT | None] | None,
+    ) -> ERT | abc.Iterable[abc.Iterable[ERT]]:
         """
         :param o: Object to calculate on.
         :param v: Some variable whose `calculate` method accepts `o`-type
@@ -256,7 +280,7 @@ class AbstractCalculator(t.Generic[OT, VT, RT], metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def map(self, o: OT, v: abc.Iterable[VT], m: MappingT | None) -> abc.Iterator[RT]:
+    def map(self, o: OT, v: abc.Iterable[VT], m: MappingT | None) -> abc.Iterable[ERT]:
         """
         Map variables to a single object.
 
@@ -271,7 +295,7 @@ class AbstractCalculator(t.Generic[OT, VT, RT], metaclass=ABCMeta):
     @abstractmethod
     def vmap(
         self, o: abc.Iterable[OT], v: VT, m: abc.Iterable[MappingT | None]
-    ) -> abc.Iterator[RT]:
+    ) -> abc.Iterable[ERT]:
         """
         Map objects to a single variable.
 
@@ -284,35 +308,35 @@ class AbstractCalculator(t.Generic[OT, VT, RT], metaclass=ABCMeta):
         """
 
 
-class CalculatorProtocol(t.Protocol[OT, VT, RT]):
-    """
-    An interface of a calculator definition for typing.
-    """
-
-    @t.overload
-    def __call__(self, o: OT, v: VT, m: MappingT | None, *args, **kwargs) -> RT:
-        ...
-
-    @t.overload
-    def __call__(
-        self,
-        o: abc.Iterable[OT],
-        v: abc.Iterable[abc.Iterable[VT]],
-        m: abc.Iterable[MappingT | None] | None,
-        *args,
-        **kwargs,
-    ) -> abc.Iterable[abc.Iterable[RT]]:
-        ...
-
-    def __call__(
-        self,
-        o: OT | abc.Iterable[OT],
-        v: VT | abc.Iterable[abc.Iterable[VT]],
-        m: MappingT | abc.Iterable[MappingT | None] | None,
-        *args,
-        **kwargs,
-    ) -> RT | abc.Iterable[abc.Iterable[RT]]:
-        ...
+# class CalculatorProtocol(t.Protocol[OT, VT, RT]):
+#     """
+#     An interface of a calculator definition for typing.
+#     """
+#
+#     @t.overload
+#     def __call__(self, o: OT, v: VT, m: MappingT | None, *args, **kwargs) -> RT:
+#         ...
+#
+#     @t.overload
+#     def __call__(
+#         self,
+#         o: abc.Iterable[OT],
+#         v: abc.Iterable[abc.Iterable[VT]],
+#         m: abc.Iterable[MappingT | None] | None,
+#         *args,
+#         **kwargs,
+#     ) -> abc.Iterable[abc.Iterable[RT]]:
+#         ...
+#
+#     def __call__(
+#         self,
+#         o: OT | abc.Iterable[OT],
+#         v: VT | abc.Iterable[abc.Iterable[VT]],
+#         m: MappingT | abc.Iterable[MappingT | None] | None,
+#         *args,
+#         **kwargs,
+#     ) -> RT | abc.Iterable[abc.Iterable[RT]]:
+#         ...
 
 
 class ProtFP:
@@ -358,24 +382,28 @@ class ProtFP:
     ) -> float | np.ndarray | pd.Series:
         match item:
             case [c, i]:
-                return self._df.loc[c, str(i - 1)]
+                # 1. Fails to infer types of c and i
+                # 2. Fails to infer return type (thinks it's a data frame)
+                return self._df.loc[c, str(i - 1)]  # type: ignore
             case str():
-                return self._df.loc[item].values
+                # Pandas always puts "ExtensionArray | ndarray" as a return
+                # type, although only ndarray is actually returned here
+                return self._df.loc[item].values  # type: ignore
             case int():
                 return self._df[str(item - 1)]
             case _:
                 raise TypeError(f'Invalid index type {item}')
 
 
-if __name__ == '__main__':
-    raise RuntimeError
-
-
 @curry
-def _try_map(p: T, m: abc.Mapping[T, V] | None):
+def _try_map(p: T, m: abc.Mapping[T, V] | None) -> V | T:
     try:
         if m is not None:
             return m[p]
         return p
     except KeyError as e:
         raise FailedCalculation(f'Missing {p} in mapping') from e
+
+
+if __name__ == '__main__':
+    raise RuntimeError

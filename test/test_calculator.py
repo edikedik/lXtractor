@@ -1,10 +1,9 @@
 import pytest
-from more_itertools import unzip
 from toolz import curry
 
 from lXtractor.core.chain import ChainStructure
 from lXtractor.variables.base import SequenceVariable
-from lXtractor.variables.calculator import SimpleCalculator, ParallelCalculator
+from lXtractor.variables.calculator import GenericCalculator
 from lXtractor.variables.sequential import SeqEl, make_str, PFP
 from lXtractor.variables.structural import Dist, AggDist
 
@@ -12,39 +11,6 @@ from lXtractor.variables.structural import Dist, AggDist
 @curry
 def count_char(seq: str, c: str):
     return sum(1 for x in seq if x == c)
-
-
-TEST_VARIABLES = (
-    # Sequential
-    (SeqEl(191), (True, 'K')),
-    (SeqEl(1000), (False, 'Missing 1000 in mapping')),
-    (PFP(191, 1), (True, -4.99)),
-    (
-        make_str(reduce=count_char(c='E'), rtype=str)(start=178),
-        (True, 5),
-    ),
-    (
-        make_str(reduce=count_char(c='E'), rtype=str)(start=178, stop=189),
-        (True, 4),
-    ),
-    (Dist(28, 191, 'CB', 'CB'), 23.513),
-    (AggDist(28, 191, 'min'), 19.607),
-)
-TEST_SEQ_VS = list(filter(lambda x: isinstance(x[0], SequenceVariable), TEST_VARIABLES))
-TEST_STR_VS = list(
-    filter(lambda x: not isinstance(x[0], SequenceVariable), TEST_VARIABLES)
-)
-EPS = 1e-3
-
-
-@pytest.fixture(scope='module')
-def simple_calc():
-    return SimpleCalculator()
-
-
-@pytest.fixture(scope='module')
-def parallel_calc():
-    return ParallelCalculator(num_proc=2)
 
 
 @pytest.fixture
@@ -59,42 +25,97 @@ def chain_structure_seq(chain_structure):
     return seq, mapping
 
 
-@pytest.mark.parametrize('v,res', TEST_VARIABLES)
-def test_call(v, res, simple_calc, chain_structure, chain_structure_seq):
-    if isinstance(v, SequenceVariable):
-        seq, mapping = chain_structure_seq
-        assert simple_calc(seq.seq1, v, mapping) == res
+SeqEl191 = SeqEl(191, 'str')
+SeqEl191Res = (True, 'K')
+TEST_SINGLES = (
+    # Sequential
+    (SeqEl191, SeqEl191Res),
+    (SeqEl(1000, 'str'), (False, 'Missing 1000 in mapping')),
+    (PFP(191, 1), (True, -4.99)),
+    (
+        make_str(reduce=count_char(c='E'), rtype=str)(start=178),
+        (True, 5),
+    ),
+    (
+        make_str(reduce=count_char(c='E'), rtype=str)(start=178, stop=189),
+        (True, 4),
+    ),
+    # Structural
+    (Dist(28, 191, 'CB', 'CB'), (True, 23.513)),
+    (AggDist(28, 191, 'min'), (True, 19.607)),
+)
+TEST_ITERABLES = (
+    ([True], [[SeqEl191, (PFP(191, 1))]], [[SeqEl191Res, (True, -4.99)]]),
+    (
+        [True, False],
+        [[SeqEl191], [(Dist(28, 191, 'CB', 'CB'))]],
+        [[SeqEl191Res], [(True, 23.513)]],
+    ),
+    (  # check vs broadcasting
+        [True, True],
+        [SeqEl191, SeqEl191],
+        [[SeqEl191Res, SeqEl191Res], [SeqEl191Res, SeqEl191Res]],
+    ),
+)
+TEST_MAP = (([SeqEl191, SeqEl191], [SeqEl191Res, SeqEl191Res]),)
+EPS = 1e-3
+
+
+def comp(actual, res, is_float):
+    if is_float:
+        return actual[0] == res[0] and abs(actual[1] - res[1]) <= EPS
     else:
-        if v.rtype == float:
-            assert abs(simple_calc(chain_structure.array, v, None)[1] - res) <= EPS
-        else:
-            assert simple_calc(chain_structure.array, v, None) == res
+        return actual == res
 
 
-@pytest.mark.parametrize('v,res', TEST_VARIABLES)
-@pytest.mark.skip('Not possible to pickle Range variables yet')
-def test_call_parallel(v, res, parallel_calc, chain_structure, chain_structure_seq):
-    if isinstance(v, SequenceVariable):
-        seq, mapping = chain_structure_seq
-        assert next(parallel_calc([seq.seq1], [(v,)], mapping))[0] == res
+def get_obj(is_seq_str, chain_structure_seq, chain_structure):
+    if is_seq_str:
+        o, m = chain_structure_seq
+        o = o.seq1
     else:
-        if v.rtype == float:
-            assert (
-                abs(next(parallel_calc([chain_structure.array], [(v,)], None))[0][1])
-                - res
-                <= EPS
-            )
-        else:
-            assert next(parallel_calc([chain_structure.array], [(v,)], None)) == res
+        o, m = chain_structure.array, None
+    return o, m
 
 
-# @pytest.mark.parametrize('vs', [TEST_SEQ_VS, TEST_STR_VS])
-# def test_map(vs, calc, chain_structure, chain_structure_seq):
-#     if isinstance(vs[0], SequenceVariable):
-#         seq, mapping = chain_structure_seq
-#         vs, results = unzip(vs)
-#         results = calc.map()
-#         assert simple_calc(seq.seq1, v, mapping) == res
-#     else:
-#         if v.rtype == float:
-#             assert abs(simple_calc(chain_structure.array, v, None)[1] - res) <= EPS
+@pytest.mark.parametrize('v,res', TEST_SINGLES)
+@pytest.mark.parametrize('num_proc', [None, 2])
+def test_call_singles(v, res, chain_structure, chain_structure_seq, num_proc):
+    calc = GenericCalculator(num_proc=num_proc)
+    o, m = get_obj(
+        isinstance(v, SequenceVariable), chain_structure_seq, chain_structure
+    )
+    actual = calc(o, v, m)
+    is_float = v.rtype == float
+    assert comp(actual, res, is_float)
+
+
+@pytest.mark.parametrize('is_seq,v,res', TEST_ITERABLES)
+@pytest.mark.parametrize('num_proc', [None, 2])
+def test_call_iterables(is_seq, v, res, num_proc, chain_structure_seq, chain_structure):
+    calc = GenericCalculator(num_proc=num_proc)
+    inputs = [get_obj(x, chain_structure_seq, chain_structure) for x in is_seq]
+    o = (x[0] for x in inputs)
+    m = (x[1] for x in inputs)
+    calc_res = calc(o, v, m)
+    for xs, rr in zip(calc_res, res, strict=True):
+        for actual, r in zip(xs, rr, strict=True):
+            is_float = isinstance(r[1], float)
+            assert comp(actual, r, is_float)
+
+
+@pytest.mark.parametrize('v,res', TEST_MAP)
+@pytest.mark.parametrize('num_proc', [None, 2])
+def test_map(v, res, num_proc, chain_structure_seq):
+    calc = GenericCalculator(num_proc=num_proc)
+    o, m = chain_structure_seq
+    calc_res = list(calc.map(o.seq1, v, m))
+    assert calc_res == res
+
+
+@pytest.mark.parametrize('num_proc', [None, 2])
+def test_vmap(num_proc, chain_structure_seq):
+    calc = GenericCalculator(num_proc=num_proc)
+    o, m = chain_structure_seq
+    s = o.seq1
+    calc_res = list(calc.vmap([s, s], SeqEl191, m))
+    assert calc_res == [SeqEl191Res, SeqEl191Res]
