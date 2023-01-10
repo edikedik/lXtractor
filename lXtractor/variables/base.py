@@ -72,7 +72,7 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
             return v
 
         # Complains about accessing init of an instance since it can change
-        # with each instance -- which is exactly the purpose of this method!
+        # which is exactly the purpose of this method!
         init_params = inspect.signature(self.__init__).parameters  # type: ignore
         args = ','.join(
             map(lambda x: f'{x}={parse_value(getattr(self, x))}', init_params)

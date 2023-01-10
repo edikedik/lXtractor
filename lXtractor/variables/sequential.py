@@ -36,7 +36,7 @@ class SeqEl(SequenceVariable[T, T]):
 
     __slots__ = ('p', '_rtype', 'seq_name')
 
-    def __init__(self, p: int, rtype: str = 'str', seq_name: str = SeqNames.seq1):
+    def __init__(self, p: int, _rtype: str = 'str', seq_name: str = SeqNames.seq1):
         """
         :param p: Position, starting from 1.
         :param seq_name: The name of the sequence used to distinguish variables
@@ -46,7 +46,7 @@ class SeqEl(SequenceVariable[T, T]):
         self.p = p
         #: Return type specified explicitly since it can be any valid sequence
         #: element
-        self._rtype = rtype
+        self._rtype = _rtype
         #: Sequence name for which the element is accessed
         self.seq_name = seq_name
 

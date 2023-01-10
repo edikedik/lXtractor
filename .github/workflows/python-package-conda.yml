@@ -54,7 +54,6 @@ jobs:
         run: >
           pytest
           --ignore=test/test_variables.py
-          --ignore=test/test_manager.py
           --cov=lXtractor 
           --cov-branch 
           --cov-report=term-missing

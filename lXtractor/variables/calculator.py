@@ -86,7 +86,7 @@ class GenericCalculator(AbstractCalculator):
 
     def __init__(
         self,
-        num_proc: int | None,
+        num_proc: int | None = None,
         valid_exceptions: abc.Sequence[t.Type[Exception]] = (FailedCalculation,),
     ):
         self.num_proc = num_proc
