@@ -2,6 +2,7 @@
 Utilities to interact with the RCSB PDB database.
 """
 import json
+import typing as t
 from collections import abc
 from itertools import repeat
 from pathlib import Path
@@ -9,6 +10,8 @@ from pathlib import Path
 from lXtractor.core.base import UrlGetter
 from lXtractor.ext.base import ApiBase
 from lXtractor.util.io import fetch_files
+
+ArgT: t.TypeAlias = tuple[str, ...] | str
 
 
 def url_getters() -> dict[str, UrlGetter]:
@@ -124,11 +127,11 @@ class PDB(ApiBase):
     def fetch_info(
         self,
         service_name: str,
-        url_args: abc.Iterable[tuple[str, ...]],
+        url_args: abc.Iterable[ArgT],
         dir_: Path | None,
         *,
         overwrite: bool = False,
-    ) -> tuple[list[tuple[tuple[str, ...], dict]], list[tuple[str, ...]]]:
+    ) -> tuple[list[tuple[ArgT, dict]], list[ArgT]]:
         """
 
         >>> pdb = PDB()

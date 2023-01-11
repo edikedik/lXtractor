@@ -4,11 +4,15 @@ import pytest
 from lXtractor.core.chain import ChainSequence
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData
-from lXtractor.protocols import filter_selection_extended, subset_to_matching, superpose_pairwise
+from lXtractor.protocols import (
+    filter_selection_extended,
+    subset_to_matching,
+    superpose_pairwise,
+    filter_by_method,
+)
 
 
 def test_extended_selection_filter(src_str):
-
     m = filter_selection_extended(src_str)
     assert m.sum() == len(src_str.array)
 
@@ -19,19 +23,28 @@ def test_extended_selection_filter(src_str):
     child = src_str.spawn_child(404, 406, map_from=SeqNames.enum)
     child.seq.add_seq('X', [1, 2, 3])
     m = filter_selection_extended(
-        child, pos=[2], atom_names=['N', 'C', 'CA'], map_name='X',
-        exclude_hydrogen=True)
+        child, pos=[2], atom_names=['N', 'C', 'CA'], map_name='X', exclude_hydrogen=True
+    )
     assert m.sum() == 3
     assert set(child.array[m].atom_name) == {'N', 'C', 'CA'}
 
     with pytest.raises(MissingData):
         filter_selection_extended(
-            child, pos=[10], atom_names=['N', 'C', 'CA'], map_name='X',
-            exclude_hydrogen=True)
+            child,
+            pos=[10],
+            atom_names=['N', 'C', 'CA'],
+            map_name='X',
+            exclude_hydrogen=True,
+        )
 
     m = filter_selection_extended(
-        child, pos=[10], atom_names=['N', 'C', 'CA'], map_name='X',
-        exclude_hydrogen=True, tolerate_missing=True)
+        child,
+        pos=[10],
+        atom_names=['N', 'C', 'CA'],
+        map_name='X',
+        exclude_hydrogen=True,
+        tolerate_missing=True,
+    )
 
     assert m.sum() == 0
 
@@ -61,7 +74,6 @@ def test_subset_to_matching(abl_str, src_str):
 
 
 def test_superpose_pairwise(abl_str, src_str, human_src_seq):
-
     # 1. Strict
     # =========
 
@@ -78,24 +90,31 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
     src_str.seq.map_numbering(src_seq, name='REF')
 
     # Align using backbone atoms, then calculate rmsd using all atoms
-    res = list(superpose_pairwise(
-        [abl_str], [src_str],
-        selection_superpose=([407, 408, 409], ['CA', 'C', 'N']),
-        selection_rmsd=([407, 408], None),
-        map_name='REF',
-    ))
+    res = list(
+        superpose_pairwise(
+            [abl_str],
+            [src_str],
+            selection_superpose=([407, 408, 409], ['CA', 'C', 'N']),
+            selection_rmsd=([407, 408], None),
+            map_name='REF',
+        )
+    )
     assert len(res) == 1
     res = res.pop()
     assert res.ID1 == abl_str.id and res.ID2 == src_str.id
     assert res.RmsdSuperpose <= 1 and res.RmsdTarget < 1
 
     # Trying to do the same in parallel
-    res = list(superpose_pairwise(
-        [abl_str, src_str], [src_str, abl_str],
-        selection_superpose=([407, 408, 409], ['CA', 'C', 'N']),
-        selection_rmsd=([407, 408], None),
-        map_name='REF', num_proc=2
-    ))
+    res = list(
+        superpose_pairwise(
+            [abl_str, src_str],
+            [src_str, abl_str],
+            selection_superpose=([407, 408, 409], ['CA', 'C', 'N']),
+            selection_rmsd=([407, 408], None),
+            map_name='REF',
+            num_proc=2,
+        )
+    )
     assert len(res) == 4
 
     # 2. Flexible
@@ -108,17 +127,21 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
 
     # Strict should fail since the first residues have different numbers of atoms
     with pytest.raises(ValueError):
-        next(superpose_pairwise(
-            [abl_str], [src_str],
-            selection_superpose=(pos, None),
-            map_name='REF'
-        ))
+        next(
+            superpose_pairwise(
+                [abl_str], [src_str], selection_superpose=(pos, None), map_name='REF'
+            )
+        )
 
-    res = next(superpose_pairwise(
-            [abl_str], [src_str],
+    res = next(
+        superpose_pairwise(
+            [abl_str],
+            [src_str],
             selection_superpose=(pos, None),
-            map_name='REF', strict=False
-        ))
+            map_name='REF',
+            strict=False,
+        )
+    )
 
     assert len(res) == 7
     diff_seq, diff_atoms = res[-2:]
@@ -128,3 +151,16 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
     assert diff_atoms.SuperposeFixed == diff_atoms.RmsdFixed
     assert diff_atoms.SuperposeMobile == diff_atoms.RmsdMobile
     assert res[2] < 1
+
+
+@pytest.mark.parametrize(
+    'method,pdb_ids,accepted',
+    [
+        ('X-ray', ['2src', '1x48'], ['2src']),
+        ('x-ray', ['2src', '1x48'], []),
+        ('NMR', ['2src', '1x48'], ['1x48']),
+        ('X-ray', ['afoijagajng'], []),
+    ],
+)
+def test_filter_xray(method, pdb_ids, accepted):
+    assert filter_by_method(pdb_ids, method=method) == accepted

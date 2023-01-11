@@ -17,6 +17,7 @@ from tqdm.auto import tqdm
 from lXtractor.core.chain import ChainStructure
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData, LengthMismatch
+from lXtractor.ext.pdb_ import PDB
 from lXtractor.util.seq import biotite_align
 from lXtractor.util.structure import filter_selection, filter_to_common_atoms
 
@@ -56,6 +57,8 @@ _SupOutputFlexT: t.TypeAlias = tuple[
     tuple[float, float, float, float],
     tuple[float, float, float, float],
 ]
+
+
 # _SupOutputT = t.TypeVar('_SupOutputT', _SupOutputStrict, _SupOutputFlex)
 
 
@@ -453,6 +456,38 @@ def superpose_pairwise(
         if verbose:
             results = tqdm(results, desc='Superposing pairs', total=n)
         yield from results
+
+
+def filter_by_method(
+    pdb_ids: abc.Iterable[str], pdb: PDB = PDB(), method: str = 'X-ray'
+) -> list[str]:
+    """
+    .. seealso::
+        :meth:`PDB.fetch_info <lXtractor.ext.pdb_.PDB.fetch_info>`
+
+    .. notes::
+        Keys for the info dict are 'rcsb_entry_info' -> 'experimental_method'
+
+    :param pdb_ids: An iterable over PDB IDs.
+    :param pdb: Fetcher instance. If not provided, will init with
+        default params.
+    :param method: Method to match. Must correspond exactly.
+    :return: A list of PDB IDs obtained by desired experimental procedure.
+    """
+
+    def method_matches(d: dict) -> bool:
+        try:
+            return d['rcsb_entry_info']['experimental_method'] == method
+        except KeyError as e:
+            LOGGER.warning(f'Missing required key {e}')
+            return False
+
+    fetched, missed = pdb.fetch_info('entry', pdb_ids, None)
+    if missed:
+        missed_display = ','.join(missed) if len(missed) < 100 else ''
+        LOGGER.warning(f'Failed to fetch {len(missed)} ids: {missed_display}')
+
+    return [x[0] for x in fetched if method_matches(x[1])]
 
 
 if __name__ == '__main__':
