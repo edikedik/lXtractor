@@ -1,7 +1,11 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import pytest
+
 from lXtractor.ext.pdb_ import PDB
+
+PDB_IDS = [('2src', 'xxxx')]
 
 
 def test_fetch():
@@ -33,19 +37,19 @@ def test_fetch():
         assert len(missed) == 1 and len(fetched) == 2
 
 
-def test_get_info():
+@pytest.mark.parametrize('ids', PDB_IDS)
+@pytest.mark.parametrize('use_dir', [True, False])
+@pytest.mark.parametrize('service', ['entry', 'pubmed'])
+def test_fetch_info(ids, use_dir, service):
     pdb = PDB()
-    fetched, remaining = pdb.fetch_info('entry', [('2src',)], dir_=None)
-    assert len(remaining) == 0 and len(fetched) == 1
-    args, results = fetched.pop()
-    assert args == ('2src',)
-    assert results['entry']['id'] == '2SRC'
+    if use_dir:
+        with TemporaryDirectory() as tmp:
+            fetched, missed = pdb.fetch_info(service, ids, Path(tmp))
+        item_type = Path
+    else:
+        fetched, missed = pdb.fetch_info(service, ids, None)
+        item_type = dict
 
-    fetched, remaining = pdb.fetch_info('entry', [('xxxx',)], dir_=None)
-    assert len(remaining) == 1 and len(fetched) == 0
-
-    # Parallel
-    pdb = PDB(num_threads=3)
-    fetched, remaining = pdb.fetch_info(
-        'entry', [('2src',), ('2oiq',), ('xxxx',)], dir_=None)
-    assert len(remaining) == 1 and len(fetched) == 2
+    assert len(fetched) == len(missed) == 1
+    assert isinstance(fetched[0][1], item_type)
+    assert missed[0] == 'xxxx'

@@ -24,7 +24,8 @@ from lXtractor.core.base import UrlGetter
 T = t.TypeVar('T')
 V = t.TypeVar('V')
 # _U = t.TypeVar('_U', str, tuple[str, ...])
-_U: t.TypeAlias = str | tuple[str, ...]
+# _U: t.TypeAlias = str | tuple[str, ...]
+_U = t.TypeVar('_U', tuple[str, ...], str)
 _F = t.TypeVar('_F', str, Path)
 LOGGER = logging.getLogger(__name__)
 

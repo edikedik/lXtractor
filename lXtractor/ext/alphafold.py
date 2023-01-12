@@ -7,7 +7,6 @@ from collections import abc
 from itertools import repeat
 from pathlib import Path
 
-from lXtractor.core.base import UrlGetter
 from lXtractor.ext.base import ApiBase
 from lXtractor.util.io import fetch_files
 
@@ -116,8 +115,8 @@ class AlphaFold(ApiBase):
             ids,
             'json',
             dir_,
-            overwrite=overwrite,
             callback=json.loads,
+            overwrite=overwrite,
             max_trials=self.max_trials,
             num_threads=self.num_threads,
             verbose=self.verbose,

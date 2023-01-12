@@ -11,7 +11,8 @@ from lXtractor.core.base import UrlGetter
 from lXtractor.ext.base import ApiBase
 from lXtractor.util.io import fetch_files
 
-ArgT: t.TypeAlias = tuple[str, ...] | str
+# ArgT: t.TypeAlias = tuple[str, ...] | str
+ArgT = t.TypeVar('ArgT', tuple[str, ...], str)
 
 
 def url_getters() -> dict[str, UrlGetter]:
@@ -131,7 +132,7 @@ class PDB(ApiBase):
         dir_: Path | None,
         *,
         overwrite: bool = False,
-    ) -> tuple[list[tuple[ArgT, dict]], list[ArgT]]:
+    ) -> tuple[list[tuple[ArgT, dict | Path]], list[ArgT]]:
         """
 
         >>> pdb = PDB()

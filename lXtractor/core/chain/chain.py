@@ -318,17 +318,17 @@ class Chain:
         self,
         start: int,
         end: int,
-        name: None | str = None,
+        name: str | None = None,
         *,
         subset_structures: bool = True,
         tolerate_failure: bool = False,
         keep: bool = True,
         seq_deep_copy: bool = False,
-        seq_map_from: t.Optional[str] = None,
+        seq_map_from: str | None = None,
         seq_map_closest: bool = True,
         seq_keep_child: bool = False,
         str_deep_copy: bool = False,
-        str_map_from: t.Optional[str] = None,
+        str_map_from: str | None = None,
         str_map_closest: bool = True,
         str_keep_child: bool = False,
         str_seq_keep_child: bool = False,
@@ -373,7 +373,7 @@ class Chain:
         :return: A sub-chain with sub-sequence and (optionally) sub-structures.
         """
 
-        def subset_structure(structure: ChainStructure) -> t.Optional[ChainStructure]:
+        def subset_structure(structure: ChainStructure) -> ChainStructure | None:
             try:
                 return structure.spawn_child(
                     start,
