@@ -2,11 +2,13 @@
 A sandbox module to encapsulate high-level operations based on core
 `lXtractor`'s functionality.
 """
+import json
 import logging
 import typing as t
 from collections import abc, namedtuple
 from concurrent.futures import ProcessPoolExecutor
 from itertools import starmap, combinations
+from pathlib import Path
 
 import biotite.structure as bst
 import numpy as np
@@ -459,7 +461,10 @@ def superpose_pairwise(
 
 
 def filter_by_method(
-    pdb_ids: abc.Iterable[str], pdb: PDB = PDB(), method: str = 'X-ray'
+    pdb_ids: abc.Iterable[str],
+    pdb: PDB = PDB(),
+    method: str = 'X-ray',
+    dir_: Path | None = None,
 ) -> list[str]:
     """
     .. seealso::
@@ -472,7 +477,9 @@ def filter_by_method(
     :param pdb: Fetcher instance. If not provided, will init with
         default params.
     :param method: Method to match. Must correspond exactly.
-    :return: A list of PDB IDs obtained by desired experimental procedure.
+    :param dir_: Dir to save info "entry" json dumps.
+    :return: A list of PDB IDs obtained by desired experimental
+    procedure.
     """
 
     def method_matches(d: dict) -> bool:
@@ -482,12 +489,31 @@ def filter_by_method(
             LOGGER.warning(f'Missing required key {e}')
             return False
 
-    fetched, missed = pdb.fetch_info('entry', pdb_ids, None)
+    def load_file(inp: str | Path | dict, base: Path | None) -> dict:
+        try:
+            if isinstance(inp, dict):
+                return inp
+            if isinstance(inp, str):
+                assert base is not None, 'base path provided with base filename'
+                inp = base / f'{inp}.json'
+            with inp.open() as f:
+                res = json.load(f)
+                assert isinstance(res, dict), 'loaded json correctly'
+                return res
+        except FileNotFoundError:
+            LOGGER.warning(f'Missing supposedly fetched {inp}')
+            return {}
+
+    pdb_ids = list(pdb_ids)
+    fetched, missed = pdb.fetch_info('entry', pdb_ids, dir_)
+    fetched = [(x[0], load_file(x[1], dir_)) for x in fetched]
+
     if missed:
         missed_display = ','.join(missed) if len(missed) < 100 else ''
         LOGGER.warning(f'Failed to fetch {len(missed)} ids: {missed_display}')
 
-    return [x[0] for x in fetched if method_matches(x[1])]
+    # fails to recognize x[1] must be dict
+    return [x[0] for x in fetched if method_matches(x[1])]  # type: ignore
 
 
 if __name__ == '__main__':

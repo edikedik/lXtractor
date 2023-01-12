@@ -166,7 +166,7 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
     ],
 )
 @pytest.mark.parametrize('use_dir', [True, False])
-def test_filter_xray(method, pdb_ids, use_dir, accepted):
+def test_by_method(method, pdb_ids, use_dir, accepted):
     if use_dir:
         with TemporaryDirectory() as tmp:
             assert filter_by_method(pdb_ids, method=method, dir_=Path(tmp)) == accepted
