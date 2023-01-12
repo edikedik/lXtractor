@@ -8,6 +8,7 @@ import numpy as np
 from biotite import structure as bst
 from typing_extensions import Self
 
+from lXtractor.core.base import SOLVENTS
 from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.list import _wrap_children, ChainList
 from lXtractor.core.chain.sequence import ChainSequence
@@ -17,6 +18,9 @@ from lXtractor.core.structure import GenericStructure, PDB_Chain, _validate_chai
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.structure import filter_selection
 from lXtractor.variables.base import Variables
+
+
+# TODO: subset and overlap with other structures/sequences
 
 
 class ChainStructure:
@@ -181,6 +185,18 @@ class ChainStructure:
             pdb_id = structure.pdb_id or 'Unk'
 
         return cls(pdb_id, chain_id, structure)
+
+    def rm_solvent(self) -> Self:
+        """
+        Remove solvent "residues" from this structure.
+
+        :return: A new instance without solvent molecules.
+        """
+        return self.__class__.from_structure(
+            GenericStructure(
+                self.array[np.isin(self.array.res_name, SOLVENTS)], self.pdb.id
+            )
+        )
 
     def superpose(
         self,
