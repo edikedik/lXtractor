@@ -19,6 +19,7 @@ from lXtractor.core.chain.structure import ChainStructure
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import InitError, LengthMismatch
 from lXtractor.core.structure import GenericStructure
+from lXtractor.util.seq import biotite_align
 
 CT = t.TypeVar('CT', ChainStructure, ChainSequence, Chain)
 _O: t.TypeAlias = ChainSequence | ChainStructure | list[ChainStructure] | None
@@ -103,7 +104,7 @@ def _init(
 
 
 def _map_numbering(seq1: ChainSequence, seq2: ChainSequence) -> list[None | int]:
-    return seq1.map_numbering(seq2, save=False)
+    return seq1.map_numbering(seq2, save=False, align_method=biotite_align)
 
 
 def map_numbering_12many(
@@ -191,7 +192,10 @@ def map_numbering_many2many(
             else:
                 yield from split_into(results, group_sizes)
     else:
-        results = (s.map_numbering(o, save=False) for o, s in staged)
+        results = (
+            s.map_numbering(o, save=False, align_method=biotite_align)
+            for o, s in staged
+        )
         if verbose:
             yield from split_into(tqdm(results, desc="Mapping numberings"), group_sizes)
         else:
