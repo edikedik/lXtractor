@@ -141,3 +141,15 @@ def test_superpose(simple_chain_structure):
     # => {1=>2,2=>3}.
     superposed, rmsd, _ = s.superpose(s_cp, [1, 2], map_name_other='original')
     assert rmsd < EPS
+
+
+def test_rm_solvent(simple_chain_structure):
+    s = simple_chain_structure
+    assert 'HOH' in s.seq.seq3
+    n_hoh = sum(1 for x in s.seq.seq3 if x == 'HOH')
+    n_rest = sum(1 for x in s.seq.seq3 if x != 'HOH')
+    assert n_hoh + n_rest == len(s.seq)
+    srm = s.rm_solvent()
+    assert 'HOH' not in srm.seq.seq3
+    assert len(srm.seq) == n_rest
+    assert len(srm.seq) + n_hoh == len(s.seq)

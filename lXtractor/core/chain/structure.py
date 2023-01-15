@@ -200,7 +200,7 @@ class ChainStructure:
         """
         return self.__class__.from_structure(
             GenericStructure(
-                self.array[np.isin(self.array.res_name, SOLVENTS)],
+                self.array[~np.isin(self.array.res_name, SOLVENTS)],
                 self.pdb.id,
             ),
             self.pdb.id,
