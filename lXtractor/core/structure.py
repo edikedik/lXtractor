@@ -95,7 +95,15 @@ class GenericStructure:
         :return: A new Generic structure with residues in ``[start, end]``.
         """
         self_start, self_end = self.array.res_id.min(), self.array.res_id.max()
-        if not Segment(self_start, self_end).bounds(Segment(start, end)):
+
+        # This is needed when some coordinates are <= 0 which can occur
+        # in PDB structures but unsupported for a Segment.
+        offset_self = abs(self_start) + 1 if self_start <= 0 else 0
+        offset_start = abs(start) + 1 if start <= 0 else 0
+        offset = max(offset_start, offset_self)
+        seg_self = Segment(self_start + offset, self_end + offset)
+        seg_sub = Segment(start + offset, end + offset)
+        if not seg_self.bounds(seg_sub):
             raise NoOverlap(
                 f'Provided positions {start, end} lie outside '
                 f'of the structure positions {self_start, self_end}'
