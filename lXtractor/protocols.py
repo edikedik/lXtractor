@@ -489,6 +489,10 @@ def filter_by_method(
             LOGGER.warning(f'Missing required key {e}')
             return False
 
+    def get_existing(ids: abc.Iterable[str], _dir: Path) -> list[tuple[str, Path]]:
+        res = ((x, (_dir / f'{x}.json')) for x in ids)
+        return [x for x in res if x[1].exists()]
+
     def load_file(inp: str | Path | dict, base: Path | None) -> dict:
         try:
             if isinstance(inp, dict):
@@ -505,7 +509,9 @@ def filter_by_method(
             return {}
 
     pdb_ids = list(pdb_ids)
+    existing = get_existing(pdb_ids, dir_) if dir_ is not None else []
     fetched, missed = pdb.fetch_info('entry', pdb_ids, dir_)
+    fetched += existing
     fetched = [(x[0], load_file(x[1], dir_)) for x in fetched]
 
     if missed:
