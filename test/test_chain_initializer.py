@@ -52,7 +52,7 @@ def assert_mapping(mapping, io):
     chains = io.from_mapping(mapping)
     assert len(chains) == 2
     assert all([isinstance(x, Chain) for x in chains])
-    assert len(chains[0].structures) == 2
+    assert len(chains[0].structures) == 1
     assert len(chains[1].structures) == 1
     assert all(
         [
@@ -63,7 +63,7 @@ def assert_mapping(mapping, io):
 
 
 def test_mapping(mapping):
-    io = ChainInitializer()
+    io = ChainInitializer(tolerate_failures=False)
     assert_mapping(mapping, io)
 
 

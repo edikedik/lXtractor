@@ -12,6 +12,7 @@ from pathlib import Path
 import biotite.structure as bst
 import biotite.structure.io as strio
 import numpy as np
+from typing_extensions import Self
 
 from lXtractor.core.base import AminoAcidDict
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
@@ -71,7 +72,7 @@ class GenericStructure:
                 one_letter_code = 'X'
             yield one_letter_code, atom.res_name, atom.res_id
 
-    def split_chains(self, *, copy: bool = True) -> abc.Iterator[GenericStructure]:
+    def split_chains(self, *, copy: bool = False) -> abc.Iterator[Self]:
         """
         Split into separate chains. Splitting is done using
         :func:`biotite.structure.get_chain_starts`.
@@ -80,13 +81,12 @@ class GenericStructure:
             chain annotation.
         :return: An iterable over chains found in :attr:`array`.
         """
-        chains = (
-            self.__class__(a.copy() if copy else a, self.pdb_id)
-            for a in bst.chain_iter(self.array)
-        )
+        a = self.array
+        arrays = (a[a.chain_id == c] for c in sorted(set(a.chain_id)))
+        chains = (self.__class__(a.copy() if copy else a, self.pdb_id) for a in arrays)
         yield from chains
 
-    def sub_structure(self, start: int, end: int) -> GenericStructure:
+    def sub_structure(self, start: int, end: int) -> Self:
         """
         Create a sub-structure encompassing some continuout segment.
 
@@ -101,7 +101,7 @@ class GenericStructure:
                 f'of the structure positions {self_start, self_end}'
             )
         idx = (self.array.res_id >= start) & (self.array.res_id <= end)
-        return GenericStructure(self.array[idx], self.pdb_id)
+        return self.__class__(self.array[idx], self.pdb_id)
 
     def superpose(
         self,

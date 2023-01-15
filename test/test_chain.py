@@ -41,7 +41,7 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
 
     # Using segment's boundaries
     with pytest.raises(NoOverlap):
-        _ = p.spawn_child(1, 280, 'child', keep=True)
+        _ = p.spawn_child(1, 480, 'child', keep=True)
     child = p.spawn_child(1, 260, 'child', keep=True)
     assert len(child.seq) == 260
     assert len(child.structures) == 1
@@ -54,7 +54,8 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     #                         +----|------------+
     #                         1    5
     child = p.spawn_child(
-        1, 260, str_map_from=SeqNames.map_canonical, str_map_closest=True)
+        1, 260, str_map_from=SeqNames.map_canonical, str_map_closest=True
+    )
     assert len(child.seq) == 260
     s = child.structures[0]
     assert len(s.seq) == 5
@@ -71,8 +72,9 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     assert child_of_child.seq.name in [c.seq.name for c in children[-1]]
 
     with pytest.raises(KeyError):
-        _ = p.spawn_child(1, 4, 'child', keep=False, str_map_from=SeqNames.enum,
-                          str_map_closest=False)
+        _ = p.spawn_child(
+            1, 4, 'child', keep=False, str_map_from=SeqNames.enum, str_map_closest=False
+        )
 
 
 def test_iter(chicken_src_str):
