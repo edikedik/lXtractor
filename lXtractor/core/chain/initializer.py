@@ -395,7 +395,12 @@ class ChainInitializer:
         num_proc = num_proc_map_numbering or self.num_proc
 
         if num_proc is None or num_proc == 1:
-            for c, ss in m_new.items():
+            items = (
+                tqdm(m_new.items(), desc='Adding structures sequentially')
+                if self.verbose
+                else m_new.items()
+            )
+            for c, ss in items:
                 for s in ss:
                     c.add_structure(s, **kwargs)
         else:

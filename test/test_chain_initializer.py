@@ -51,14 +51,12 @@ def test_iterable_parallel(items):
 def assert_mapping(mapping, io):
     chains = io.from_mapping(mapping)
     assert len(chains) == 2
-    assert all([isinstance(x, Chain) for x in chains])
+    assert all(isinstance(x, Chain) for x in chains)
     assert len(chains[0].structures) == 1
     assert len(chains[1].structures) == 1
     assert all(
-        [
-            SeqNames.map_canonical in x.seq
-            for x in chain.from_iterable(c.structures for c in chains)
-        ]
+        SeqNames.map_canonical in x.seq
+        for x in chain.from_iterable(c.structures for c in chains)
     )
 
 
