@@ -134,7 +134,7 @@ class ChainSequence(Segment):
         :return: the primary sequence.
         """
         s = self._get_seq(SeqNames.seq1)
-        return "".join(s)
+        return s if isinstance(s, str) else "".join(s)
 
     @property
     def seq3(self) -> abc.Sequence[str]:
@@ -167,18 +167,18 @@ class ChainSequence(Segment):
     def _setup_and_validate(self) -> None:
         super()._setup_and_validate()
 
-        # if SeqNames.seq1 not in self:
-        #     warnings.warn(f'Missing {SeqNames.seq1}')
-        # else:
-        #     if not isinstance(self.seq1, str):
-        #         try:
-        #             self[SeqNames.seq1] = "".join(self.seq1)
-        #         except Exception as e:
-        #             raise InitError(
-        #                 f"Failed to convert {SeqNames.seq1} "
-        #                 f"from type {type(self.seq1)} to str "
-        #                 f"due to: {e}"
-        #             ) from e
+        if SeqNames.seq1 not in self:
+            warnings.warn(f'Missing {SeqNames.seq1}')
+        else:
+            if not isinstance(self.seq1, str):
+                try:
+                    self[SeqNames.seq1] = "".join(self.seq1)
+                except Exception as e:
+                    raise InitError(
+                        f"Failed to convert {SeqNames.seq1} "
+                        f"from type {type(self.seq1)} to str "
+                        f"due to: {e}"
+                    ) from e
 
         self.meta[MetaNames.id] = self.id
         self.meta[MetaNames.name] = self.name
