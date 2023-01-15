@@ -190,7 +190,7 @@ class PDB_Chain:
 
 
 def _validate_chain(pdb: PDB_Chain):
-    if pdb.structure is None:
+    if pdb.structure is None or len(pdb.structure.array) == 0:
         return
     chains = set(pdb.structure.array.chain_id)
     if len(chains) > 1:

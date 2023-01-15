@@ -13,7 +13,7 @@ from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.list import _wrap_children, ChainList
 from lXtractor.core.chain.sequence import ChainSequence
 from lXtractor.core.config import SeqNames, Sep, MetaNames, DumpNames, _DumpNames
-from lXtractor.core.exceptions import LengthMismatch, InitError
+from lXtractor.core.exceptions import LengthMismatch, InitError, MissingData
 from lXtractor.core.structure import GenericStructure, PDB_Chain, _validate_chain
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.structure import filter_selection
@@ -100,7 +100,10 @@ class ChainStructure:
         self.children: ChainList[ChainStructure] = _wrap_children(children)
 
         if seq is None:
-            str_seq = list(self.pdb.structure.get_sequence())
+            if len(self.pdb.structure.array) > 0:
+                str_seq = list(self.pdb.structure.get_sequence())
+            else:
+                str_seq = []
             seq1: list[str] = [x[0] for x in str_seq]
             seq3: list[str] = [x[1] for x in str_seq]
             num: list[int] = [x[2] for x in str_seq]
@@ -168,21 +171,24 @@ class ChainStructure:
         cls,
         structure: bst.AtomArray | GenericStructure,
         pdb_id: str | None = None,
+        chain_id: str | None = None,
     ) -> ChainStructure:
         """
         :param structure: An `AtomArray` or `GenericStructure`,
             corresponding to a single protein chain.
         :param pdb_id: PDB identifier of a structure
             (Chain ID will be inferred from the `AtomArray`).
+        :param chain_id: Chain identifier. If not provided, will take the first
+            atom's chain ID from the provided structure.
         :return: Initialized chain structure.
         """
         if isinstance(structure, bst.AtomArray):
             structure = GenericStructure(structure)
-
-        chain_id = structure.array.chain_id[0]
-
-        if pdb_id is None:
-            pdb_id = structure.pdb_id or 'Unk'
+        try:
+            chain_id = chain_id or structure.array.chain_id[0]
+            pdb_id = pdb_id or structure.pdb_id or 'Unk'
+        except IndexError as e:
+            raise MissingData('Failed to infer chain ID from empty structure') from e
 
         return cls(pdb_id, chain_id, structure)
 
@@ -194,8 +200,11 @@ class ChainStructure:
         """
         return self.__class__.from_structure(
             GenericStructure(
-                self.array[np.isin(self.array.res_name, SOLVENTS)], self.pdb.id
-            )
+                self.array[np.isin(self.array.res_name, SOLVENTS)],
+                self.pdb.id,
+            ),
+            self.pdb.id,
+            self.pdb.chain,
         )
 
     def superpose(
