@@ -48,7 +48,7 @@ def sample_chain(prefix: str = 'c', structure: t.Optional[ChainStructure] = None
 
 
 def get_fst_chain(s: GenericStructure) -> ChainStructure:
-    return ChainStructure.from_structure(next(s.split_chains()))
+    return ChainStructure.from_structure(next(s.split_chains()), s.pdb_id)
 
 
 if __name__ == '__main__':
