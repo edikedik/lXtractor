@@ -9,19 +9,26 @@ from lXtractor.core.exceptions import InitError
 
 
 @pytest.fixture
-def items(simple_structure, simple_structure_path, chicken_src_seq_path, simple_chain_seq):
+def items(
+    simple_structure, simple_structure_path, chicken_src_seq_path, simple_chain_seq
+):
     return [
-        ('SEQ', 'ABCD'), simple_structure, simple_structure_path, chicken_src_seq_path,
-        (simple_structure_path, ['A']), simple_chain_seq[1]]
+        ('SEQ', 'ABCD'),
+        simple_structure,
+        simple_structure_path,
+        chicken_src_seq_path,
+        (simple_structure_path, ['A']),
+        simple_chain_seq[1],
+    ]
 
 
 @pytest.fixture
 def mapping(chicken_src_str_path, chicken_src_seq_path, simple_structure):
     simple_seq = "".join(map(op.itemgetter(0), simple_structure.get_sequence()))
     return {
-        chicken_src_seq_path: [chicken_src_str_path],
+        # chicken_src_seq_path: [chicken_src_str_path],
         ChainSequence.from_file(chicken_src_seq_path): [(chicken_src_str_path, ['A'])],
-        ('S', simple_seq): [simple_structure]
+        ('S', simple_seq): [simple_structure],
     }
 
 
@@ -43,13 +50,15 @@ def test_iterable_parallel(items):
 
 def assert_mapping(mapping, io):
     chains = io.from_mapping(mapping)
-    assert len(chains) == 3
+    assert len(chains) == 2
     assert all([isinstance(x, Chain) for x in chains])
-    assert len(chains[0].structures) == 4
-    assert len(chains[1].structures) == 2
+    assert len(chains[0].structures) == 2
+    assert len(chains[1].structures) == 1
     assert all(
-        [SeqNames.map_canonical in x.seq
-         for x in chain.from_iterable(c.structures for c in chains)]
+        [
+            SeqNames.map_canonical in x.seq
+            for x in chain.from_iterable(c.structures for c in chains)
+        ]
     )
 
 

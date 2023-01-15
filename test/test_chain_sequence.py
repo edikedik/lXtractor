@@ -9,17 +9,33 @@ import pytest
 from lXtractor.core.alignment import Alignment
 from lXtractor.core.chain import ChainSequence
 from lXtractor.core.config import DumpNames
-from lXtractor.core.exceptions import MissingData
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.seq import read_fasta, biotite_align
 
 
 def test_init(simple_chain_seq):
-    with pytest.raises(MissingData):
-        ChainSequence(1, 2)
+    # with pytest.raises(MissingData):
+    #     ChainSequence(1, 2)
     fields, s = simple_chain_seq
     assert fields.seq1 in s
     assert len(s) == 5
+
+
+def test_degenerate():
+    s = ChainSequence.from_string('')
+    assert len(s) == 0
+    assert s.start == s.end == 0
+    assert len(list(iter(s))) == 0
+    c = ChainSequence.from_string('c')
+    assert c.is_singleton
+    o = c & s
+    assert o.is_empty
+    o = s & c
+    assert o.is_empty
+    with pytest.raises(ValueError):
+        _ = s >> 1
+    o = c >> 1
+    assert o.is_singleton and o.start == o.end == 2
 
 
 def test_map_accession(simple_chain_seq):
@@ -40,8 +56,16 @@ def test_convert(simple_chain_seq):
 
 def test_closest_and_boundaries():
     fields = ChainSequence.field_names()
-    s = ChainSequence(1, 5, 'S', seqs={
-        fields.seq1: 'ABCDE', 'N': [1, 3, 5, 10, 20], 'K': [None, 10, None, 20, None]})
+    s = ChainSequence(
+        1,
+        5,
+        'S',
+        seqs={
+            fields.seq1: 'ABCDE',
+            'N': [1, 3, 5, 10, 20],
+            'K': [None, 10, None, 20, None],
+        },
+    )
     assert s.get_closest('N', 2).N == 3
     assert s.get_closest('N', 0).N == 1
     assert s.get_closest('N', 12, reverse=True).N == 10
@@ -77,8 +101,7 @@ def test_map(simple_fasta_path, chicken_src_seq, human_src_seq):
     s1 = ChainSequence.from_string(chicken_src_seq[1])
     s2 = ChainSequence.from_string(human_src_seq[1])
 
-    mapping = s2.map_numbering(
-        s1, save=False, align_method=biotite_align)
+    mapping = s2.map_numbering(s1, save=False, align_method=biotite_align)
     assert len(mapping) >= len(s2)
 
 

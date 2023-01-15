@@ -392,7 +392,8 @@ class ApplyT(t.Protocol):
         ...
 
 
-class NamedTupleT(t.Protocol):
+@t.runtime_checkable
+class NamedTupleT(t.Protocol, abc.Iterable):
     def __getattr__(self, item):
         ...
 

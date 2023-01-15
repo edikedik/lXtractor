@@ -6,18 +6,24 @@ from __future__ import annotations
 
 import logging
 import typing as t
+import warnings
 from collections import namedtuple, abc
 from copy import deepcopy, copy
-from itertools import islice, combinations, filterfalse, chain
+from itertools import combinations, filterfalse, chain
 
 import networkx as nx
-from more_itertools import nth, always_reversible, powerset, take
+from more_itertools import always_reversible, powerset, take, nth
 from tqdm.auto import tqdm
-from typing_extensions import Self
+from typing_extensions import Self, reveal_type
 
 from lXtractor.core.base import Ord, NamedTupleT
 from lXtractor.core.config import Sep
-from lXtractor.core.exceptions import LengthMismatch, NoOverlap, OverlapError
+from lXtractor.core.exceptions import (
+    LengthMismatch,
+    NoOverlap,
+    OverlapError,
+    FormatError,
+)
 from lXtractor.util.misc import is_valid_field_name
 from lXtractor.variables.base import Variables
 
@@ -31,6 +37,15 @@ LOGGER = logging.getLogger(__name__)
 class _Item(t.Protocol):
     def __call__(self, *args, **kwargs) -> NamedTupleT:
         ...
+
+
+def _check_boundary_change(x_orig: int, x_new: int):
+    if x_orig != 0 and x_new == 0:
+        raise IndexError(f"Can't change none-zero coordinate {x_orig} to zero")
+    if x_orig == 0:
+        raise IndexError("Can't change boundaries of an empty segment")
+    if x_new < 0:
+        raise IndexError(f'Attempting to set a negative boundary {x_new}')
 
 
 class Segment(abc.Sequence[NamedTupleT]):
@@ -97,8 +112,8 @@ class Segment(abc.Sequence[NamedTupleT]):
     """
 
     __slots__ = (
-        'start',
-        'end',
+        '_start',
+        '_end',
         'name',
         'parent',
         'children',
@@ -122,7 +137,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         :param start: Start coordinate.
         :param end: End coordinate.
         :param name: The name of the segment. Name with start and end
-            coordinates should uniquely specify the segmet. They are used to
+            coordinates should uniquely specify the segment. They are used to
             dynamically construct :meth:`id`.
         :param seqs: A dictionary name => sequence, where sequence is some
             sequence (preferably mutable) bounded by segment. Name of a
@@ -138,8 +153,10 @@ class Segment(abc.Sequence[NamedTupleT]):
         :param variables: A collection of variables calculated or staged for
             calculation for this segment.
         """
-        self.start = start
-        self.end = end
+        if (start <= 0 or end <= 0) and start != end:
+            raise ValueError('Boundaries must start from 1')
+        self._start = start
+        self._end = end
         self.name = name
         self.parent = parent
         self.children = children or []
@@ -148,6 +165,63 @@ class Segment(abc.Sequence[NamedTupleT]):
         self.variables: Variables = variables or Variables()
 
         self._setup_and_validate()
+
+    @property
+    def start(self) -> int:
+        """
+        :return: A Segment's start coordinate.
+        """
+        return self._start
+
+    @start.setter
+    def start(self, value: int):
+        _check_boundary_change(self.start, value)
+        if value > self.end:
+            raise IndexError(
+                f'Cannot start {value} further than the current end {self.end}'
+            )
+        if value > self.start:
+            idx = _translate_idx(value, self.start)
+            self._seqs = {k: s[idx:] for k, s in self._seqs.items()}
+            self._start = value
+            self._validate_seqs()
+        else:
+            if value < self.start:
+                if not self._seqs:
+                    self._start = value
+                else:
+                    raise IndexError(
+                        f'Cannot set start {self.start} to {value} with '
+                        'existing sequences'
+                    )
+
+    @property
+    def end(self) -> int:
+        """
+        :return: A Segment's end coordinate.
+        """
+        return self._end
+
+    @end.setter
+    def end(self, value):
+        _check_boundary_change(self.end, value)
+        if value < self.start:
+            raise IndexError(
+                f'Cannot set end {value} lower than the current start {self.start}'
+            )
+        if value < self.end:
+            idx = _translate_idx(value, self.start) + 1
+            self._seqs = {k: s[:idx] for k, s in self._seqs.items()}
+            self._end = value
+            self._validate_seqs()
+        else:
+            if value > self.end:
+                if not self._seqs:
+                    self._end = value
+                else:
+                    raise IndexError(
+                        f'Cannot set end {self.end} to {value} with existing sequences'
+                    )
 
     @property
     def id(self) -> str:
@@ -171,7 +245,31 @@ class Segment(abc.Sequence[NamedTupleT]):
         names contained within this instance. The first field is reserved
         for "i" -- an index. :return: `Item` namedtuple object.
         """
-        return namedtuple('Item', ['i', *self._seqs.keys()])
+        # Returns Type[Tuple[Any, ...]]
+        return namedtuple('Item', ['i', *self._seqs.keys()])  # type: ignore
+
+    @property
+    def is_empty(self) -> bool:
+        """
+        :return: ``True`` if the segment is empty. Emptiness is a special case,
+            in which :class:`Segment` ``has start == end == 0``.
+        """
+        return self.start == self.end == 0
+
+    @property
+    def is_singleton(self) -> bool:
+        """
+        :return: ``True`` if the segment contains a single element. In this
+            special case, ``start == end``.
+        """
+        return self.start == self.end
+
+    @property
+    def seq_names(self) -> list[str]:
+        """
+        :return: A list of sequence names this segment entails.
+        """
+        return list(self._seqs)
 
     def __str__(self) -> str:
         return self.id
@@ -180,6 +278,8 @@ class Segment(abc.Sequence[NamedTupleT]):
         return self.id
 
     def __iter__(self) -> abc.Iterator[NamedTupleT]:
+        if self.is_empty:
+            return iter([])
         item_type = self.item_type
         enum = range(self.start, self.end + 1)
         if self._seqs:
@@ -194,7 +294,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         ...
 
     @t.overload
-    def __getitem__(self, idx: slice) -> list[NamedTupleT]:
+    def __getitem__(self, idx: slice) -> Self:
         ...
 
     @t.overload
@@ -203,26 +303,65 @@ class Segment(abc.Sequence[NamedTupleT]):
 
     def __getitem__(
         self, idx: slice | int | str
-    ) -> abc.Iterator[NamedTupleT] | NamedTupleT | int | abc.Sequence[t.Any]:
-        idx = _translate_idx(idx, self.start)
-        match idx:
-            case slice():
-                stop = idx.stop + 1 if isinstance(idx.stop, int) else idx.stop
-                idx = slice(idx.start, stop, idx.step)
-                # if idx.start and idx.start < 0:
-                #     return iter([])
-                return list(islice(iter(self), idx.start, idx.stop, idx.step))
-            case int():
-                it = nth(iter(self), idx)
-                if it is None:
-                    raise IndexError(f'{idx} is not in segment')
-                return it
-            case str():
-                return self._seqs[idx]
-            case _:
-                raise TypeError(f'Unsupported idx type {type(idx)}')
+    ) -> NamedTupleT | Self | abc.Sequence[t.Any]:
+        idx_py: int | slice
+        if isinstance(idx, str):
+            return self._seqs[idx]
+        if isinstance(idx, (int, slice)):
+            if self.is_empty:
+                raise IndexError('No slicing/indexing for an empty segment')
+        if isinstance(idx, int):
+            if idx == 0:
+                raise IndexError(
+                    'Segment uses 1-based indexing, 0 is reserved for '
+                    'an empty segment'
+                )
+            idx_py = _translate_idx(idx, self.start)
+            it = nth(iter(self), idx_py, None)
+            if it is None:
+                raise IndexError(
+                    f'Index {idx}->{idx_py} lies outside of [0, {len(self)}]'
+                )
+            return it
+            # try:
+            #     seqs = {k: v[idx_py : idx_py + 1] for k, v in self._seqs.items()}
+            # except IndexError as e:
+            #     raise IndexError(f'{idx_py} is not in segment') from e
+            # return self.__class__(idx, idx, self.name, seqs)
+        if isinstance(idx, slice):
+            if idx.start == 0 or idx.stop == 0:
+                raise IndexError(
+                    'Segment uses 1-based indexing, 0 is reserved for '
+                    'an empty segment'
+                )
+            if idx.step is not None:
+                raise IndexError(
+                    'Cannot create non-consecutive copy of segment => "step" '
+                    'is slicing-incompatible'
+                )
+            if (idx.start, idx.stop) in [
+                (None, None),
+                (None, self.end),
+                (self.start, None),
+                (self.start, self.end),
+            ]:
+                return deepcopy(self)
 
-    def __setitem__(self, key: str, value: t.Sequence[t.Any]) -> None:
+            idx_py = _translate_idx(idx, self.start)
+
+            try:
+                seqs = {k: v[idx_py.start : idx_py.stop] for k, v in self._seqs.items()}
+            except IndexError as e:
+                raise IndexError(f'Failed to index sequences using {idx}') from e
+
+            start = idx.start or self.start
+            end = idx.stop or self.end
+
+            return self.__class__(start, end, self.name, seqs, parent=self)
+        else:
+            raise TypeError(f'Cannot index with type {type(idx)}')
+
+    def __setitem__(self, key: str, value: abc.Sequence[t.Any]) -> None:
         self._validate_seq(key, value)
         self._seqs[key] = value
 
@@ -238,25 +377,41 @@ class Segment(abc.Sequence[NamedTupleT]):
             case _:
                 return False
 
-    def __len__(self):
+    def __len__(self) -> int:
+        if self.is_empty:
+            return 0
         return self.end - self.start + 1
 
     def __and__(self, other: Segment) -> Segment:
         return self.overlap_with(other, True, 'self')
 
-    def __rshift__(self, idx) -> Segment:
-        self.start += idx
-        self.end += idx
-        return self
+    def __eq__(self, other: t.Any) -> bool:
+        if not isinstance(other, self.__class__):
+            return False
+        return (
+            self.start == other.start
+            and self.end == other.end
+            and self.meta == other.meta
+            and all(it_self == it_other for it_self, it_other in zip(self, other))
+        )
 
-    def __lshift__(self, idx) -> Segment:
-        self.start -= idx
-        self.end -= idx
-        return self
+    def __hash__(self):
+        seqs = tuple(tuple(x) for x in self)
+        return hash((self.start, self.end, self.name, seqs, tuple(self.meta.items())))
 
-    def _validate_seq(self, name: str, seq: t.Sequence):
+    def __rshift__(self, idx: int) -> Segment:
+        if self.is_empty:
+            raise ValueError('Cannot shift an empty segment')
+        return Segment(self.start + idx, self.end + idx, self.name, seqs=self._seqs)
+
+    def __lshift__(self, idx: int) -> Segment:
+        if self.is_empty:
+            raise ValueError('Cannot shift an empty segment')
+        return Segment(self.start - idx, self.end - idx, self.name, seqs=self._seqs)
+
+    def _validate_seq(self, name: str, seq: abc.Sequence):
         if not is_valid_field_name(name):
-            raise ValueError(
+            raise FormatError(
                 f'Invalid field name {name}. '
                 f'Please use a valid variable name starting with a letter'
             )
@@ -265,21 +420,17 @@ class Segment(abc.Sequence[NamedTupleT]):
                 f"Len({name})={len(seq)} doesn't match the segment's length {len(self)}"
             )
 
-    def _setup_and_validate(self):
-        if self.start > self.end:
-            raise ValueError(f'Invalid boundaries {self.start}, {self.end}')
-        for name in self._seqs:
-            if not is_valid_field_name(name):
-                raise ValueError(
-                    f'Invalid field name {name}. '
-                    f'Please use a valid variable name starting with a letter'
-                )
-
+    def _validate_seqs(self):
         for k, seq in self._seqs.items():
             if len(seq) != len(self):
                 self._validate_seq(k, seq)
 
-    def add_seq(self, name: str, seq: t.Sequence[t.Any]):
+    def _setup_and_validate(self):
+        if self.start > self.end or self.start < 0 or self.end < 0:
+            raise FormatError(f'Invalid boundaries {self.start}, {self.end}')
+        self._validate_seqs()
+
+    def add_seq(self, name: str, seq: abc.Sequence[t.Any]):
         """
         Add sequence to this segment.
 
@@ -315,7 +466,7 @@ class Segment(abc.Sequence[NamedTupleT]):
 
         :param other; Another segment.
         """
-        return other.start >= self.start and self.end >= other.end
+        return other.is_empty or (other.start >= self.start and self.end >= other.end)
 
     def bounded_by(self, other: Segment) -> bool:
         """
@@ -329,7 +480,7 @@ class Segment(abc.Sequence[NamedTupleT]):
 
         :param other; Another segment.
         """
-        return self.start >= other.start and other.end >= self.end
+        return self.is_empty or (self.start >= other.start and other.end >= self.end)
 
     def overlaps(self, other: Segment) -> bool:
         """
@@ -340,7 +491,9 @@ class Segment(abc.Sequence[NamedTupleT]):
         :param other: other :class:`Segment` instance.
         :return: ``True`` if segments overlap and ``False`` otherwise.
         """
-        return not (other.start > self.end or self.start > other.end)
+        return (self.is_empty or other.is_empty) or not (
+            other.start > self.end or self.start > other.end
+        )
 
     def overlap_with(
         self,
@@ -380,7 +533,15 @@ class Segment(abc.Sequence[NamedTupleT]):
             return {k: s[_start : _end + 1] for k, s in _seqs.items()}
 
         if not self.overlaps(other):
-            raise NoOverlap
+            raise NoOverlap(f'Segments {self} and {other} do not overlap')
+
+        if self.is_empty:
+            warnings.warn('Overlapping empty & non-empty always results in empty')
+            return self
+
+        if other.is_empty:
+            warnings.warn('Overlapping non-empty & empty always results in empty')
+            return self.__class__(0, 0)
 
         start, end = max(self.start, other.start), min(self.end, other.end)
 
@@ -417,7 +578,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         :param end: Ending coordinate.
         :return: New overlapping segment with :attr:`data` and :attr:`name`
         """
-        other = Segment(start, end)
+        other = self.__class__(start, end)
 
         if not self.overlaps(other):
             raise NoOverlap
@@ -465,7 +626,7 @@ def _translate_idx(idx: T, offset: int) -> T:
         if start is not None:
             start = max(start - offset, 0)
         if stop is not None:
-            stop -= offset
+            stop = stop - offset + 1
         # Mypy fails at type narrowing here.
         # See https://github.com/python/mypy/issues/14045
         return t.cast(T, slice(start, stop, idx.step))

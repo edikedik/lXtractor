@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing as t
+import warnings
 from collections import abc
 from io import TextIOBase
 from itertools import filterfalse, starmap
@@ -87,9 +88,7 @@ class ChainSequence(Segment):
         """
         if self.children is not None:
             # self.children: ChainList[ChainSequence]
-            yield from map(
-                lambda x: ChainList(x), topo_iter(self, lambda x: x.children)
-            )
+            yield from map(ChainList, topo_iter(self, lambda x: x.children))
         else:
             yield from iter(ChainList([]))
 
@@ -114,6 +113,12 @@ class ChainSequence(Segment):
         """
         return MetaNames
 
+    def _get_seq(self, name: str) -> abc.Sequence[str]:
+        try:
+            return self[name]
+        except KeyError:
+            raise MissingData(f'Missing sequence {name}')
+
     @property
     def numbering(self) -> abc.Sequence[int]:
         """
@@ -128,20 +133,24 @@ class ChainSequence(Segment):
         """
         :return: the primary sequence.
         """
-        s = self[SeqNames.seq1]
-        if not isinstance(s, str):
-            return "".join(s)
-        return s
+        s = self._get_seq(SeqNames.seq1)
+        return "".join(s)
 
     @property
-    def seq3(self) -> t.Sequence[str]:
+    def seq3(self) -> abc.Sequence[str]:
         # TODO: remove and defer to subclasses representing concrete seqs.
         """
         :return: the three-letter codes of a primary sequence.
         """
         if SeqNames.seq3 not in self:
+            try:
+                seq1 = self[SeqNames.seq1]
+            except KeyError as e:
+                raise MissingData(
+                    'Attempted to construct seq3 from seq1 but the latter is missing.'
+                ) from e
             mapping = AminoAcidDict()
-            return [mapping[x] for x in self.seq1]
+            return [mapping[x] for x in seq1]
         return self[SeqNames.seq3]
 
     @property
@@ -158,18 +167,18 @@ class ChainSequence(Segment):
     def _setup_and_validate(self) -> None:
         super()._setup_and_validate()
 
-        if SeqNames.seq1 not in self:
-            raise MissingData(f"Requires {SeqNames.seq1} in `seqs`")
-
-        if not isinstance(self.seq1, str):
-            try:
-                self[SeqNames.seq1] = "".join(self.seq1)
-            except Exception as e:
-                raise InitError(
-                    f"Failed to convert {SeqNames.seq1} "
-                    f"from type {type(self.seq1)} to str "
-                    f"due to: {e}"
-                ) from e
+        # if SeqNames.seq1 not in self:
+        #     warnings.warn(f'Missing {SeqNames.seq1}')
+        # else:
+        #     if not isinstance(self.seq1, str):
+        #         try:
+        #             self[SeqNames.seq1] = "".join(self.seq1)
+        #         except Exception as e:
+        #             raise InitError(
+        #                 f"Failed to convert {SeqNames.seq1} "
+        #                 f"from type {type(self.seq1)} to str "
+        #                 f"due to: {e}"
+        #             ) from e
 
         self.meta[MetaNames.id] = self.id
         self.meta[MetaNames.name] = self.name
@@ -205,6 +214,11 @@ class ChainSequence(Segment):
         :return: a list of integers with ``None`` indicating gaps.
         """
 
+        def get_seq1(s: abc.Sequence[str] | str) -> str:
+            if isinstance(s, str):
+                return s
+            return ''.join(s)
+
         if isinstance(other, str):
             name = name or UNK_NAME
             other = ChainSequence.from_string(other)
@@ -214,11 +228,13 @@ class ChainSequence(Segment):
 
         mapping: abc.Iterable[tuple]
 
+        seq1 = get_seq1(self.seq1)
+
         if isinstance(other, ChainSequence):
             mapping = map_pairs_numbering(
-                self.seq1,
+                seq1,
                 self.numbering,
-                other.seq1,
+                get_seq1(other.seq1),
                 other.numbering,
                 align=True,
                 align_method=align_method,
@@ -228,12 +244,12 @@ class ChainSequence(Segment):
                 name = f"map_{other.name}"
         elif isinstance(other, Alignment):
             self_name = self.name or UNK_NAME
-            aligned_other = other.align((self_name, self.seq1))[self_name]
+            aligned_other = other.align((self_name, seq1))[self_name]
             aligned_other_num = [
                 i for (i, c) in enumerate(aligned_other, start=1) if c != "-"
             ]
             mapping = map_pairs_numbering(
-                self.seq1,
+                seq1,
                 self.numbering,
                 aligned_other,
                 aligned_other_num,
@@ -603,8 +619,12 @@ class ChainSequence(Segment):
             (as used during initialization via `seq` attribute).
         :return: Initialized chain sequence.
         """
-        start = start or 1
-        end = end or start + len(s) - 1
+        if len(s) == 0:
+            start = start or 0
+            end = end or 0
+        else:
+            start = start or 1
+            end = end or start + len(s) - 1
 
         return cls(start, end, name, meta=meta, seqs={SeqNames.seq1: s, **kwargs})
 
