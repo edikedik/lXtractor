@@ -45,6 +45,7 @@ _AminoAcids = [
     ('GLY', 'G'),
 ]
 SOLVENTS = (
+    'HOH',
     'MPD',
     'EDO',
     'DMS',
