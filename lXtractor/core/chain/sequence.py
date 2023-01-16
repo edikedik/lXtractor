@@ -3,6 +3,7 @@ from __future__ import annotations
 import typing as t
 import warnings
 from collections import abc
+from copy import copy
 from io import TextIOBase
 from itertools import filterfalse, starmap
 from pathlib import Path
@@ -69,28 +70,6 @@ class ChainSequence(Segment):
     """
 
     __slots__ = ()
-
-    def iter_children(
-        self,
-    ) -> abc.Generator[ChainList[ChainSequence], None, None]:
-        """
-        Iterate over a child tree in topological order.
-
-        >>> s = ChainSequence(1, 10, 'CS', seqs={'seq1': 'A' * 10})
-        >>> ss = s.spawn_child(1, 5, 'CS_')
-        >>> sss = ss.spawn_child(1, 3, 'CS__')
-        >>> list(s.iter_children())
-        [[CS_|1-5<-(CS|1-10)], [CS__|1-3<-(CS_|1-5<-(CS|1-10))]]
-
-        :return: a generator over child tree levels, starting from
-            the :attr:`children` and expanding such attributes over
-            :class:`ChainSequence` instances within this attribute.
-        """
-        if self.children is not None:
-            # self.children: ChainList[ChainSequence]
-            yield from map(ChainList, topo_iter(self, lambda x: x.children))
-        else:
-            yield from iter(ChainList([]))
 
     @property
     def fields(self) -> tuple[str, ...]:
@@ -182,7 +161,7 @@ class ChainSequence(Segment):
 
         self.meta[MetaNames.id] = self.id
         self.meta[MetaNames.name] = self.name
-        self.children = _wrap_children(self.children)
+        self.children: ChainList[ChainSequence] = _wrap_children(self.children)
 
     def map_numbering(
         self,
@@ -417,7 +396,7 @@ class ChainSequence(Segment):
         :param save: Save to meta as 'Match_{map_name1}_{map_name2}'.
         :return: The total number or a fraction of matching characters between maps.
         """
-        res = sum(1 for x, y in zip(self[map_name1], self[map_name2]) if x == y)
+        res: float = sum(1 for x, y in zip(self[map_name1], self[map_name2]) if x == y)
         div = len(self) if as_fraction else 1
         res = res / div
         if save:
@@ -498,7 +477,6 @@ class ChainSequence(Segment):
             return result[1]
         return None
 
-    # @lru_cache
     def as_df(self) -> pd.DataFrame:
         """
         :return: The pandas DataFrame representation of the sequence where
@@ -514,6 +492,7 @@ class ChainSequence(Segment):
         """
         return self.as_df().values
 
+    # @lru_cache
     def spawn_child(
         self,
         start: int,
@@ -570,10 +549,154 @@ class ChainSequence(Segment):
             add_category(child, category)
 
         if keep:
-            self.children: ChainList[ChainSequence]
+            # self.children: ChainList[ChainSequence]
             self.children.append(child)
 
         return child
+
+    def iter_children(
+        self,
+    ) -> abc.Generator[ChainList[ChainSequence], None, None]:
+        """
+        Iterate over a child tree in topological order.
+
+        >>> s = ChainSequence(1, 10, 'CS', seqs={'seq1': 'A' * 10})
+        >>> ss = s.spawn_child(1, 5, 'CS_')
+        >>> sss = ss.spawn_child(1, 3, 'CS__')
+        >>> list(s.iter_children())
+        [[CS_|1-5<-(CS|1-10)], [CS__|1-3<-(CS_|1-5<-(CS|1-10))]]
+
+        :return: a generator over child tree levels, starting from
+            the :attr:`children` and expanding such attributes over
+            :class:`ChainSequence` instances within this attribute.
+        """
+        if self.children is not None:
+            # self.children: ChainList[ChainSequence]
+            yield from map(ChainList, topo_iter(self, lambda x: x.children))
+        else:
+            yield from iter(ChainList([]))
+
+    def apply_children(
+        self, fn: abc.Callable[[ChainSequence], ChainSequence], inplace: bool = False
+    ) -> Self:
+        """
+        Apply some function to children.
+
+        :param fn: A callable accepting and returning the chain sequence type
+            instance.
+        :param inplace: Apply to children in place. Otherwise, return a copy
+            with only children transformed.
+        :return: A chain sequence with transformed children.
+        """
+        children = self.children.apply(fn)
+        if inplace:
+            self.children = children
+            return self
+        return self.__class__(
+            self.start,
+            self.end,
+            self.name,
+            seqs=self._seqs,
+            meta=self.meta,
+            children=children,
+            parent=self.parent,
+        )
+
+    def filter_children(
+        self, pred: abc.Callable[[ChainSequence], bool], inplace: bool = False
+    ) -> Self:
+        """
+        Filter children using some predicate.
+
+        :param pred: Some callable accepting chain sequence and returning bool.
+        :param inplace: Filter :attr:`children` in place. Otherwise, return
+            a copy with only children transformed.
+        :return: A chain sequence with filtered children.
+        """
+        children = self.children.filter(pred)
+        if inplace:
+            self.children = children
+            return self
+        return self.__class__(
+            self.start,
+            self.end,
+            self.name,
+            seqs=self._seqs,
+            meta=self.meta,
+            children=children,
+            parent=self.parent,
+        )
+
+    def apply_to_map(
+        self,
+        map_name: str,
+        fn: abc.Callable[[abc.Sequence[t.Any]], abc.Sequence[t.Any]],
+        inplace: bool = False,
+        preserve_children: bool = False,
+        apply_to_children: bool = False,
+    ) -> Self:
+        """
+        Apply some function to map/sequence in this chain sequence.
+
+        :param map_name: Name of the internal sequence/map.
+        :param fn: A function accepting and returning a sequence of the same
+            length.
+        :param inplace: Apply the operation to this object. Otherwise, create
+            a copy with the transformed sequence.
+        :param preserve_children: Preserve :attr:`children` of this instance in
+            the transformed object. Passing ``True`` makes sense if the target
+            sequence is mutable: the children's will be transformed naturally.
+            In the target sequence is immutable, consider passing ``True`` with
+            ``apply_to_children=True``.
+        :param apply_to_children: Recursively apply the same `fn` to a child
+            tree starting from this instance. If passed, sets
+            ``preserve_children=True``: otherwise, one is at risk of removing
+            all :attr:`children` in the child tree of the returned instance.
+        :return:
+        """
+
+        def _apply_to_children() -> ChainList[ChainSequence]:
+            return ChainList(
+                [
+                    c.apply_to_map(
+                        map_name,
+                        fn,
+                        inplace=True,
+                        preserve_children=True,
+                        apply_to_children=True,
+                    )
+                    for c in self.children
+                ]
+            )
+
+        s = self[map_name]
+        size = len(s)
+        s_x = fn(s)
+        if len(s_x) != size:
+            raise ValueError(f'Seq length changed from {size} to {len(s_x)}')
+
+        children = self.children
+        if apply_to_children:
+            children = _apply_to_children()
+        else:
+            if not preserve_children:
+                children = ChainList([])
+
+        if inplace:
+            self._seqs[map_name] = s_x
+            self.children = children
+            return self
+
+        seqs = copy(self._seqs)
+        seqs[map_name] = s_x
+        return self.__class__(
+            self.start,
+            self.end,
+            self.name,
+            seqs=seqs,
+            parent=self.parent,
+            children=children,
+        )
 
     @classmethod
     def from_file(
@@ -786,3 +909,7 @@ class ChainSequence(Segment):
                 child.write(
                     child_dir, dump_names=dump_names, write_children=write_children
                 )
+
+
+if __name__ == '__main__':
+    raise RuntimeError

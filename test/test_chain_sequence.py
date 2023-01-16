@@ -13,6 +13,14 @@ from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.seq import read_fasta, biotite_align
 
 
+@pytest.fixture
+def simple_chain_with_child(simple_chain_seq) -> ChainSequence:
+    _, s = simple_chain_seq
+    s.add_seq('S', [1 for _ in range(len(s))])
+    s.spawn_child(1, 3, 'X1'), s.spawn_child(1, 1, 'X2')
+    return s
+
+
 def test_init(simple_chain_seq):
     # with pytest.raises(MissingData):
     #     ChainSequence(1, 2)
@@ -139,12 +147,32 @@ def test_io(simple_chain_seq):
         assert child.id == s_r.children.pop().id
 
 
-# def test_apply_children(simple_chain_seq, simple_chain_structure):
-#     pass
+def name2argh(x: ChainSequence) -> ChainSequence:
+    return ChainSequence(x.start, x.end, 'argh', seqs=x._seqs)
 
 
-def test_match(simple_chain_seq, simple_chain_structure):
-    _, s = simple_chain_seq
+def test_apply_children(simple_chain_with_child):
+    s = simple_chain_with_child
+    s_new = s.apply_children(name2argh)
+    assert len(s.children) == 2
+    assert all(x.name in ['X1', 'X2'] for x in s.children)
+    assert all(x.name == 'argh' for x in s_new.children)
+    _ = s.apply_children(name2argh, inplace=True)
+    assert all(x.name == 'argh' for x in s.children)
+
+
+def test_filter_children(simple_chain_with_child):
+    s = simple_chain_with_child
+    s_new = s.filter_children(lambda c: c.name != 'X1')
+    assert len(s.children) == 2
+    assert len(s_new.children) == 1
+    assert s_new.children.pop().name == 'X2'
+    s.filter_children(lambda c: c.name != 'X1', inplace=True)
+    assert len(s.children) == 1
+
+
+def test_match(simple_chain_with_child):
+    s = simple_chain_with_child
     s.add_seq('X', 'AXCDX')
     with pytest.raises(KeyError):
         s.match('XXX', 'S')
@@ -153,3 +181,40 @@ def test_match(simple_chain_seq, simple_chain_structure):
     s.match('seq1', 'X', as_fraction=True, save=True)
     match = s.meta['Match_seq1_X']
     assert match == 0.6
+
+
+def to_str(s) -> list[str]:
+    return [str(x) for x in s]
+
+
+def is_iterable_of(xs, _type):
+    return all(isinstance(x, _type) for x in xs)
+
+
+def test_apply_to_map(simple_chain_with_child):
+    s = simple_chain_with_child
+
+    s_new = s.apply_to_map('S', to_str)
+    assert is_iterable_of(s_new['S'], str)
+    assert len(s_new.children) == 0
+    for c in s.children:
+        assert is_iterable_of(c['S'], int)
+
+    # Children weren't changed
+    s_new = s.apply_to_map('S', to_str, preserve_children=True)
+    assert len(s_new.children) == 2
+    for c in s_new.children:
+        assert is_iterable_of(c['S'], int)
+
+    # Children were both transferred and transformed
+    s_new = s.apply_to_map('S', to_str, apply_to_children=True)
+    assert len(s_new.children) == 2
+    for c in s_new.children:
+        assert is_iterable_of(c['S'], str)
+
+    # Same but with in-place op
+    s_new = s.apply_to_map('S', to_str, apply_to_children=True, inplace=True)
+    assert id(s_new) == id(s)
+    assert len(s_new.children) == len(s.children) == 2
+    for c in s.children:
+        assert is_iterable_of(c['S'], str)
