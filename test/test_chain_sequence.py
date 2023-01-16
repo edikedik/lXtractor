@@ -137,3 +137,19 @@ def test_io(simple_chain_seq):
 
         assert len(s_r.children) == 1
         assert child.id == s_r.children.pop().id
+
+
+# def test_apply_children(simple_chain_seq, simple_chain_structure):
+#     pass
+
+
+def test_match(simple_chain_seq, simple_chain_structure):
+    _, s = simple_chain_seq
+    s.add_seq('X', 'AXCDX')
+    with pytest.raises(KeyError):
+        s.match('XXX', 'S')
+    match = s.match('seq1', 'X', as_fraction=False, save=False)
+    assert match == 3
+    s.match('seq1', 'X', as_fraction=True, save=True)
+    match = s.meta['Match_seq1_X']
+    assert match == 0.6

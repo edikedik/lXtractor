@@ -403,6 +403,27 @@ class ChainSequence(Segment):
             self.meta.update(cov)
         return cov
 
+    def match(
+        self,
+        map_name1: str,
+        map_name2: str,
+        as_fraction: bool = True,
+        save: bool = True,
+    ) -> float:
+        """
+        :param map_name1: Mapping name 1.
+        :param map_name2: Mapping name 2.
+        :param as_fraction: Divide by the total length.
+        :param save: Save to meta as 'Match_{map_name1}_{map_name2}'.
+        :return: The total number or a fraction of matching characters between maps.
+        """
+        res = sum(1 for x, y in zip(self[map_name1], self[map_name2]) if x == y)
+        div = len(self) if as_fraction else 1
+        res = res / div
+        if save:
+            self.meta[f'Match_{map_name1}_{map_name2}'] = res
+        return res
+
     def get_map(self, key: str) -> dict[t.Hashable, NamedTupleT]:
         """
         Obtain the mapping of the form "key->item(seq_name=*,...)".

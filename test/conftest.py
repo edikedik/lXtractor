@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+import biotite.structure as bst
 from lXtractor.core.chain import ChainList, ChainStructure, ChainSequence
 from lXtractor.core.config import SeqNames
 from lXtractor.core.structure import GenericStructure
@@ -112,10 +113,12 @@ def simple_fasta_path() -> Path:
 @pytest.fixture()
 def sample_chain_list(simple_structure) -> ChainList:
     chain_str = ChainStructure.from_structure(simple_structure)
-    return ChainList([
-        sample_chain(prefix='c', structure=chain_str),
-        sample_chain(prefix='k', structure=chain_str)
-    ])
+    return ChainList(
+        [
+            sample_chain(prefix='c', structure=chain_str),
+            sample_chain(prefix='k', structure=chain_str),
+        ]
+    )
 
 
 @pytest.fixture()
@@ -143,3 +146,10 @@ def simple_chain_seq() -> tuple[SeqNames, ChainSequence]:
     fields = ChainSequence.field_names()
     s = ChainSequence(1, 5, 'S', {fields.seq1: 'ABCDE'})
     return fields, s
+
+
+@pytest.fixture()
+def simple_chain_structure(simple_chain_seq) -> ChainStructure:
+    _, s = simple_chain_seq
+    a = bst.array([bst.Atom([1, 2, 3], chain_id='X', res_name=c.seq1) for c in s])
+    return ChainStructure('XXXX', 'X', GenericStructure(a), s)
