@@ -14,7 +14,15 @@ from more_itertools import first_true, always_reversible
 from typing_extensions import Self
 
 from lXtractor.core.alignment import Alignment
-from lXtractor.core.base import AminoAcidDict, AlignMethod, Ord, NamedTupleT, SeqReader
+from lXtractor.core.base import (
+    AminoAcidDict,
+    AlignMethod,
+    Ord,
+    NamedTupleT,
+    SeqReader,
+    ApplyT,
+    FilterT,
+)
 from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.list import _wrap_children, add_category, ChainList
 from lXtractor.core.config import (
@@ -576,9 +584,7 @@ class ChainSequence(Segment):
         else:
             yield from iter(ChainList([]))
 
-    def apply_children(
-        self, fn: abc.Callable[[ChainSequence], ChainSequence], inplace: bool = False
-    ) -> Self:
+    def apply_children(self, fn: ApplyT[ChainSequence], inplace: bool = False) -> Self:
         """
         Apply some function to children.
 
@@ -600,11 +606,11 @@ class ChainSequence(Segment):
             meta=self.meta,
             children=children,
             parent=self.parent,
-            variables=self.variables
+            variables=self.variables,
         )
 
     def filter_children(
-        self, pred: abc.Callable[[ChainSequence], bool], inplace: bool = False
+        self, pred: FilterT[ChainSequence], inplace: bool = False
     ) -> Self:
         """
         Filter children using some predicate.
@@ -626,13 +632,13 @@ class ChainSequence(Segment):
             meta=self.meta,
             children=children,
             parent=self.parent,
-            variables=self.variables
+            variables=self.variables,
         )
 
     def apply_to_map(
         self,
         map_name: str,
-        fn: abc.Callable[[abc.Sequence[t.Any]], abc.Sequence[t.Any]],
+        fn: ApplyT[abc.Sequence],
         inplace: bool = False,
         preserve_children: bool = False,
         apply_to_children: bool = False,
@@ -698,7 +704,7 @@ class ChainSequence(Segment):
             seqs=seqs,
             parent=self.parent,
             children=children,
-            variables=self.variables
+            variables=self.variables,
         )
 
     @classmethod

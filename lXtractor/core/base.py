@@ -388,8 +388,22 @@ class UrlGetter(t.Protocol):
         ...
 
 
-class ApplyT(t.Protocol):
+@t.runtime_checkable
+class ApplyTWithArgs(t.Protocol, t.Generic[T]):
     def __call__(self, x: T, *args, **kwargs) -> T:
+        ...
+
+
+# ApplyT = abc.Callable[[T], T]
+@t.runtime_checkable
+class ApplyT(t.Protocol, t.Generic[T]):
+    def __call__(self, x: T) -> T:
+        ...
+
+
+@t.runtime_checkable
+class FilterT(t.Protocol, t.Generic[T]):
+    def __call__(self, x: T) -> bool:
         ...
 
 
