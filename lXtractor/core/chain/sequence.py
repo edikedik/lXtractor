@@ -600,6 +600,7 @@ class ChainSequence(Segment):
             meta=self.meta,
             children=children,
             parent=self.parent,
+            variables=self.variables
         )
 
     def filter_children(
@@ -625,6 +626,7 @@ class ChainSequence(Segment):
             meta=self.meta,
             children=children,
             parent=self.parent,
+            variables=self.variables
         )
 
     def apply_to_map(
@@ -696,6 +698,7 @@ class ChainSequence(Segment):
             seqs=seqs,
             parent=self.parent,
             children=children,
+            variables=self.variables
         )
 
     @classmethod
