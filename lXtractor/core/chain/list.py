@@ -533,7 +533,7 @@ class ChainList(abc.MutableSequence[CT]):
         """
         return self.filter(lambda c: any(cat == name for cat in c.categories))
 
-    def apply(self, fn: ApplyT, *args, **kwargs) -> ChainList[CT]:
+    def apply(self, fn: ApplyT) -> ChainList[CT]:
         """
         Apply a function to each object and return a new chain list of results.
 
@@ -542,7 +542,7 @@ class ChainList(abc.MutableSequence[CT]):
         :param kwargs: Passed to a `fn`.
         :return: A new chain list with application results.
         """
-        return ChainList([fn(c, *args, **kwargs) for c in self])
+        return ChainList((fn(c) for c in self))
 
 
 def _wrap_children(children: abc.Iterable[CT] | None) -> ChainList[CT]:
