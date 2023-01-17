@@ -1,4 +1,5 @@
 import typing as t
+from copy import deepcopy
 
 from lXtractor.core.chain import Chain, ChainStructure, ChainSequence
 from lXtractor.core.config import SeqNames
@@ -49,6 +50,12 @@ def sample_chain(prefix: str = 'c', structure: t.Optional[ChainStructure] = None
 
 def get_fst_chain(s: GenericStructure) -> ChainStructure:
     return ChainStructure.from_structure(next(s.split_chains()), s.pdb_id)
+
+
+def mark_meta(s: ChainStructure) -> ChainStructure:
+    seq = deepcopy(s.seq)
+    seq.meta['X'] = 'x'
+    return ChainStructure(s.pdb.id, s.pdb.chain, s.pdb.structure, seq)
 
 
 if __name__ == '__main__':

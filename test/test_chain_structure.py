@@ -8,6 +8,7 @@ from lXtractor.core.chain import ChainStructure
 from lXtractor.core.config import DumpNames, MetaNames
 from lXtractor.core.exceptions import InitError, NoOverlap, LengthMismatch
 from lXtractor.util.io import get_files, get_dirs
+from test.common import mark_meta
 from test.conftest import EPS
 
 
@@ -165,12 +166,6 @@ def test_filter_children(simple_chain_structure):
     _ = s.filter_children(lambda x: x.seq.name != 'X1', inplace=True)
     assert len(s.children) == 1
     assert s.children[0].seq.name == 'X2'
-
-
-def mark_meta(s: ChainStructure) -> ChainStructure:
-    seq = deepcopy(s.seq)
-    seq.meta['X'] = 'x'
-    return ChainStructure(s.pdb.id, s.pdb.chain, s.pdb.structure, seq)
 
 
 def test_apply_children(simple_chain_structure):

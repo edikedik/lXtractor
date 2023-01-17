@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import biotite.structure as bst
-from lXtractor.core.chain import ChainList, ChainStructure, ChainSequence
+from lXtractor.core.chain import ChainList, ChainStructure, ChainSequence, Chain
 from lXtractor.core.config import SeqNames
 from lXtractor.core.structure import GenericStructure
 from lXtractor.util.seq import read_fasta
@@ -153,3 +153,11 @@ def simple_chain_structure(simple_chain_seq) -> ChainStructure:
     _, s = simple_chain_seq
     a = bst.array([bst.Atom([1, 2, 3], chain_id='X', res_name=c.seq1) for c in s])
     return ChainStructure('XXXX', 'X', GenericStructure(a), s)
+
+
+@pytest.fixture
+def src_chain(chicken_src_seq, src_str, abl_str) -> Chain:
+    c = Chain.from_seq(chicken_src_seq)
+    c.add_structure(src_str)
+    c.add_structure(abl_str)
+    return c

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from typing_extensions import Self
 
-from lXtractor.core.base import SeqReader
+from lXtractor.core.base import SeqReader, ApplyT, FilterT
 from lXtractor.core.chain.list import ChainList, _wrap_children
 from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.sequence import ChainSequence
@@ -131,6 +131,89 @@ class Chain:
         :return: Iterator over levels of a child tree.
         """
         return topo_iter(self, lambda x: x.children)
+
+    def filter_children(self, pred: FilterT[Chain], inplace: bool = False) -> Self:
+        """
+        Filter children using some predicate.
+
+        :param pred: Some callable accepting chain and returning bool.
+        :param inplace: Filter :attr:`children` in place. Otherwise, return
+            a copy with only children transformed.
+        :return: A chain with filtered children.
+        """
+        children = self.children.filter(pred)
+
+        if inplace:
+            self.children = children
+            return self
+
+        return self.__class__(
+            seq=self.seq,
+            structures=self.structures,
+            children=children,
+            parent=self.parent,
+        )
+
+    def apply_children(self, fn: ApplyT[Chain], inplace: bool = False) -> Self:
+        """
+        Apply some function to children.
+
+        :param fn: A callable accepting and returning the chain type instance.
+        :param inplace: Apply to children in place. Otherwise, return a copy
+            with only children transformed.
+        :return: A chain with transformed children.
+        """
+        children = self.children.apply(fn)
+
+        if inplace:
+            self.children = children
+            return self
+
+        return self.__class__(
+            seq=self.seq,
+            structures=self.structures,
+            children=children,
+            parent=self.parent,
+        )
+
+    def filter_structures(
+        self, pred: FilterT[ChainStructure], inplace: bool = False
+    ) -> Self:
+        """
+        Filter chain :attr:`structures`.
+
+        :param pred: A callable accepting a chain structure and returning bool.
+        :param inplace: Filter :attr:`structures` in place. Otherwise, return
+            a copy with only children transformed.
+        :return: A chain with filtered structures.
+        """
+        structures = self.structures.filter(pred)
+        if inplace:
+            self.structures = structures
+            return self
+        return self.__class__(
+            seq=self.seq,
+            structures=structures,
+            children=self.children,
+            parent=self.parent,
+        )
+
+    def apply_structures(
+        self, fn: ApplyT[ChainStructure], inplace: bool = False
+    ) -> Self:
+        """
+        Apply some function to :attr:`structures`.
+
+        :param fn: A callable accepting and returning a chain structure.
+        :param inplace: Apply to :attr:`structures` in place. Otherwise, return
+            a copy with only children transformed.
+        :return: A chain with transformed structures.
+        """
+        structures = self.structures.apply(fn)
+        if inplace:
+            self.structures = structures
+            return self
+        return self.__class__(self.seq, structures, self.parent, self.children)
 
     @classmethod
     @t.overload

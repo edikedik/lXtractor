@@ -3,7 +3,7 @@ import pytest
 from lXtractor.core.chain import Chain, ChainStructure
 from lXtractor.core.config import Sep, SeqNames
 from lXtractor.core.exceptions import NoOverlap
-from test.common import sample_chain
+from test.common import sample_chain, mark_meta
 
 
 def test_basic(four_chain_structure_seq_path, four_chain_structure):
@@ -88,3 +88,48 @@ def test_iter(chicken_src_str):
     assert list(map(get_name, levels[0])) == ['c1', 'c2']
     assert list(map(get_name, levels[1])) == ['c1_1', 'c1_2', 'c2_1', 'c2_2']
     assert list(map(get_name, levels[2])) == ['c1_2_1']
+
+
+def test_filter_children(src_chain):
+    c = src_chain
+    c.spawn_child(270, 300, str_map_from='map_canonical', subset_structures=False)
+    assert len(c.children) == 1 and len(c.children[0].seq) == 31
+    c_new = c.filter_children(lambda x: len(x.seq) > 31)
+    assert len(c_new.children) == 0
+    assert len(c.children) == 1
+    c.filter_children(lambda x: len(x.seq) > 31, inplace=True)
+    assert len(c.children) == 0
+
+
+def rm_structures(c: Chain) -> Chain:
+    return Chain(c.seq)
+
+
+def test_apply_children(src_chain):
+    c = src_chain
+    c.spawn_child(270, 300, str_map_from='map_canonical', subset_structures=True)
+    assert len(c.children) == 1 and len(c.children[0].seq) == 31
+    c_new = c.apply_children(rm_structures)
+    assert len(c.children[0].structures) == 2
+    assert len(c_new.children[0].structures) == 0
+    c.apply_children(rm_structures, inplace=True)
+    assert len(c.children[0].structures) == 0
+
+
+def test_filter_structures(src_chain):
+    c = src_chain
+    s0len = len(c.structures[0].seq)
+    c_new = c.filter_structures(lambda x: len(x.seq) == s0len)
+    assert len(c.structures) == 2 and len(c_new.structures) == 1
+    assert c_new.structures[0].id == c.structures[0].id
+    c.filter_structures(lambda x: len(x.seq) == s0len, inplace=True)
+    assert len(c.structures) == 1
+
+
+def test_apply_structures(src_chain):
+    c = src_chain
+    c_new = c.apply_structures(mark_meta)
+    assert all('X' not in s.meta for s in c.structures)
+    assert all('X' in s.meta for s in c_new.structures)
+    c.apply_structures(mark_meta, inplace=True)
+    assert all('X' in s.meta for s in c.structures)
