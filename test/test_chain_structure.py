@@ -153,3 +153,33 @@ def test_rm_solvent(simple_chain_structure):
     assert 'HOH' not in srm.seq.seq3
     assert len(srm.seq) == n_rest
     assert len(srm.seq) + n_hoh == len(s.seq)
+
+
+def test_filter_children(simple_chain_structure):
+    s = simple_chain_structure
+    s.spawn_child(s.seq.start + 1, s.seq.end - 1, 'X1')
+    s.spawn_child(s.seq.start + 1, s.seq.end - 1, 'X2')
+    s_new = s.filter_children(lambda x: x.seq.name != 'X1')
+    assert (len(s.children) - 1) == len(s_new.children) == 1
+    assert s_new.children[0].seq.name == 'X2'
+    _ = s.filter_children(lambda x: x.seq.name != 'X1', inplace=True)
+    assert len(s.children) == 1
+    assert s.children[0].seq.name == 'X2'
+
+
+def mark_meta(s: ChainStructure) -> ChainStructure:
+    seq = deepcopy(s.seq)
+    seq.meta['X'] = 'x'
+    return ChainStructure(s.pdb.id, s.pdb.chain, s.pdb.structure, seq)
+
+
+def test_apply_children(simple_chain_structure):
+    s = simple_chain_structure
+    s.spawn_child(s.seq.start + 1, s.seq.end - 1, 'X1')
+    s.spawn_child(s.seq.start + 1, s.seq.end - 1, 'X2')
+    s_new = s.apply_children(mark_meta)
+    assert len(s.children) == 2
+    assert all('X' not in c.meta for c in s.children)
+    assert all('X' in c.meta for c in s_new.children)
+    s.apply_children(mark_meta, inplace=True)
+    assert all('X' in c.meta for c in s.children)

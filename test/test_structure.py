@@ -1,5 +1,4 @@
 from copy import deepcopy
-from itertools import repeat
 
 import pytest
 
@@ -50,11 +49,14 @@ def test_superpose(chicken_src_str):
     # align backbone of the first three residues
 
     _, rmsd, _ = a.superpose(
-        a_cp, res_id_self=[256, 257, 258], res_id_other=[257, 258, 259])
+        a_cp, res_id_self=[256, 257, 258], res_id_other=[257, 258, 259]
+    )
     assert rmsd < EPS
 
     _, rmsd, _ = a.superpose(
-        a_cp, res_id_self=[256, 257, 258], res_id_other=[257, 258, 259],
+        a_cp,
+        res_id_self=[256, 257, 258],
+        res_id_other=[257, 258, 259],
         atom_names_self=bb_atoms,
         atom_names_other=bb_atoms,
     )

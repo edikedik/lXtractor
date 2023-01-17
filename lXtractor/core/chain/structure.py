@@ -8,7 +8,7 @@ import numpy as np
 from biotite import structure as bst
 from typing_extensions import Self
 
-from lXtractor.core.base import SOLVENTS
+from lXtractor.core.base import SOLVENTS, ApplyT, FilterT
 from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.list import _wrap_children, ChainList
 from lXtractor.core.chain.sequence import ChainSequence
@@ -127,14 +127,6 @@ class ChainStructure:
 
     def __repr__(self) -> str:
         return self.id
-
-    def iter_children(self) -> abc.Generator[list[ChainStructure], None, None]:
-        """
-        Iterate :attr:`children` in topological order.
-
-        See :meth:`ChainSequence.iter_children` and :func:`topo_iter`.
-        """
-        return topo_iter(self, lambda x: x.children)
 
     @property
     def id(self) -> str:
@@ -375,6 +367,64 @@ class ChainStructure:
         if keep:
             self.children.append(child)
         return child
+
+    def iter_children(self) -> abc.Generator[list[ChainStructure], None, None]:
+        """
+        Iterate :attr:`children` in topological order.
+
+        See :meth:`ChainSequence.iter_children` and :func:`topo_iter`.
+        """
+        return topo_iter(self, lambda x: x.children)
+
+    def apply_children(self, fn: ApplyT[ChainStructure], inplace: bool = False) -> Self:
+        """
+        Apply some function to children.
+
+        :param fn: A callable accepting and returning the chain structure type
+            instance.
+        :param inplace: Apply to children in place. Otherwise, return a copy
+            with only children transformed.
+        :return: A chain structure with transformed children.
+        """
+        children = self.children.apply(fn)
+        if inplace:
+            self.children = children
+            return self
+        return self.__class__(
+            self.pdb.id,
+            self.pdb.chain,
+            self.pdb.structure,
+            seq=self.seq,
+            children=children,
+            parent=self.parent,
+            variables=self.variables,
+        )
+
+    def filter_children(
+        self, pred: FilterT[ChainStructure], inplace: bool = False
+    ) -> Self:
+        """
+        Filter children using some predicate.
+
+        :param pred: Some callable accepting chain structure and returning
+            bool.
+        :param inplace: Filter :attr:`children` in place. Otherwise, return
+            a copy with only children transformed.
+        :return: A chain structure with filtered children.
+        """
+        children = self.children.filter(pred)
+        if inplace:
+            self.children = children
+            return self
+        return self.__class__(
+            self.pdb.id,
+            self.pdb.chain,
+            self.pdb.structure,
+            seq=self.seq,
+            children=children,
+            parent=self.parent,
+            variables=self.variables,
+        )
 
     @classmethod
     def read(
