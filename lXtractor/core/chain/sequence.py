@@ -816,6 +816,10 @@ class ChainSequence(Segment):
         return cls(start, end, name, meta=meta, seqs={SeqNames.seq1: s, **kwargs})
 
     @classmethod
+    def make_empty(cls) -> ChainSequence:
+        return cls.from_string('')
+
+    @classmethod
     def from_df(
         cls,
         df: Path | pd.DataFrame,

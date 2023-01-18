@@ -34,6 +34,7 @@ def test_degenerate():
     assert len(s) == 0
     assert s.start == s.end == 0
     assert len(list(iter(s))) == 0
+    assert s == ChainSequence.make_empty()
     c = ChainSequence.from_string('c')
     assert c.is_singleton
     o = c & s
