@@ -14,7 +14,12 @@ from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.sequence import ChainSequence
 from lXtractor.core.chain.structure import ChainStructure
 from lXtractor.core.config import DumpNames, SeqNames, _DumpNames
-from lXtractor.core.exceptions import AmbiguousMapping, MissingData, NoOverlap
+from lXtractor.core.exceptions import (
+    AmbiguousMapping,
+    MissingData,
+    NoOverlap,
+    FormatError,
+)
 from lXtractor.util.seq import read_fasta
 
 LOGGER = logging.getLogger(__name__)
@@ -468,14 +473,15 @@ class Chain:
                     keep=str_keep_child,
                     keep_seq_child=str_seq_keep_child,
                 )
-            except (AmbiguousMapping, MissingData, NoOverlap) as e:
+            except (AmbiguousMapping, MissingData, NoOverlap, FormatError) as e:
                 msg = (
-                    "Failed to spawn substructure using boundaries "
-                    f"{start, end} due to {e}"
+                    f"Failed to spawn substructure from {structure} using boundaries "
+                    f"[{start, end}] due to {e}"
                 )
+                # logging.warning(msg)
+                LOGGER.warning(msg)
                 if not tolerate_failure:
                     raise e
-                LOGGER.warning(msg)
                 return None
 
         name = name or self.seq.name
