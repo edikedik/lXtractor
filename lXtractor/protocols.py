@@ -470,7 +470,7 @@ def filter_by_method(
     .. seealso::
         :meth:`PDB.fetch_info <lXtractor.ext.pdb_.PDB.fetch_info>`
 
-    .. notes::
+    .. note::
         Keys for the info dict are 'rcsb_entry_info' -> 'experimental_method'
 
     :param pdb_ids: An iterable over PDB IDs.
@@ -479,7 +479,7 @@ def filter_by_method(
     :param method: Method to match. Must correspond exactly.
     :param dir_: Dir to save info "entry" json dumps.
     :return: A list of PDB IDs obtained by desired experimental
-    procedure.
+        procedure.
     """
 
     def method_matches(d: dict) -> bool:

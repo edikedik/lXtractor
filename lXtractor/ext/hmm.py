@@ -131,8 +131,7 @@ class PyHMMer:
         :param objs: A single one or an iterable over `Chain*`-type objects.
         :param new_map_name: A name for a child
             :class:`ChainSequence <lXtractor.core.chain.ChainSequence` to hold
-                the mapping
-            to the hmm numbering.
+            the mapping to the hmm numbering.
         :param min_score: Min hit score.
         :param min_size: Min hit size.
         :param min_cov_hmm: Min HMM model coverage -- a fraction of

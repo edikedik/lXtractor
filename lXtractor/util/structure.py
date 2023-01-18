@@ -103,10 +103,11 @@ def filter_to_common_atoms(
         the common atoms are derived from the intersection
         ``a1.atoms & a2.atoms & {"C", "N", "CA", "CB"}``.
     :return: A pair of masks for a1 and a2, ``True`` for matching atoms.
-    :raises ValueError: (1) If `a1` and `a2` have different number of residues.
-        (2) If the selection for some residue produces different number
-        of atoms.
+    :raises ValueError:
 
+        1. If `a1` and `a2` have different number of residues.
+        2. If the selection for some residue produces different number
+            of atoms.
     """
 
     def preprocess_array(a: bst.AtomArray) -> tuple[int, bst.AtomArray]:

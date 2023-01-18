@@ -250,7 +250,7 @@ class SIFTS(AbstractResource):
 
             - remove records with empty chains.
             - select and rename key columns based on the ``SIFTS_RENAMES``
-            constant.
+                constant.
             - create a `PDB_Chain` column to speed up the search.
 
         :param overwrite: Overwrite both :attr:`df` and existing id mapping
