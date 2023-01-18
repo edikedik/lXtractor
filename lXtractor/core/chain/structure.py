@@ -128,6 +128,11 @@ class ChainStructure:
     def __repr__(self) -> str:
         return self.id
 
+    def __len__(self) -> int:
+        if self.pdb.structure is None:
+            return 0
+        return len(self.array)
+
     @property
     def id(self) -> str:
         """

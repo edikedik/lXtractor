@@ -103,6 +103,10 @@ class Chain:
         return self.seq.meta
 
     @property
+    def name(self) -> str | None:
+        return self.seq.name
+
+    @property
     def categories(self) -> list[str]:
         """
         :return: A list of categories from :attr:`seq`'s
@@ -231,7 +235,9 @@ class Chain:
 
     @classmethod
     @t.overload
-    def from_seq(cls, inp: str, read_method: SeqReader = read_fasta) -> Self:
+    def from_seq(
+        cls, inp: str | ChainSequence, read_method: SeqReader = read_fasta
+    ) -> Self:
         ...
 
     @classmethod
@@ -246,7 +252,12 @@ class Chain:
     @classmethod
     def from_seq(
         cls,
-        inp: str | tuple[str, str] | Path | TextIOBase | abc.Iterable[str],
+        inp: str
+        | tuple[str, str]
+        | ChainSequence
+        | Path
+        | TextIOBase
+        | abc.Iterable[str],
         read_method: SeqReader = read_fasta,
     ) -> Self | ChainList[Self]:
         """
@@ -261,11 +272,14 @@ class Chain:
             the input and embed the resulting :class:`Chain`'s into
             a :class:`ChainList`.
         """
+
         match inp:
             case str():
                 return cls(ChainSequence.from_string(inp))
             case [header, seq]:
                 return cls(ChainSequence.from_string(seq, name=header))
+            case ChainSequence():
+                return cls(inp)
             case _:
                 return ChainList(
                     cls(ChainSequence.from_string(seq, name=name))
@@ -348,6 +362,7 @@ class Chain:
         check_ids: bool = True,
         map_to_seq: bool = True,
         map_name: str = SeqNames.map_canonical,
+        add_to_children: bool = False,
         **kwargs,
     ):
         """
@@ -360,6 +375,10 @@ class Chain:
         :param map_to_seq: Align the structure sequence to the :attr:`seq` and
             create a mapping within the former.
         :param map_name: If `map_to_seq` is ``True``, use this map name.
+        :param add_to_children: If ``True``, will recursively add structure to
+            existing children according to their boundaries mapped to the
+            structure's numbering. Consequently, this requires mapping, i.e.,
+            ``map_to_seq=True``.
         :param kwargs: Passed to :meth:`ChainSequence.map_numbering`.
         :return: Mutates :attr:`structures` and returns nothing.
         :raise ValueError: If `check_ids` is ``True`` and the structure
@@ -375,6 +394,21 @@ class Chain:
         if map_to_seq:
             structure.seq.map_numbering(self.seq, name=map_name, **kwargs)
         self.structures.append(structure)
+        if add_to_children and len(self.children) > 0:
+            if not map_to_seq:
+                raise ValueError(
+                    'Propagating a structure into a child tree requires '
+                    '`map_to_seq==True`'
+                )
+            for c in self.children:
+                sub = structure.spawn_child(
+                    c.seq.start,
+                    c.seq.end,
+                    c.name,
+                    map_from=map_name,
+                    keep=False,
+                )
+                c.add_structure(sub, add_to_children=True)
 
     def transfer_seq_mapping(
         self,

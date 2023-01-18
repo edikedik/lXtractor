@@ -24,6 +24,22 @@ def test_basic(four_chain_structure_seq_path, four_chain_structure):
     assert len(p.structures) == 2
 
 
+def test_add_structure(chicken_src_seq, src_str):
+    c = Chain.from_seq(chicken_src_seq)
+    c1 = c.spawn_child(c.seq.start + 1, c.seq.end - 1, 'c1')
+    c2 = c1.spawn_child(c1.seq.start + 1, c1.seq.end - 1, 'c2')
+    assert len(c.seq) == len(c1.seq) + 2 == len(c2.seq) + 4
+    assert len(c.structures) == 0
+    c.add_structure(src_str)
+    assert len(c.structures) == 1
+    c.structures.pop()
+    c.add_structure(src_str, add_to_children=True)
+    children = list(c.iter_children())
+    assert len(children) == 2
+    c1, c2 = children[0][0], children[1][0]
+    assert len(c1.structures) == len(c2.structures) == 1
+
+
 def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     p = Chain.from_seq(chicken_src_seq)
     chains = chicken_src_str.split_chains()
