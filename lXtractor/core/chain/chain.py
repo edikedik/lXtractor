@@ -276,10 +276,10 @@ class Chain:
         match inp:
             case str():
                 return cls(ChainSequence.from_string(inp))
-            case [header, seq]:
-                return cls(ChainSequence.from_string(seq, name=header))
             case ChainSequence():
                 return cls(inp)
+            case [str(), str()]:
+                return cls(ChainSequence.from_string(inp[1], name=inp[0]))
             case _:
                 return ChainList(
                     cls(ChainSequence.from_string(seq, name=name))

@@ -41,6 +41,9 @@ from lXtractor.variables.base import Variables
 
 UNK_NAME = 'Unk'
 
+if t.TYPE_CHECKING:
+    from lXtractor.core.chain import Chain, ChainStructure
+
 
 class ChainSequence(Segment):
     """
@@ -499,6 +502,37 @@ class ChainSequence(Segment):
             This is a shortcut to :meth:`as_df` and getting `df.values`.
         """
         return self.as_df().values
+
+    def as_chain(
+        self,
+        transfer_children: bool = True,
+        structures: abc.Sequence[ChainStructure] | None = None,
+        **kwargs,
+    ) -> Chain:
+        """
+        Convert this chain sequence to chain.
+
+        .. note::
+            Pass ``add_to_children=True`` to transfer `structure` to each child
+            if ``transfer_children=True``.
+
+        :param transfer_children: Transfer existing children.
+        :param structures: Add structures to the created chain.
+        :param kwargs: Passed to :meth:`Chain.add_structure
+            <lXtractor.core.chain.chain.Chain.add_structure>`
+        :return:
+        """
+        from lXtractor.core.chain import Chain
+
+        c = Chain.from_seq(self)
+        if transfer_children:
+            c.children = ChainList(
+                [x.as_chain(transfer_children=True) for x in self.children]
+            )
+        if structures:
+            for s in structures:
+                c.add_structure(s, **kwargs)
+        return c
 
     # @lru_cache
     def spawn_child(

@@ -141,7 +141,7 @@ def simple_chain_variables() -> tuple[PseudoDihedral, Dist, SeqEl]:
     return PseudoDihedral(1, 2, 3, 4), Dist(1, 40, 'CB', 'CB'), SeqEl(1)
 
 
-@pytest.fixture(scope='function')
+@pytest.fixture()
 def simple_chain_seq() -> tuple[SeqNames, ChainSequence]:
     fields = ChainSequence.field_names()
     s = ChainSequence(1, 5, 'S', {fields.seq1: 'ABCDE'})
@@ -151,8 +151,8 @@ def simple_chain_seq() -> tuple[SeqNames, ChainSequence]:
 @pytest.fixture()
 def simple_chain_structure(simple_chain_seq) -> ChainStructure:
     _, s = simple_chain_seq
-    a = bst.array([bst.Atom([1, 2, 3], chain_id='X', res_name=c.seq1) for c in s])
-    return ChainStructure('XXXX', 'X', GenericStructure(a), s)
+    a = bst.array([bst.Atom([1, 2, 3], chain_id='X', res_name=c) for c in s.seq1])
+    return ChainStructure('XXXX', 'X', GenericStructure(a))
 
 
 @pytest.fixture

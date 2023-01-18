@@ -218,3 +218,18 @@ def test_apply_to_map(simple_chain_with_child):
     assert len(s_new.children) == len(s.children) == 2
     for c in s.children:
         assert is_iterable_of(c['S'], str)
+
+
+def test_as_chain(simple_chain_seq, simple_chain_structure):
+    _, seq = simple_chain_seq
+    c1 = seq.spawn_child(1, 2, 'C')
+    s = simple_chain_structure
+    c = seq.as_chain()
+    assert c.seq == seq
+    assert len(c.children) == 1
+    assert c.children[0].seq == c1
+    c = seq.as_chain(structures=[s])
+    assert len(c.structures) == 1
+    assert len(c.children[0].structures) == 0
+    c = seq.as_chain(structures=[s], add_to_children=True)
+    assert len(c.children[0].structures) == 1
