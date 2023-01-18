@@ -1,4 +1,4 @@
-name: lXt-dev
+name: lXt
 
 channels:
   - conda-forge
