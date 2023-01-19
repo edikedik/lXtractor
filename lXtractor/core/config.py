@@ -1,3 +1,6 @@
+"""
+A module encompassing various settings of lXtractor objects.
+"""
 from collections import namedtuple
 from dataclasses import dataclass
 
@@ -5,6 +8,9 @@ Separators = namedtuple(
     'Separators', ['list', 'chain', 'dom', 'uni_pdb', 'str', 'start_end']
 )
 Sep = Separators(',', ':', '::', '_', '--', '|')
+EMPTY_PDB_ID: str = 'XXXX'
+EMPTY_CHAIN_ID: str = 'X'
+UNK_NAME: str = 'UNK'
 
 
 @dataclass

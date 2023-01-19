@@ -6,7 +6,7 @@ import pytest
 
 from lXtractor.core.chain import ChainStructure
 from lXtractor.core.config import DumpNames, MetaNames
-from lXtractor.core.exceptions import InitError, NoOverlap, LengthMismatch
+from lXtractor.core.exceptions import InitError, NoOverlap, LengthMismatch, MissingData
 from lXtractor.util.io import get_files, get_dirs
 from test.common import mark_meta
 from test.conftest import EPS
@@ -47,6 +47,25 @@ def test_init(simple_structure, four_chain_structure):
     assert fields.seq1 in s.seq
     assert fields.seq3 in s.seq
     assert fields.enum in s.seq
+
+
+def test_degenerate(simple_chain_structure):
+    simple_cs = simple_chain_structure
+    cs = ChainStructure('xxxx', 'x', None)
+    assert len(cs) == 0 and cs.is_empty
+    assert ChainStructure.make_empty('xxxx', 'x') == cs
+    assert len(cs.seq) == 0
+    assert cs.rm_solvent() == cs
+    with pytest.raises(MissingData):
+        simple_cs.superpose(cs)
+    with pytest.raises(MissingData):
+        cs.superpose(simple_cs)
+    with pytest.raises(MissingData):
+        cs.superpose(cs)
+    with pytest.raises(MissingData):
+        cs.spawn_child(1, 1)
+    with pytest.raises(MissingData):
+        cs.write(Path('./anywhere'))
 
 
 def test_spawn(simple_chain_structure):

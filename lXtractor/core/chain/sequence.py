@@ -32,14 +32,13 @@ from lXtractor.core.config import (
     _MetaNames,
     DumpNames,
     _DumpNames,
+    UNK_NAME,
 )
 from lXtractor.core.exceptions import MissingData, InitError, AmbiguousMapping
 from lXtractor.core.segment import Segment
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.seq import mafft_align, map_pairs_numbering, read_fasta
 from lXtractor.variables.base import Variables
-
-UNK_NAME = 'Unk'
 
 if t.TYPE_CHECKING:
     from lXtractor.core.chain import Chain, ChainStructure
@@ -817,6 +816,9 @@ class ChainSequence(Segment):
 
     @classmethod
     def make_empty(cls) -> ChainSequence:
+        """
+        :return: An empty chain sequence.
+        """
         return cls.from_string('')
 
     @classmethod
