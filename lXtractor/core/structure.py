@@ -3,7 +3,7 @@ Module defines basic interfaces to interact with macromolecular structures.
 """
 from __future__ import annotations
 
-import typing as t
+import logging
 from collections import abc
 from dataclasses import dataclass
 from os import PathLike
@@ -19,6 +19,8 @@ from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, Miss
 from lXtractor.core.segment import Segment
 from lXtractor.util.structure import filter_selection
 
+LOGGER = logging.getLogger(__name__)
+
 
 class GenericStructure:
     """
@@ -26,27 +28,64 @@ class GenericStructure:
     a single :class:`biotite.structure.AtomArray` instance.
     """
 
-    __slots__ = ('array', 'pdb_id')
+    __slots__ = ('_array', 'pdb_id')
 
-    def __init__(self, array: bst.AtomArray, pdb_id: t.Optional[str] = None):
+    def __init__(self, array: bst.AtomArray, pdb_id: str | None = None):
         """
         :param array: Atom array object.
         :param pdb_id: PDB ID of a structure in `array`.
         """
         #: Atom array object.
-        self.array: bst.AtomArray = array
+        self._array: bst.AtomArray = array
         #: PDB ID of a structure in `array`.
         self.pdb_id: str | None = pdb_id
 
+    def __len__(self) -> int:
+        return len(self.array)
+
+    @property
+    def array(self) -> bst.AtomArray:
+        """
+        :return: Atom array object.
+        """
+        return self._array
+
+    @property
+    def is_empty(self) -> bool:
+        """
+        :return: ``True`` if the :meth:`array` is empty and ``False``
+            otherwise.
+        """
+        return len(self) == 0
+
     @classmethod
-    def read(cls, path: Path) -> GenericStructure:
+    def read(
+        cls, path: Path, path2id: abc.Callable[[Path], str] = lambda p: p.stem
+    ) -> Self:
+        """
+        :param path: Path to a structure in supported format.
+        :param path2id: A callable obtaining a PDB ID from the file path.
+            By default, it's a ``Path.stem``.
+        :return: Parsed structure.
+        """
         array = strio.load_structure(str(path))
+        pdb_id = path2id(path)
+        if not len(pdb_id) == 4:
+            LOGGER.warning(f'Did not obtain a valid PDB ID {pdb_id} from {path}')
         if isinstance(array, bst.AtomArrayStack):
             raise InitError(
                 f'{path} is likely an NMR structure. '
                 f'NMR structures are not supported.'
             )
-        return cls(array, path.stem)
+        return cls(array, pdb_id)
+
+    @classmethod
+    def make_empty(cls, pdb_id: str | None = None) -> Self:
+        """
+        :param pdb_id: (Optional) PDB ID of the created array.
+        :return: An instance with empty :meth:`array`.
+        """
+        return cls(bst.AtomArray(0), pdb_id)
 
     def write(self, path: Path | PathLike | str):
         """
@@ -194,7 +233,7 @@ class PDB_Chain:
 
     id: str
     chain: str
-    structure: GenericStructure
+    structure: GenericStructure | None
 
 
 def _validate_chain(pdb: PDB_Chain):

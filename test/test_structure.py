@@ -9,14 +9,21 @@ from test.conftest import EPS
 
 def test_init(simple_structure_path):
     s = GenericStructure.read(simple_structure_path)
-    assert len(s.array) > 0
+    assert len(s) > 0
+
+
+def test_degenerate():
+    s = GenericStructure.make_empty()
+    assert len(s) == 0
+    assert s.is_empty
+    assert s.pdb_id is None
 
 
 def test_split(simple_structure):
     s = simple_structure
     chains = list(s.split_chains())
     assert len(chains) == 1
-    assert len(chains[0].array) == len(s.array)
+    assert len(chains[0]) == len(s)
     assert isinstance(chains.pop(), GenericStructure)
 
 
