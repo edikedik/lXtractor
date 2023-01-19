@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import pytest
 
-from lXtractor.core.exceptions import LengthMismatch, MissingData
+from lXtractor.core.exceptions import LengthMismatch, MissingData, NoOverlap
 from lXtractor.core.structure import GenericStructure
 from test.conftest import EPS
 
@@ -12,11 +12,23 @@ def test_init(simple_structure_path):
     assert len(s) > 0
 
 
-def test_degenerate():
+def test_degenerate(simple_structure):
     s = GenericStructure.make_empty()
     assert len(s) == 0
     assert s.is_empty
     assert s.pdb_id is None
+
+    assert len(list(s.get_sequence())) == 0
+    assert len(list(s.split_chains())) == 0
+
+    with pytest.raises(NoOverlap):
+        s.sub_structure(1, 1)
+    with pytest.raises(MissingData):
+        _ = simple_structure.superpose(s)
+    with pytest.raises(MissingData):
+        _ = s.superpose(simple_structure)
+    with pytest.raises(MissingData):
+        _ = s.superpose(s)
 
 
 def test_split(simple_structure):

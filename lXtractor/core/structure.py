@@ -4,6 +4,7 @@ Module defines basic interfaces to interact with macromolecular structures.
 from __future__ import annotations
 
 import logging
+import typing as t
 from collections import abc
 from dataclasses import dataclass
 from os import PathLike
@@ -42,6 +43,11 @@ class GenericStructure:
 
     def __len__(self) -> int:
         return len(self.array)
+
+    def __eq__(self, other: t.Any) -> bool:
+        if isinstance(other, GenericStructure):
+            return self.pdb_id == other.pdb_id and np.all(self.array == other.array)
+        return False
 
     @property
     def array(self) -> bst.AtomArray:
@@ -102,6 +108,9 @@ class GenericStructure:
             (3) residue number.
         """
         # TODO: rm specialization towards protein seq
+        if self.is_empty:
+            return []
+
         mapping = AminoAcidDict()
         for r in bst.residue_iter(self.array):
             atom = r[0]
@@ -127,12 +136,15 @@ class GenericStructure:
 
     def sub_structure(self, start: int, end: int) -> Self:
         """
-        Create a sub-structure encompassing some continuout segment.
+        Create a sub-structure encompassing some continuous segment.
 
         :param start: Residue number to start from (inclusive).
         :param end: Residue number to stop at (inclusive).
         :return: A new Generic structure with residues in ``[start, end]``.
         """
+        if self.is_empty:
+            raise NoOverlap('Attempting to sub an empty structure')
+
         self_start, self_end = self.array.res_id.min(), self.array.res_id.max()
 
         # This is needed when some coordinates are <= 0 which can occur
@@ -196,6 +208,9 @@ class GenericStructure:
                     m = np.ones_like(a, bool)
             return m
 
+        if self.is_empty or other.is_empty:
+            raise MissingData('Superposing empty structures is not supported')
+
         if mask_self is None:
             mask_self = _get_mask(self.array, res_id_self, atom_names_self)
         if mask_other is None:
@@ -237,7 +252,7 @@ class PDB_Chain:
 
 
 def _validate_chain(pdb: PDB_Chain):
-    if pdb.structure is None or len(pdb.structure.array) == 0:
+    if pdb.structure.is_empty:
         return
     chains = set(pdb.structure.array.chain_id)
     if len(chains) > 1:
