@@ -12,7 +12,16 @@ from lXtractor.core.base import SOLVENTS, ApplyT, FilterT
 from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.list import _wrap_children, ChainList
 from lXtractor.core.chain.sequence import ChainSequence
-from lXtractor.core.config import SeqNames, Sep, MetaNames, DumpNames, _DumpNames
+from lXtractor.core.config import (
+    SeqNames,
+    Sep,
+    MetaNames,
+    DumpNames,
+    _DumpNames,
+    EMPTY_PDB_ID,
+    EMPTY_CHAIN_ID,
+    UNK_NAME,
+)
 from lXtractor.core.exceptions import LengthMismatch, InitError, MissingData
 from lXtractor.core.structure import GenericStructure, PDB_Chain, _validate_chain
 from lXtractor.util.io import get_files, get_dirs
@@ -58,7 +67,7 @@ class ChainStructure:
         self,
         pdb_id: str,
         pdb_chain: str,
-        pdb_structure: GenericStructure,
+        pdb_structure: GenericStructure | None,
         seq: ChainSequence | None = None,
         parent: ChainStructure | None = None,
         children: abc.Iterable[ChainStructure] | None = None,
@@ -82,6 +91,8 @@ class ChainStructure:
         :raise InitError: If invalid (e.g., multi-chain structure) is provided.
         """
         #: A container with PDB ID, PDB Chain, and parsed structure.
+        if pdb_structure is None:
+            pdb_structure = GenericStructure.make_empty(pdb_id)
         self.pdb: PDB_Chain = PDB_Chain(pdb_id, pdb_chain, pdb_structure)
         _validate_chain(self.pdb)
 
@@ -133,6 +144,11 @@ class ChainStructure:
             return 0
         return len(self.array)
 
+    def __eq__(self, other: t.Any) -> bool:
+        if isinstance(other, ChainStructure):
+            return self.pdb == other.pdb and self.seq == other.seq
+        return False
+
     @property
     def id(self) -> str:
         """
@@ -163,6 +179,13 @@ class ChainStructure:
         """
         return self.seq.categories
 
+    @property
+    def is_empty(self) -> bool:
+        """
+        :return: ``True`` if the structure is empty and ``False`` otherwise.
+        """
+        return len(self) == 0
+
     @classmethod
     def from_structure(
         cls,
@@ -180,14 +203,27 @@ class ChainStructure:
         :return: Initialized chain structure.
         """
         if isinstance(structure, bst.AtomArray):
-            structure = GenericStructure(structure)
-        try:
-            chain_id = chain_id or structure.array.chain_id[0]
-            pdb_id = pdb_id or structure.pdb_id or 'Unk'
-        except IndexError as e:
-            raise MissingData('Failed to infer chain ID from empty structure') from e
+            structure = GenericStructure(structure, pdb_id)
+
+        pdb_id = pdb_id or structure.pdb_id or EMPTY_PDB_ID
+
+        if structure.is_empty:
+            return cls(pdb_id, chain_id or EMPTY_CHAIN_ID, structure)
+
+        chain_id = chain_id or structure.array.chain_id[0]
 
         return cls(pdb_id, chain_id, structure)
+
+    @classmethod
+    def make_empty(cls, pdb_id: str, pdb_chain: str) -> ChainStructure:
+        """
+        Create an empty chain structure.
+
+        :param pdb_id: PDB ID.
+        :param pdb_chain: Chain ID.
+        :return: An empty chain structure.
+        """
+        return cls(pdb_id, pdb_chain, GenericStructure.make_empty(pdb_id))
 
     def rm_solvent(self) -> Self:
         """
@@ -195,6 +231,9 @@ class ChainStructure:
 
         :return: A new instance without solvent molecules.
         """
+        if self.is_empty:
+            return self
+
         return self.__class__.from_structure(
             GenericStructure(
                 self.array[~np.isin(self.array.res_name, SOLVENTS)],
@@ -275,6 +314,9 @@ class ChainStructure:
 
             return filter_selection(c.array, _res_id, _atom_names)
 
+        if self.is_empty or other.is_empty:
+            raise MissingData('Overlapping empty structures is not supported')
+
         match atom_names:
             case [str(), *_]:
                 if res_id is not None:
@@ -351,6 +393,9 @@ class ChainStructure:
 
         if start > end:
             raise ValueError(f"Invalid boundaries {start, end}")
+
+        if self.is_empty:
+            raise MissingData('Attempting to spawn a child from an empty structure')
 
         name = name or self.seq.name
 
@@ -465,8 +510,8 @@ class ChainStructure:
         structure = GenericStructure.read(base_dir / stems[bname])
 
         seq = ChainSequence.read(base_dir, dump_names=dump_names, search_children=False)
-        pdb_id = seq.meta.get(MetaNames.pdb_id, "UnkPDB")
-        chain_id = seq.meta.get(MetaNames.pdb_chain, "UnkChain")
+        pdb_id = seq.meta.get(MetaNames.pdb_id, EMPTY_PDB_ID)
+        chain_id = seq.meta.get(MetaNames.pdb_chain, EMPTY_CHAIN_ID)
 
         if dump_names.variables in files:
             variables = Variables.read(files[dump_names.variables]).structure
@@ -500,6 +545,9 @@ class ChainStructure:
         :return: Nothing.
         """
 
+        if self.is_empty:
+            raise MissingData('Attempting to write an empty chain structure')
+
         base_dir.mkdir(exist_ok=True, parents=True)
 
         self.seq.write(base_dir)
@@ -509,7 +557,7 @@ class ChainStructure:
 
         if write_children:
             for child in self.children:
-                child_name = child.seq.name or 'Unk'
+                child_name = child.seq.name or UNK_NAME
                 child_dir = base_dir / DumpNames.segments_dir / child_name
                 child.write(child_dir, fmt, dump_names=dump_names, write_children=True)
 
