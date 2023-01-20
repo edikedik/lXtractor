@@ -29,6 +29,16 @@ def test_init(simple_chain_seq):
     assert len(s) == 5
 
 
+def test_spawn(simple_chain_seq):
+    _, s = simple_chain_seq
+    s13 = s.spawn_child(1, 3)
+    s12 = s13.spawn_child(1, 2)
+    assert s12.parent == s13
+    assert s13.parent == s
+    assert s12.name == 'S'
+    assert s13.name == 'S'
+
+
 def test_degenerate():
     s = ChainSequence.from_string('')
     assert len(s) == 0
