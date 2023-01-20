@@ -25,6 +25,9 @@ from lXtractor.util.seq import read_fasta
 LOGGER = logging.getLogger(__name__)
 
 
+# TODO: support for empty chain in methods
+
+
 class Chain:
     """
     A container, encompassing a :class:`ChainSequence` and possibly many
@@ -103,7 +106,27 @@ class Chain:
         return self.seq.meta
 
     @property
+    def start(self) -> int:
+        """
+        :return: Structure sequence's :attr:`start <lXtractor.core.chain.
+            sequence.start>`
+        """
+        return self.seq.start
+
+    @property
+    def end(self) -> int:
+        """
+        :return: Structure sequence's :attr:`end <lXtractor.core.chain.
+            sequence.end>`
+        """
+        return self.end
+
+    @property
     def name(self) -> str | None:
+        """
+        :return: Structure sequence's :attr:`name <lXtractor.core.chain.
+            sequence.name>`
+        """
         return self.seq.name
 
     @property
@@ -316,6 +339,10 @@ class Chain:
                 )
                 c.children.append(child)
         return c
+
+    @classmethod
+    def make_empty(cls) -> Self:
+        return cls(ChainSequence.make_empty())
 
     def write(
         self,

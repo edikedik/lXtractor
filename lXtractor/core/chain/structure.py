@@ -172,6 +172,30 @@ class ChainStructure:
         return self.seq.meta
 
     @property
+    def start(self) -> int:
+        """
+        :return: Structure sequence's :attr:`start <lXtractor.core.chain.
+            sequence.start>`
+        """
+        return self.seq.start
+
+    @property
+    def end(self) -> int:
+        """
+        :return: Structure sequence's :attr:`end <lXtractor.core.chain.
+            sequence.end>`
+        """
+        return self.end
+
+    @property
+    def name(self) -> str | None:
+        """
+        :return: Structure sequence's :attr:`name <lXtractor.core.chain.
+            sequence.name>`
+        """
+        return self.seq.name
+
+    @property
     def categories(self) -> list[str]:
         """
         :return: A list of categories encapsulated within
@@ -215,7 +239,9 @@ class ChainStructure:
         return cls(pdb_id, chain_id, structure)
 
     @classmethod
-    def make_empty(cls, pdb_id: str, pdb_chain: str) -> ChainStructure:
+    def make_empty(
+        cls, pdb_id: str = EMPTY_PDB_ID, pdb_chain: str = EMPTY_CHAIN_ID
+    ) -> ChainStructure:
         """
         Create an empty chain structure.
 
