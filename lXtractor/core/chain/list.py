@@ -155,6 +155,15 @@ class ChainList(abc.MutableSequence[CT]):
     def __len__(self) -> int:
         return len(self._chains)
 
+    def __eq__(self, other: t.Any) -> bool:
+        if not isinstance(other, ChainList):
+            return False
+        if isinstance(other, abc.Sized):
+            if len(self) != len(other):
+                return False
+            return all(o1 == o2 for o1, o2 in zip(self, other))
+        return False
+
     @t.overload
     def __getitem__(self, index: int) -> CT:
         ...
