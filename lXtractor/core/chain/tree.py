@@ -2,6 +2,7 @@
 A module to handle the ancestral tree of the Chain*-type objects defined
 by their ``parent``/``children`` attributes and/or ``meta`` info.
 """
+import re
 import typing as t
 from collections import abc
 
@@ -10,7 +11,7 @@ from more_itertools import windowed
 
 from lXtractor.core.chain import Chain, ChainSequence, ChainStructure, ChainList
 from lXtractor.core.config import EMPTY_PDB_ID, EMPTY_CHAIN_ID
-from lXtractor.core.exceptions import MissingData
+from lXtractor.core.exceptions import MissingData, FormatError
 
 T = t.TypeVar('T')
 CT = t.TypeVar('CT', ChainSequence, ChainStructure, Chain)
@@ -18,6 +19,7 @@ CT_: t.TypeAlias = Chain | ChainSequence | ChainStructure
 
 _SEP = '<-('
 FILLER = '*'
+NODE_PATTERN = re.compile(r'(.+)\|(\d+-\d+)')
 
 
 def node_name(c: CT_) -> str:
@@ -85,7 +87,19 @@ def make_filled(name: str, _t: CT) -> CT:
         :class:`ChainStructure <lXtractor.core.chain.structure.ChainStructure>`
         object, it will have an empty structure.
     """
-    real_name, bounds = name.split('|')
+    re_find = NODE_PATTERN.findall(name)
+    if len(re_find) != 1:
+        raise FormatError(
+            f'Failed to parse name {name} into {{name}}|{{start}}-{{end}} format. '
+            f're.findall results: {re_find}'
+        )
+    match = re_find[0]
+    if len(match) != 2:
+        raise FormatError(
+            f'Unexpected match from {name}. Expected to find exactly two items: '
+            f'name and boundaries. Found {len(match)}: {match}'
+        )
+    real_name, bounds = match
     start, end = map(int, bounds.split('-'))
     if start == end == 0:
         return _t.__class__.make_empty()
@@ -96,7 +110,7 @@ def make_filled(name: str, _t: CT) -> CT:
     if isinstance(_t, ChainSequence):
         return seq
     if isinstance(_t, ChainStructure):
-        ChainStructure(EMPTY_PDB_ID, EMPTY_CHAIN_ID, None, seq=seq)
+        return ChainStructure(EMPTY_PDB_ID, EMPTY_CHAIN_ID, None, seq=seq)
     raise TypeError(f'Unexpected type {type(_t)} of {_t}')
 
 

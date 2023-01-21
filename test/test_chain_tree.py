@@ -1,6 +1,6 @@
 import pytest
 
-from lXtractor.core.chain import ChainSequence, ChainList
+from lXtractor.core.chain import ChainSequence, ChainList, Chain, ChainStructure
 from lXtractor.core.chain.tree import (
     list_ancestors,
     list_ancestors_names,
@@ -40,6 +40,27 @@ def test_list_ancestors_names(chains, simple_chain_structure):
     c = simple_chain_structure.spawn_child(1, 2)
     par_list = list_ancestors_names(c)
     assert par_list == [simple_chain_structure.meta['id']]
+
+
+@pytest.mark.parametrize(
+    'inp,is_valid,example_obj,expected',
+    [
+        ('C|1-5', True, ChainSequence.make_empty(), (5, True)),
+        ('C|1-1', True, Chain.make_empty(), (1, True)),
+        ('C|some|info|1-5', True, ChainStructure.make_empty(), (0, True)),
+        ('C|1~5', False, None, None),
+        ('C|0-1', False, None, None),
+        ('C/1-5', False, None, None),
+    ],
+)
+def test_make_filled(inp, is_valid, example_obj, expected):
+    if is_valid:
+        obj = make_filled(inp, example_obj)
+        size = len(obj.seq) if isinstance(obj, Chain) else len(obj)
+        assert (size, isinstance(obj, type(example_obj))) == expected
+    else:
+        with pytest.raises(Exception):
+            _ = make_filled(inp, example_obj)
 
 
 def test_make_tree(chains):
