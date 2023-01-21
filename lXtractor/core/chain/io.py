@@ -18,13 +18,23 @@ from lXtractor.util.io import get_dirs
 CT = t.TypeVar('CT', ChainSequence, ChainStructure, Chain)
 LOGGER = logging.getLogger(__name__)
 
+_CB: t.TypeAlias = abc.Callable[[CT], CT]
+
 
 @curry
 def _read_obj(
-    path: Path, obj_type: t.Type[CT], tolerate_failures: bool, **kwargs
+    path: Path,
+    obj_type: t.Type[CT],
+    tolerate_failures: bool,
+    callbacks: abc.Iterable[_CB] | None,
+    **kwargs,
 ) -> CT | None:
     try:
-        return obj_type.read(path, **kwargs)
+        obj = obj_type.read(path, **kwargs)
+        if callbacks is not None:
+            for cb in callbacks:
+                obj = cb(obj)
+        return obj
     except Exception as e:
         LOGGER.warning(f"Failed to initialize {obj_type} from {path}")
         LOGGER.exception(e)
@@ -79,13 +89,26 @@ class ChainIO:
         #: File names container.
         self.dump_names = dump_names
 
-    def _read(
+    def read(
         self,
         obj_type: t.Type[CT],
         path: Path | abc.Iterable[Path],
         non_blocking: bool = False,
+        callbacks: abc.Sequence[_CB] | None = None,
         **kwargs,
     ) -> abc.Generator[CT | Future | None, None, None]:
+        """
+        Read object dump.
+
+        :param obj_type: Some class with ``@classmethod(read(path))``.
+        :param path: Path to the dump to read from. It's a path to directory
+            holding files necessary to init a given `obj_type`.
+        :param non_blocking: Return `Future` objects without attempting to
+            retrieve the result.
+        :param callbacks: Callables applied sequentially to parsed object.
+        :param kwargs: Passed to the object's :meth:`read` method.
+        :return: A generator over initialized objects or futures.
+        """
 
         if isinstance(path, Path):
             dirs = get_dirs(path)
@@ -93,7 +116,10 @@ class ChainIO:
             dirs = {p.name: p for p in path if p.is_dir()}
 
         _read = _read_obj(
-            obj_type=obj_type, tolerate_failures=self.tolerate_failures, **kwargs
+            obj_type=obj_type,
+            tolerate_failures=self.tolerate_failures,
+            callbacks=callbacks,
+            **kwargs,
         )
 
         if DumpNames.segments_dir in dirs or not dirs and isinstance(path, Path):
@@ -167,7 +193,7 @@ class ChainIO:
                         yield from futures
 
                     _futures = (
-                        tqdm(futures, desc=f"Writing objects")
+                        tqdm(futures, desc="Writing objects")
                         if self.verbose
                         else futures
                     )
@@ -187,11 +213,11 @@ class ChainIO:
         :class:`Chain` objects.
 
         :param path: Path to a dump or a dir of dumps.
-        :param kwargs: Passed to :meth:`Chain.read`
+        :param kwargs: Passed to :meth:`read`.
         :return: An single chain or iterator over chain objects read
             sequentially or in parallel.
         """
-        return self._read(Chain, path, **kwargs)
+        return self.read(Chain, path, **kwargs)
 
     def read_chain_seq(
         self, path: Path | abc.Iterable[Path], **kwargs
@@ -205,11 +231,11 @@ class ChainIO:
         :class:`ChainSequence` objects.
 
         :param path: Path to a dump or a dir of dumps.
-        :param kwargs: Passed to :meth:`ChainSequence.read`
-        :return: An single chain sequence or iterator over
+        :param kwargs: Passed to :meth:`read`.
+        :return: A single chain sequence or iterator over
             :class:`ChainSequence` objects read sequentially or in parallel.
         """
-        return self._read(ChainSequence, path, **kwargs)
+        return self.read(ChainSequence, path, **kwargs)
 
     def read_chain_struc(
         self, path: Path | abc.Iterable[Path], **kwargs
@@ -223,11 +249,11 @@ class ChainIO:
         :class:`ChainStructure` objects.
 
         :param path: Path to a dump or a dir of dumps.
-        :param kwargs: Passed to :meth:`ChainSequence.read`
-        :return: An single chain sequence or iterator over
+        :param kwargs: Passed to :meth:`read`.
+        :return: A single chain sequence or iterator over
             :class:`ChainStructure` objects read sequentially or in parallel.
         """
-        return self._read(ChainStructure, path, **kwargs)
+        return self.read(ChainStructure, path, **kwargs)
 
 
 if __name__ == '__main__':
