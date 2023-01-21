@@ -16,6 +16,7 @@ import numpy as np
 from typing_extensions import Self
 
 from lXtractor.core.base import AminoAcidDict
+from lXtractor.core.config import EMPTY_PDB_ID
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
 from lXtractor.core.segment import Segment
 from lXtractor.util.structure import filter_selection
@@ -77,7 +78,8 @@ class GenericStructure:
         array = strio.load_structure(str(path))
         pdb_id = path2id(path)
         if not len(pdb_id) == 4:
-            LOGGER.warning(f'Did not obtain a valid PDB ID {pdb_id} from {path}')
+            pdb_id = EMPTY_PDB_ID
+            # LOGGER.warning(f'Did not obtain a valid PDB ID {pdb_id} from {path}')
         if isinstance(array, bst.AtomArrayStack):
             raise InitError(
                 f'{path} is likely an NMR structure. '

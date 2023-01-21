@@ -539,6 +539,9 @@ class ChainStructure:
         pdb_id = seq.meta.get(MetaNames.pdb_id, EMPTY_PDB_ID)
         chain_id = seq.meta.get(MetaNames.pdb_chain, EMPTY_CHAIN_ID)
 
+        if structure.pdb_id == EMPTY_PDB_ID:
+            structure.pdb_id = pdb_id
+
         if dump_names.variables in files:
             variables = Variables.read(files[dump_names.variables]).structure
 
