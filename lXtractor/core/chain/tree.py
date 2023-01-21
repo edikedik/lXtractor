@@ -77,7 +77,7 @@ def list_ancestors(c: CT_) -> list[CT_]:
     return parents
 
 
-def make_filled(name: str, _t: CT) -> CT:
+def make_filled(name: str, _t: CT | t.Type[CT]) -> CT:
     """
     Make a "filled" version of an object to occupy the tree.
 
@@ -102,16 +102,41 @@ def make_filled(name: str, _t: CT) -> CT:
     real_name, bounds = match
     start, end = map(int, bounds.split('-'))
     if start == end == 0:
+        if issubclass(_t, (Chain, ChainStructure, ChainSequence)):
+            return _t.make_empty()
         return _t.__class__.make_empty()
     size = end - start + 1
     seq = ChainSequence.from_string(size * FILLER, start, end, real_name)
-    if isinstance(_t, Chain):
+    is_chain_instance = (
+        isinstance(_t, Chain),
+        isinstance(_t, ChainSequence),
+        isinstance(_t, ChainStructure),
+    )
+    if any(is_chain_instance):
+        if is_chain_instance[0]:
+            return Chain.from_seq(seq)
+        if is_chain_instance[1]:
+            return seq
+        if is_chain_instance[2]:
+            return ChainStructure(EMPTY_PDB_ID, EMPTY_CHAIN_ID, None, seq=seq)
+        raise RuntimeError('...')
+    try:
+        is_chain_subclass = (
+            issubclass(_t, Chain),
+            issubclass(_t, ChainSequence),
+            issubclass(_t, ChainStructure),
+        )
+    except TypeError:
+        raise TypeError(f'Failed to infer type of {_t}')
+
+    if is_chain_subclass[0]:
         return Chain.from_seq(seq)
-    if isinstance(_t, ChainSequence):
+    if is_chain_subclass[1]:
         return seq
-    if isinstance(_t, ChainStructure):
+    if is_chain_subclass[2]:
         return ChainStructure(EMPTY_PDB_ID, EMPTY_CHAIN_ID, None, seq=seq)
-    raise TypeError(f'Unexpected type {type(_t)} of {_t}')
+
+    raise RuntimeError('...')
 
 
 def make_tree(chains: abc.Sequence[CT], connect: bool = False) -> nx.DiGraph:
