@@ -119,7 +119,7 @@ class Chain:
         :return: Structure sequence's :attr:`end <lXtractor.core.chain.
             sequence.end>`
         """
-        return self.end
+        return self.seq.end
 
     @property
     def name(self) -> str | None:
