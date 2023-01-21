@@ -50,6 +50,13 @@ class GenericStructure:
             return self.pdb_id == other.pdb_id and np.all(self.array == other.array)
         return False
 
+    def __hash__(self):
+        atoms = tuple(
+            (a.chain_id, a.res_id, a.res_name, a.atom_name, tuple(a.coord))
+            for a in self.array
+        )
+        return hash(self.pdb_id) + hash(atoms)
+
     @property
     def array(self) -> bst.AtomArray:
         """

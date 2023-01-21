@@ -63,7 +63,7 @@ def test_make_filled(inp, is_valid, example_obj, expected):
             _ = make_filled(inp, example_obj)
 
 
-def test_make_tree(chains):
+def test_make_tree(chains, simple_chain_structure):
     tree = make_tree(chains, connect=False)
     assert len(tree.nodes) == 4
     assert tree.is_directed()
@@ -88,5 +88,8 @@ def test_make_tree(chains):
     assert name2node['C|4-5'].parent == name2node['C|1-5']
     assert name2node['C|1-2'].id == 'C|1-2<-(C|1-3<-(C|1-5))'
 
-    c = make_filled('C|1-5')
-    c.spawn_child(1, 2)
+    c = simple_chain_structure
+    child = c.spawn_child(1, 2)
+    child.parent = None
+    make_tree([child, c], connect=True)
+    assert child.parent == c

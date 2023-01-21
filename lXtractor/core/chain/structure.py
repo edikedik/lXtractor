@@ -59,6 +59,8 @@ class ChainStructure:
     also containing meta info.
     2) :attr:`pdb` -- a container with pdb id, pdb chain id,
     and the structure itself.
+
+    A unique structure is defined by
     """
 
     __slots__ = ("pdb", "seq", "parent", "variables", "children")
@@ -149,6 +151,14 @@ class ChainStructure:
             return self.pdb == other.pdb and self.seq == other.seq
         return False
 
+    def __hash__(self) -> int:
+        return (
+            hash(self.seq)
+            + hash(self.pdb.id)
+            + hash(self.pdb.chain)
+            + hash(self.pdb.structure)
+        )
+
     @property
     def id(self) -> str:
         """
@@ -185,7 +195,7 @@ class ChainStructure:
         :return: Structure sequence's :attr:`end <lXtractor.core.chain.
             sequence.end>`
         """
-        return self.end
+        return self.seq.end
 
     @property
     def name(self) -> str | None:
