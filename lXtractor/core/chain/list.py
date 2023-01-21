@@ -461,7 +461,7 @@ class ChainList(abc.MutableSequence[CT]):
         s: Segment | abc.Collection[Ord],
         *,
         match_type: str = "overlap",
-        map_name: t.Optional[str] = None,
+        map_name: str | None = None,
     ) -> ChainList[CS]:
         """
         Filter to objects encompassing certain consecutive position regions
@@ -472,18 +472,18 @@ class ChainList(abc.MutableSequence[CT]):
 
         :param s: What to search for:
 
-            1) ``s=Segment(start, end)`` to find all objects encompassing
-            certain region.
-            2) ``[pos1, posX, posN]`` to find all objects encompassing the
-            specified positions.
+            #. ``s=Segment(start, end)`` to find all objects encompassing
+                certain region.
+            #. ``[pos1, posX, posN]`` to find all objects encompassing the
+                specified positions.
 
         :param match_type: If `s` is `Segment`, this value determines the
             acceptable relationships between `s` and each
             :class:`ChainSequence`:
 
-            1) "overlap" -- it's enough to overlap with `s`.
-            2) "bounding" -- object is accepted if it bounds `s`.
-            3) "bounded" -- object is accepted if it's bounded by `s`.
+                #. "overlap" -- it's enough to overlap with `s`.
+                #. "bounding" -- object is accepted if it bounds `s`.
+                #. "bounded" -- object is accepted if it's bounded by `s`.
 
         :param map_name: Use this map within to map positions of `s`.
             For instance, to each for all elements encompassing region 1-5 of
@@ -491,10 +491,10 @@ class ChainList(abc.MutableSequence[CT]):
 
                 .. code-block:: python
 
-                chain_list.filter_pos(
-                    s=Segment(1, 5), match_type="bounding",
-                    map_name="map_canonical"
-                )
+                    chain_list.filter_pos(
+                        s=Segment(1, 5), match_type="bounding",
+                        map_name="map_canonical"
+                    )
 
         :return: A list of hits of the same type.
         """

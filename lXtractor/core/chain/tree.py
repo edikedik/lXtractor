@@ -1,3 +1,7 @@
+"""
+A module to handle the ancestral tree of the Chain*-type objects defined
+by their ``parent``/``children`` attributes and/or ``meta`` info.
+"""
 import typing as t
 from collections import abc
 
@@ -98,8 +102,8 @@ def make_filled(name: str, _t: CT) -> CT:
 
 def make_tree(chains: abc.Sequence[CT], connect: bool = False) -> nx.DiGraph:
     """
-    Make an ancestors' tree -- a directed graph object representing ancestral
-    relationships between chains. The nodes of the tree are *Chain-type
+    Make an ancestral tree -- a directed graph representing ancestral
+    relationships between chains. The nodes of the tree are Chain*-type
     objects. Hence, they must be hashable. This restricts types of sequences
     valid for :class:`ChainSequence <lXtractor.core.chain.sequence.
     ChainSequence>` to ``abc.Sequence[abc.Hashable]``.
@@ -117,7 +121,7 @@ def make_tree(chains: abc.Sequence[CT], connect: bool = False) -> nx.DiGraph:
     However, if S|1-5 was lost (e.g., by writing/reading S|1-2 to/from disk),
     and S|1-2.parent is None, we can use ID stored in meta to recover ancestral
     relationships. This function will attend to such cases and create a filler
-    object S|1-5 with a *-filled sequence.
+    object S|1-5 with a "*"-filled sequence.
 
     >>> c12.parent = None
     >>> c12
@@ -129,9 +133,10 @@ def make_tree(chains: abc.Sequence[CT], connect: bool = False) -> nx.DiGraph:
     >>> [n.id for n in ct.nodes]
     ['S|1-2<-(S|1-5)', 'S|1-5']
 
-    :param chains:
-    :param connect:
-    :return:
+    :param chains: A homogeneous sequence of Chain*-type objects.
+    :param connect: If ``True``, connect both supplied and created filler
+        objects via ``children`` and ``parent`` attributes.
+    :return: A networkx's directed graph with Chain*-type objects as nodes.
     """
     if not isinstance(chains, ChainList):
         chains = ChainList(chains)

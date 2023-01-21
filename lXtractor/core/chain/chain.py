@@ -42,11 +42,11 @@ class Chain:
 
     Typical workflow:
 
-        1) Initialize from some canonical sequence.
-        2) Add structures and map their sequences.
-        3) ???
-        4) Do something useful, like calculate variables using canonical
-        sequence's positions.
+        #. Initialize from some canonical sequence.
+        #. Add structures and map their sequences.
+        #. ???
+        #. Do something useful, like calculate variables using canonical
+            sequence's positions.
 
     .. code-block:: python
 
