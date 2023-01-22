@@ -7,7 +7,6 @@ from functools import partial
 from itertools import chain, zip_longest, tee
 
 from more_itertools import nth, peekable
-from typing_extensions import reveal_type
 
 from lXtractor.core.base import Ord, ApplyT
 from lXtractor.core.chain.base import is_chain_type_iterable, is_chain_type
@@ -340,6 +339,15 @@ class ChainList(abc.MutableSequence[CT]):
         """
         return ChainList(chain.from_iterable(self.iter_children()))
 
+    def collapse(self) -> ChainList[CT]:
+        """
+        Collapse all objects within this list into a new chain list.
+        This is a shortcut for ``chain_list + chain_list.collapse_children()``.
+
+        :return: Collapsed list.
+        """
+        return self + self.collapse_children()
+
     def iter_sequences(self) -> abc.Generator[ChainSequence, None, None]:
         """
         :return: An iterator over :class:`ChainSequence`'s.
@@ -349,9 +357,7 @@ class ChainList(abc.MutableSequence[CT]):
 
         if len(self) > 0:
             x = self[0]
-            if isinstance(x, lxc.chain.Chain) or isinstance(
-                x, lxc.structure.ChainStructure
-            ):
+            if isinstance(x, (lxc.chain.Chain, lxc.structure.ChainStructure)):
                 yield from (c.seq for c in self._chains)
             else:
                 yield from iter(self._chains)
@@ -547,8 +553,6 @@ class ChainList(abc.MutableSequence[CT]):
         Apply a function to each object and return a new chain list of results.
 
         :param fn: A callable to apply.
-        :param args: Passed to a `fn`.
-        :param kwargs: Passed to a `fn`.
         :return: A new chain list with application results.
         """
         return ChainList((fn(c) for c in self))
