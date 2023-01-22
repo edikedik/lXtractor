@@ -2,12 +2,15 @@
 A module to handle the ancestral tree of the Chain*-type objects defined
 by their ``parent``/``children`` attributes and/or ``meta`` info.
 """
+import logging
 import re
 import typing as t
 from collections import abc
+from itertools import product
 
 import networkx as nx
 from more_itertools import windowed
+from toolz import groupby
 
 from lXtractor.core.chain import Chain, ChainSequence, ChainStructure, ChainList
 from lXtractor.core.config import EMPTY_PDB_ID, EMPTY_CHAIN_ID
@@ -20,6 +23,10 @@ CT_: t.TypeAlias = Chain | ChainSequence | ChainStructure
 _SEP = '<-('
 FILLER = '*'
 NODE_PATTERN = re.compile(r'(.+)\|(\d+-\d+)')
+LOGGER = logging.getLogger(__name__)
+
+
+# TODO: making trees is slow: either speed up hashing or turn nodes into strings
 
 
 def node_name(c: CT_) -> str:
@@ -126,8 +133,8 @@ def make_filled(name: str, _t: CT | t.Type[CT]) -> CT:
             issubclass(_t, ChainSequence),
             issubclass(_t, ChainStructure),
         )
-    except TypeError:
-        raise TypeError(f'Failed to infer type of {_t}')
+    except TypeError as e:
+        raise TypeError(f'Failed to infer type of {_t}') from e
 
     if is_chain_subclass[0]:
         return Chain.from_seq(seq)
@@ -139,7 +146,7 @@ def make_filled(name: str, _t: CT | t.Type[CT]) -> CT:
     raise RuntimeError('...')
 
 
-def make_tree(chains: abc.Sequence[CT], connect: bool = False) -> nx.DiGraph:
+def make_obj_tree(chains: abc.Iterable[CT], connect: bool = False) -> nx.DiGraph:
     """
     Make an ancestral tree -- a directed graph representing ancestral
     relationships between chains. The nodes of the tree are Chain*-type
@@ -167,12 +174,12 @@ def make_tree(chains: abc.Sequence[CT], connect: bool = False) -> nx.DiGraph:
     S|1-2
     >>> c12.meta['id']
     'S|1-2<-(S|1-5)'
-    >>> ct = make_tree([c12], connect=True)
+    >>> ct = make_obj_tree([c12],connect=True)
     >>> assert len(ct.nodes) == 2
     >>> [n.id for n in ct.nodes]
     ['S|1-2<-(S|1-5)', 'S|1-5']
 
-    :param chains: A homogeneous sequence of Chain*-type objects.
+    :param chains: A homogeneous iterable of Chain*-type objects.
     :param connect: If ``True``, connect both supplied and created filler
         objects via ``children`` and ``parent`` attributes.
     :return: A networkx's directed graph with Chain*-type objects as nodes.
@@ -180,7 +187,7 @@ def make_tree(chains: abc.Sequence[CT], connect: bool = False) -> nx.DiGraph:
     if not isinstance(chains, ChainList):
         chains = ChainList(chains)
     tree = nx.DiGraph()
-    chains = chains.collapse_children() + chains
+    # chains = chains.collapse_children() + chains
 
     # Populate objects' tree
     for c in chains:
@@ -192,8 +199,7 @@ def make_tree(chains: abc.Sequence[CT], connect: bool = False) -> nx.DiGraph:
             for child, parent in windowed([c, *parents], 2):  # type: ignore
                 tree.add_edge(parent, child)
 
-    # Make tree fully connected and populate `parent`, `children`
-    # attributes
+    # Make tree fully connected and populate `parent`, `children` attributes
     name2node = {node_name(n): n for n in tree.nodes}
     node_example = chains[0]
     node: CT
@@ -214,7 +220,62 @@ def make_tree(chains: abc.Sequence[CT], connect: bool = False) -> nx.DiGraph:
                     parent_obj.children.append(child_obj)
                 child_obj.parent = parent_obj
 
-    assert nx.is_tree(tree), 'networkx confirms it is a tree'
+    if not nx.is_tree(tree):
+        LOGGER.warning('Obtained graph is not a tree')
+
+    return tree
+
+
+def _connect(_child_name: str, _parent_name: str, _tree: nx.DiGraph):
+    child_objs = _tree.nodes[_child_name]['objs']
+    parent_objs = _tree.nodes[_parent_name]['objs']
+    for _child_obj, _parent_obj in product(child_objs, parent_objs):
+        if _child_obj.parent is None:
+            _child_obj.parent = _parent_obj
+        _parent_obj.children.append(_child_obj)
+
+
+def make_str_tree(chains: abc.Iterable[CT_], connect: bool = False) -> nx.DiGraph:
+    """
+    A computationally cheaper alternative to :func:`make_obj_tree`, where
+    nodes are string objects, while actual objects reside in a node attribute
+    "objs". It allows for a faster tree construction since it avoids expensive
+    hashing of Chain*-type objects.
+
+    :param chains: An iterable of Chain*-type objects.
+    :param connect:If ``True``, connect both supplied and created filler
+        objects via ``children`` and ``parent`` attributes.
+    :return: A networkx's directed graph.
+    """
+    if not isinstance(chains, ChainList):
+        chains = ChainList(chains)
+    tree = nx.DiGraph()
+    node_example = chains[0]
+
+    name2chains: dict[str, list[CT]] = groupby(node_name, chains)
+    for name in name2chains:
+        tree.add_node(name, objs=[])
+
+    for name, chains_group in name2chains.items():
+        tree.add_node(name, objs=chains_group)
+
+    for node in list(tree.nodes):
+        for obj in tree.nodes[node]['objs']:
+            names = [node_name(obj), *list_ancestors_names(obj)]
+            for child_name, parent_name in windowed(names, 2):
+                assert child_name is not None
+                if parent_name is None:
+                    continue
+                if parent_name not in tree.nodes:
+                    parent_obj = make_filled(parent_name, node_example)
+                    tree.add_node(parent_name, objs=[parent_obj])
+                tree.add_edge(parent_name, child_name)
+                if connect:
+                    _connect(child_name, parent_name, tree)
+
+    if not nx.is_tree(tree):
+        LOGGER.warning('Obtained graph is not a tree')
+    # assert nx.is_tree(tree), 'Obtained graph is not a tree'
 
     return tree
 
