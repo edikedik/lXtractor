@@ -7,12 +7,15 @@ from collections import abc
 from itertools import repeat
 from pathlib import Path
 
+import requests
+
 from lXtractor.core.base import UrlGetter
 from lXtractor.ext.base import ApiBase
-from lXtractor.util.io import fetch_files
+from lXtractor.util.io import fetch_files, fetch_text
 
 # ArgT: t.TypeAlias = tuple[str, ...] | str
 ArgT = t.TypeVar('ArgT', tuple[str, ...], str)
+OBSOLETE_LINK = 'https://files.wwpdb.org/pub/pdb/data/status/obsolete.dat'
 
 
 def url_getters() -> dict[str, UrlGetter]:
@@ -166,6 +169,16 @@ class PDB(ApiBase):
             num_threads=self.num_threads,
             verbose=self.verbose,
         )
+
+    @staticmethod
+    def fetch_obsolete() -> dict[str, str]:
+        """
+        :return: A dict where keys are obsolete PDB IDs and values are
+            replacement PDB IDs or an empty string if no replacement was made.
+        """
+        text = fetch_text(OBSOLETE_LINK, decode=True)
+        lines = map(str.split, text.split('\n')[1:])
+        return {x[2]: (x[3] if len(x) == 4 else '') for x in lines if len(x) >= 3}
 
 
 if __name__ == '__main__':

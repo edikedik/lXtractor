@@ -53,3 +53,10 @@ def test_fetch_info(ids, use_dir, service):
     assert len(fetched) == len(missed) == 1
     assert isinstance(fetched[0][1], item_type)
     assert missed[0] == 'xxxx'
+
+
+def test_fetch_obsolete():
+    pdb = PDB()
+    obsolete = pdb.fetch_obsolete()
+    assert isinstance(obsolete, dict)
+    assert all(len(k) == 4 for k in obsolete)

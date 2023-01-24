@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 import requests
-from more_itertools import chunked_even, peekable, unzip
+from more_itertools import chunked_even, peekable
 from tqdm.auto import tqdm
 
 from lXtractor.core.base import UrlGetter
