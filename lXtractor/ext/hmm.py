@@ -8,8 +8,21 @@ from itertools import count
 from pathlib import Path
 
 from more_itertools import peekable
-from pyhmmer.easel import DigitalSequence, TextSequence, DigitalSequenceBlock
-from pyhmmer.plan7 import HMM, HMMFile, Pipeline, TopHits, Alignment, Domain
+from pyhmmer.easel import (
+    DigitalSequence,
+    TextSequence,
+    DigitalSequenceBlock,
+    TextMSA,
+)
+from pyhmmer.plan7 import (
+    HMM,
+    HMMFile,
+    Pipeline,
+    TopHits,
+    Alignment,
+    Domain,
+    TraceAligner,
+)
 
 from lXtractor.core.chain import ChainSequence, ChainStructure, Chain
 from lXtractor.core.exceptions import MissingData
@@ -18,6 +31,7 @@ LOGGER = logging.getLogger(__name__)
 
 HMM_DEFAULT_NAME = 'HMM'
 _ChainT: t.TypeAlias = Chain | ChainStructure | ChainSequence
+_SeqT: t.TypeAlias = _ChainT | str | tuple[str, str] | DigitalSequence
 _HmmInpT: t.TypeAlias = HMM | HMMFile | Path | str
 CT = t.TypeVar('CT', bound=t.Union[ChainSequence, ChainStructure, Chain])
 
@@ -71,16 +85,21 @@ class PyHMMer:
         self.pipeline = Pipeline(self.hmm.alphabet, **kwargs)
         return self.pipeline
 
-    def convert_seq(self, obj: _ChainT | str) -> DigitalSequence:
+    def convert_seq(self, obj: t.Any) -> DigitalSequence:
         """
-        :param obj: A `Chain*`-type object or string. A sequence of this
-            object must be compatible with the alphabet of the HMM model.
+        :param obj: A `Chain*`-type object or string or a tuple of (name, seq).
+            A sequence of this object must be compatible with the alphabet of
+            the HMM model.
         :return: A digitized sequence compatible with PyHMMer.
         """
         match obj:
+            case DigitalSequence():
+                return obj
             case str():
                 _id = str(hash(obj))
                 accession, name, text = _id, _id, obj
+            case [str(), str()]:
+                accession, name, text = obj[0], obj[0], obj[1]
             case ChainSequence():
                 accession, name, text = obj.id, obj.name, obj.seq1
             case ChainStructure() | Chain():
@@ -93,7 +112,10 @@ class PyHMMer:
             accession=bytes(accession, encoding='utf-8'),
         ).digitize(self.hmm.alphabet)
 
-    def search(self, seqs: abc.Iterable[_ChainT | DigitalSequence]) -> TopHits:
+    def _convert_to_seq_block(self, seqs: abc.Iterable[_SeqT]) -> DigitalSequenceBlock:
+        return DigitalSequenceBlock(self.hmm.alphabet, map(self.convert_seq, seqs))
+
+    def search(self, seqs: abc.Iterable[_SeqT]) -> TopHits:
         """
         Run the :attr:`pipeline` to search for :attr:`hmm`.
 
@@ -103,13 +125,24 @@ class PyHMMer:
         """
         if self.pipeline is None:
             self.init_pipeline()
-        seqs = map(
-            lambda s: self.convert_seq(s) if not isinstance(s, DigitalSequence) else s,
-            seqs,
-        )
-        seqs_block = DigitalSequenceBlock(self.hmm.alphabet, seqs)
+
+        seqs_block = self._convert_to_seq_block(seqs)
         self.hits_ = self.pipeline.search_hmm(self.hmm, seqs_block)
         return self.hits_
+
+    def align(self, seqs: abc.Iterable[_SeqT]) -> TextMSA:
+        """
+        Align sequences to a profile.
+
+        :param seqs: Sequences to align.
+        :return: :class:`TextMSA` with aligned sequences.
+        """
+        block = self._convert_to_seq_block(seqs)
+        aligner = TraceAligner()
+        traces = aligner.compute_traces(self.hmm, block)
+        msa = aligner.align_traces(self.hmm, block, traces)
+        assert isinstance(msa, TextMSA), 'Unexpected MSA type returned'
+        return msa
 
     def annotate(
         self,

@@ -2,10 +2,10 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import pytest
-from pyhmmer.easel import DigitalSequence
+from pyhmmer.easel import DigitalSequence, TextMSA
 from pyhmmer.plan7 import HMMFile
 
-from lXtractor.core.chain import ChainStructure
+from lXtractor.core.chain import ChainStructure, ChainSequence
 from lXtractor.core.exceptions import MissingData
 from lXtractor.ext.hmm import PyHMMer
 
@@ -64,9 +64,26 @@ def test_domain_extraction(chicken_src_str, pkinase_hmm_path):
     for meta_name in ['pvalue', 'score', 'bias', 'cov_seq', 'cov_hmm']:
         assert f'PK_{meta_name}' in s.meta
 
-    should_miss = [{'min_score': 300}, {'min_size': 300}, {'min_cov_hmm': 1.0}, {'min_cov_seq': 1.0}]
+    should_miss = [
+        {'min_score': 300},
+        {'min_size': 300},
+        {'min_cov_hmm': 1.0},
+        {'min_cov_seq': 1.0},
+    ]
     for param in should_miss:
         assert not list(annotator.annotate(seqs, keep=False, **param))
 
     with pytest.raises(MissingData):
         list(annotator.annotate([]))
+
+
+def test_align(human_src_seq, pkinase_hmm_path):
+    annotator = PyHMMer(pkinase_hmm_path)
+    seq_name, seq_str = human_src_seq
+    cs = ChainSequence.from_string(seq_str, name=seq_name)
+    seqs = [cs, human_src_seq, seq_str]
+    msa = annotator.align(seqs)
+    assert isinstance(msa, TextMSA)
+    obtained_names = [x.decode('utf-8') for x in msa.names]
+    expected_names = [cs.name, seq_name, str(hash(seq_str))]
+    assert obtained_names == expected_names
