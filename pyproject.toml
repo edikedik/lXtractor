@@ -41,12 +41,6 @@ dependencies = [
     "requests>=2.28.1",
 ]
 
-[project.optional-dependencies]
-sandbox = [
-    "jupyterlab",
-    "ipywidgets"
-]
-
 [project.urls]
 #"Homepage" = ""
 "Source code" = "https://github.com/edikedik/lXtractor"
@@ -56,13 +50,17 @@ sandbox = [
 version.path = "lXtractor/__about__.py"
 
 [tool.hatch.build]
+ignore-vcs = true
 packages = ["lXtractor"]
+include = [
+    "/resources"
+]
 exclude = [
     "*.gz"
 ]
 
-[tool.hatch.build.targets.wheel]
-only-include = ['lXtractor']
+#[tool.hatch.build.targets.wheel]
+#only-include = ['lXtractor']
 
 [tool.hatch.envs.test]
 dependencies = [
