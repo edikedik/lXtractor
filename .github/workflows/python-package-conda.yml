@@ -11,7 +11,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ "ubuntu", "macos" ]
-        python-version: [ "3.10" ]
+        python-version: [ "3.10", "3.11" ]
     defaults:
       run:
         shell: bash -l {0}
@@ -22,7 +22,7 @@ jobs:
         uses: actions/cache@v2
         env:
           # Increase this value to reset cache if etc/example-environment.yml has not changed
-          CACHE_NUMBER: 0
+          CACHE_NUMBER: 1
         with:
           path: ~/conda_pkgs_dir
           key:
@@ -30,7 +30,8 @@ jobs:
       - name: Setup env
         uses: conda-incubator/setup-miniconda@v2
         with:
-          auto-update-conda: true
+          miniconda-version: "latest"
+#          auto-update-conda: true
           python-version: ${{ matrix.python-version }}
           mamba-version: '*'
           use-mamba: true
@@ -44,9 +45,9 @@ jobs:
           path: ${{ env.CONDA }}/envs
           key:
             conda-${{ runner.os }}-${{ hashFiles('environment.yml') }}-${{ env.CACHE_NUMBER }}
-        env:
-          # Increase this value to reset cache if etc/example-environment.yml has not changed.
-          CACHE_NUMBER: 0
+#        env:
+#          # Increase this value to reset cache if etc/example-environment.yml has not changed.
+#          CACHE_NUMBER: 0
         id: cache
       - name: Install test packages
         run: mamba install -c conda-forge -y pytest pytest-cov coveralls
