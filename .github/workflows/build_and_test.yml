@@ -1,4 +1,4 @@
-name: Auto-testing with miniconda
+name: Testing
 
 on: [ push ]
 
@@ -46,5 +46,3 @@ jobs:
         run: coveralls --service=github
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  publish:
-    name: Publish
