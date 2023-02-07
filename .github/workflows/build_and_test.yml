@@ -4,14 +4,14 @@ on: [ push ]
 
 jobs:
   test:
-    name: Testing lXtractor
+    name: Test
     runs-on: ${{ matrix.os }}-latest
     strategy:
       max-parallel: 6
       fail-fast: false
       matrix:
         os: [ "ubuntu", "macos" ]
-        python-version: [ "3.10" ]
+        python-version: [ "3.10", "3.11" ]
     defaults:
       run:
         shell: bash -l {0}
@@ -25,7 +25,7 @@ jobs:
 #          auto-update-conda: true
           python-version: ${{ matrix.python-version }}
           mamba-version: '*'
-#          use-mamba: true
+          use-mamba: true
           channels: conda-forge, defaults, bioconda
 #          activate-environment: lXt-dev
 #          environment-file: environment.yml
