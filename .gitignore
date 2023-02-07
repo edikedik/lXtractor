@@ -6,6 +6,7 @@ docs/notebooks
 lXtractor/ext/resources
 tok.txt
 *.ipynb
+stash
 
 # User-specific stuff
 .idea/**/workspace.xml
