@@ -1,11 +1,12 @@
 name: Publish
+
+env:
+  ARTIFACT: artifact.bin
+
 on:
   workflow_dispatch:
   release:
     types: [published]
-
-  env:
-    ARTIFACT: artifact.bin
 
   jobs:
     build:
