@@ -6,7 +6,7 @@ import logging
 import re
 import typing as t
 from collections import abc
-from itertools import product, chain
+from itertools import product
 
 import networkx as nx
 from more_itertools import windowed
@@ -32,6 +32,11 @@ def node_name(c: CT_) -> str:
     :return:
     """
     return f'{c.name}|{c.start}-{c.end}'
+
+
+def _check_tree(g: nx.Graph):
+    if not nx.is_tree(g):
+        raise ValueError('Obtained graph is not a tree')
 
 
 def list_ancestors_names(id_or_chain: CT_ | str) -> list[str]:
@@ -143,7 +148,9 @@ def make_filled(name: str, _t: CT | t.Type[CT]) -> CT:
     raise RuntimeError('...')
 
 
-def make_obj_tree(chains: abc.Iterable[CT], connect: bool = False) -> nx.DiGraph:
+def make_obj_tree(
+    chains: abc.Iterable[CT], connect: bool = False, check_is_tree: bool = True
+) -> nx.DiGraph:
     """
     Make an ancestral tree -- a directed graph representing ancestral
     relationships between chains. The nodes of the tree are Chain*-type
@@ -179,6 +186,8 @@ def make_obj_tree(chains: abc.Iterable[CT], connect: bool = False) -> nx.DiGraph
     :param chains: A homogeneous iterable of Chain*-type objects.
     :param connect: If ``True``, connect both supplied and created filler
         objects via ``children`` and ``parent`` attributes.
+    :param check_is_tree: If ``True``, check if the obtained graph is actually
+        a tree. If it's not, raise ``ValueError``.
     :return: A networkx's directed graph with Chain*-type objects as nodes.
     """
     if not isinstance(chains, ChainList):
@@ -218,8 +227,8 @@ def make_obj_tree(chains: abc.Iterable[CT], connect: bool = False) -> nx.DiGraph
                     parent_obj.children.append(child_obj)
                 child_obj.parent = parent_obj
 
-    if not nx.is_tree(tree):
-        LOGGER.warning('Obtained graph is not a tree')
+    if check_is_tree:
+        _check_tree(tree)
 
     return tree
 
@@ -233,7 +242,9 @@ def _connect(_child_name: str, _parent_name: str, _tree: nx.DiGraph):
         _parent_obj.children.append(_child_obj)
 
 
-def make_str_tree(chains: abc.Iterable[CT_], connect: bool = False) -> nx.DiGraph:
+def make_str_tree(
+    chains: abc.Iterable[CT_], connect: bool = False, check_is_tree: bool = True
+) -> nx.DiGraph:
     """
     A computationally cheaper alternative to :func:`make_obj_tree`, where
     nodes are string objects, while actual objects reside in a node attribute
@@ -243,6 +254,8 @@ def make_str_tree(chains: abc.Iterable[CT_], connect: bool = False) -> nx.DiGrap
     :param chains: An iterable of Chain*-type objects.
     :param connect: If ``True``, connect both supplied and created filler
         objects via ``children`` and ``parent`` attributes.
+    :param check_is_tree: If ``True``, check if the obtained graph is actually
+        a tree. If it's not, raise ``ValueError``.
     :return: A networkx's directed graph.
     """
     if not isinstance(chains, ChainList):
@@ -274,16 +287,17 @@ def make_str_tree(chains: abc.Iterable[CT_], connect: bool = False) -> nx.DiGrap
                 if connect:
                     _connect(child_name, parent_name, tree)
 
-    if not nx.is_tree(tree):
-        print(chains, [type(chains[0])])
-        LOGGER.warning('Obtained graph is not a tree')
-    # assert nx.is_tree(tree), 'Obtained graph is not a tree'
+    if check_is_tree:
+        _check_tree(tree)
 
     return tree
 
 
 def make(
-    chains: abc.Iterable[CT_], connect: bool = False, objects: bool = False
+    chains: abc.Iterable[CT_],
+    connect: bool = False,
+    objects: bool = False,
+    check_is_tree: bool = True,
 ) -> nx.DiGraph:
     """
     Make an ancestral tree -- a directed graph representing ancestral
@@ -295,11 +309,13 @@ def make(
     :param objects: Create an object tree using :func:`make_obj_tree`.
         Otherwise, create a "string" tree using :func:`make_str_tree`.
         Check the docs of these functions to understand the differences.
+    :param check_is_tree: If ``True``, check if the obtained graph is actually
+        a tree. If it's not, raise ``ValueError``.
     :return:
     """
     if objects:
-        return make_obj_tree(chains, connect)
-    return make_str_tree(chains, connect)
+        return make_obj_tree(chains, connect, check_is_tree)
+    return make_str_tree(chains, connect, check_is_tree)
 
 
 def recover_tree(c: CT_) -> CT_:
@@ -320,12 +336,14 @@ def recover_tree(c: CT_) -> CT_:
     """
     all_chains = ChainList([c, *c.children.collapse()])
 
-    make_str_tree(all_chains.iter_sequences(), connect=True)
-    make_str_tree(all_chains.iter_structures(), connect=True)
-    make_str_tree(all_chains.iter_structure_sequences(), connect=True)
+    make_str_tree(all_chains.iter_sequences(), connect=True, check_is_tree=False)
+    make_str_tree(all_chains.iter_structures(), connect=True, check_is_tree=False)
+    make_str_tree(
+        all_chains.iter_structure_sequences(), connect=True, check_is_tree=False
+    )
 
     if isinstance(c, Chain):
-        make_str_tree(all_chains, connect=True)
+        make_str_tree(all_chains, connect=True, check_is_tree=False)
 
     return c
 
