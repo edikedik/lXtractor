@@ -145,6 +145,5 @@ def test_recover_tree(chains, simple_chain_structure):
 
     cs_child = simple_chain_structure.spawn_child(1, 2)
     cs_child.parent = None
-    cs_child_ = recover_tree(cs_child)
-    print(cs_child_)
+    recover_tree(cs_child)
     assert cs_child.parent.id == simple_chain_structure.id

@@ -322,7 +322,6 @@ def recover_tree(c: CT_) -> CT_:
         all_structures = ChainList(
             chain.from_iterable(c.structures for c in all_chains)
         )
-        print(all_chains, all_chain_seqs, all_structures)
         make_str_tree(all_chains, connect=True)
         make_str_tree(all_chain_seqs, connect=True)
         make_str_tree(all_structures, connect=True)
