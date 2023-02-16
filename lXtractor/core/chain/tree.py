@@ -275,6 +275,7 @@ def make_str_tree(chains: abc.Iterable[CT_], connect: bool = False) -> nx.DiGrap
                     _connect(child_name, parent_name, tree)
 
     if not nx.is_tree(tree):
+        print(chains, [type(chains[0])])
         LOGGER.warning('Obtained graph is not a tree')
     # assert nx.is_tree(tree), 'Obtained graph is not a tree'
 
@@ -314,22 +315,18 @@ def recover_tree(c: CT_) -> CT_:
         :func:`make_str_tree` creates "filled" parents via :func:`make_filled`
 
     :param c: A Chain*-type object.
-    :return: The same object with populated ``children`` and ``parent``.
+    :return: The same object with populated ``children`` and ``parent``
+        attributes.
     """
+    all_chains = ChainList([c, *c.children.collapse()])
+
+    make_str_tree(all_chains.iter_sequences(), connect=True)
+    make_str_tree(all_chains.iter_structures(), connect=True)
+    make_str_tree(all_chains.iter_structure_sequences(), connect=True)
+
     if isinstance(c, Chain):
-        all_chains = ChainList([c, *c.children.collapse()])
-        all_chain_seqs = ChainList([c.seq for c in all_chains])
-        all_structures = ChainList(
-            chain.from_iterable(c.structures for c in all_chains)
-        )
         make_str_tree(all_chains, connect=True)
-        make_str_tree(all_chain_seqs, connect=True)
-        make_str_tree(all_structures, connect=True)
-    elif isinstance(c, (ChainSequence, ChainStructure)):
-        all_chain_seqs = ChainList([c, *c.children.collapse()])
-        make_str_tree(all_chain_seqs, connect=True)
-    else:
-        raise TypeError(f'Expected a Chain*-type object, received {type(c)}')
+
     return c
 
 

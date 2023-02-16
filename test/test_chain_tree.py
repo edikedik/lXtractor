@@ -8,7 +8,7 @@ from lXtractor.core.chain.tree import (
     make_filled,
     node_name,
     make_str_tree,
-    recover_tree
+    recover_tree,
 )
 
 
@@ -147,3 +147,4 @@ def test_recover_tree(chains, simple_chain_structure):
     cs_child.parent = None
     recover_tree(cs_child)
     assert cs_child.parent.id == simple_chain_structure.id
+    assert cs_child.seq.parent.id == simple_chain_structure.seq.id
