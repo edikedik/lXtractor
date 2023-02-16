@@ -8,6 +8,7 @@ from lXtractor.core.chain.tree import (
     make_filled,
     node_name,
     make_str_tree,
+    recover_tree
 )
 
 
@@ -125,3 +126,25 @@ def test_make_str_tree(chains, simple_chain_structure):
     tree = make_str_tree([c13], connect=True)
     c15 = tree.nodes['C|1-5']['objs'][0]
     assert len(c15.children) == 1
+
+
+def test_recover_tree(chains, simple_chain_structure):
+    c45 = chains['C|4-5'].pop()
+
+    c45_chain = Chain.from_seq(c45)
+    c45_chain_ = recover_tree(c45_chain)
+    assert c45_chain == c45_chain_
+    assert c45_chain_.parent is not None
+    assert c45_chain_.seq.parent is not None
+    assert c45_chain.parent is not None
+    assert c45_chain.seq.parent is not None
+
+    c45_ = recover_tree(c45)
+    assert c45_.parent is not None
+    assert c45.parent is not None
+
+    cs_child = simple_chain_structure.spawn_child(1, 2)
+    cs_child.parent = None
+    cs_child_ = recover_tree(cs_child)
+    print(cs_child_)
+    assert cs_child.parent.id == simple_chain_structure.id

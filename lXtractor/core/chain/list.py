@@ -341,8 +341,9 @@ class ChainList(abc.MutableSequence[CT]):
 
     def collapse(self) -> ChainList[CT]:
         """
-        Collapse all objects within this list into a new chain list.
-        This is a shortcut for ``chain_list + chain_list.collapse_children()``.
+        Collapse all objects and their children within this list into a new
+        chain list. This is a shortcut for
+        ``chain_list + chain_list.collapse_children()``.
 
         :return: Collapsed list.
         """

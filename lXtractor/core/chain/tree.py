@@ -6,7 +6,7 @@ import logging
 import re
 import typing as t
 from collections import abc
-from itertools import product
+from itertools import product, chain
 
 import networkx as nx
 from more_itertools import windowed
@@ -24,9 +24,6 @@ _SEP = '<-('
 FILLER = '*'
 NODE_PATTERN = re.compile(r'(.+)\|(\d+-\d+)')
 LOGGER = logging.getLogger(__name__)
-
-
-# TODO: making trees is slow: either speed up hashing or turn nodes into strings
 
 
 def node_name(c: CT_) -> str:
@@ -187,7 +184,8 @@ def make_obj_tree(chains: abc.Iterable[CT], connect: bool = False) -> nx.DiGraph
     if not isinstance(chains, ChainList):
         chains = ChainList(chains)
     tree = nx.DiGraph()
-    # chains = chains.collapse_children() + chains
+    if len(chains) == 0:
+        return tree
 
     # Populate objects' tree
     for c in chains:
@@ -243,13 +241,16 @@ def make_str_tree(chains: abc.Iterable[CT_], connect: bool = False) -> nx.DiGrap
     hashing of Chain*-type objects.
 
     :param chains: An iterable of Chain*-type objects.
-    :param connect:If ``True``, connect both supplied and created filler
+    :param connect: If ``True``, connect both supplied and created filler
         objects via ``children`` and ``parent`` attributes.
     :return: A networkx's directed graph.
     """
     if not isinstance(chains, ChainList):
         chains = ChainList(chains)
     tree = nx.DiGraph()
+    if len(chains) == 0:
+        return tree
+
     node_example = chains[0]
 
     name2chains: dict[str, list[CT]] = groupby(node_name, chains)
@@ -278,6 +279,59 @@ def make_str_tree(chains: abc.Iterable[CT_], connect: bool = False) -> nx.DiGrap
     # assert nx.is_tree(tree), 'Obtained graph is not a tree'
 
     return tree
+
+
+def make(
+    chains: abc.Iterable[CT_], connect: bool = False, objects: bool = False
+) -> nx.DiGraph:
+    """
+    Make an ancestral tree -- a directed graph representing ancestral
+    relationships between chains.
+
+    :param chains: An iterable of Chain*-type objects.
+    :param connect: Connect actual objects by populating ``.children`` and
+        ``.parent`` attributes.
+    :param objects: Create an object tree using :func:`make_obj_tree`.
+        Otherwise, create a "string" tree using :func:`make_str_tree`.
+        Check the docs of these functions to understand the differences.
+    :return:
+    """
+    if objects:
+        return make_obj_tree(chains, connect)
+    return make_str_tree(chains, connect)
+
+
+def recover_tree(c: CT_) -> CT_:
+    """
+    Recover ancestral relationships of a Chain*-type object.
+    This will use :func:`make_str_tree` to recover ancestors from object IDs of
+    an object itself and any encompassed children.
+
+    ..note ::
+        It may be used as a callback in :meth:`lXtractor.chain.io.ChainIO.read`
+
+    ..note ::
+        :func:`make_str_tree` creates "filled" parents via :func:`make_filled`
+
+    :param c: A Chain*-type object.
+    :return: The same object with populated ``children`` and ``parent``.
+    """
+    if isinstance(c, Chain):
+        all_chains = ChainList([c, *c.children.collapse()])
+        all_chain_seqs = ChainList([c.seq for c in all_chains])
+        all_structures = ChainList(
+            chain.from_iterable(c.structures for c in all_chains)
+        )
+        print(all_chains, all_chain_seqs, all_structures)
+        make_str_tree(all_chains, connect=True)
+        make_str_tree(all_chain_seqs, connect=True)
+        make_str_tree(all_structures, connect=True)
+    elif isinstance(c, (ChainSequence, ChainStructure)):
+        all_chain_seqs = ChainList([c, *c.children.collapse()])
+        make_str_tree(all_chain_seqs, connect=True)
+    else:
+        raise TypeError(f'Expected a Chain*-type object, received {type(c)}')
+    return c
 
 
 if __name__ == '__main__':
