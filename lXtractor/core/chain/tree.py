@@ -237,9 +237,15 @@ def _connect(_child_name: str, _parent_name: str, _tree: nx.DiGraph):
     child_objs = _tree.nodes[_child_name]['objs']
     parent_objs = _tree.nodes[_parent_name]['objs']
     for _child_obj, _parent_obj in product(child_objs, parent_objs):
-        if _child_obj.parent is None:
+        if (
+            _child_obj.parent is None
+            and _parent_name in _child_obj.meta['id']
+            or _parent_name in _child_obj.id
+        ):
             _child_obj.parent = _parent_obj
-        _parent_obj.children.append(_child_obj)
+        child_ids = [c.id for c in _parent_obj.children]
+        if _child_obj.id not in child_ids:
+            _parent_obj.children.append(_child_obj)
 
 
 def make_str_tree(
@@ -318,7 +324,7 @@ def make(
     return make_str_tree(chains, connect, check_is_tree)
 
 
-def recover_tree(c: CT_) -> CT_:
+def recover(c: CT_) -> CT_:
     """
     Recover ancestral relationships of a Chain*-type object.
     This will use :func:`make_str_tree` to recover ancestors from object IDs of
