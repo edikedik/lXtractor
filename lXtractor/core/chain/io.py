@@ -131,7 +131,7 @@ class ChainIO:
         if self.num_proc is None:
 
             if self.verbose:
-                yield from map(_read, tqdm(paths, desc=f"Reading {obj_type}"))
+                yield from map(_read, tqdm(paths, desc=f"Reading {obj_type.__class__}"))
             else:
                 yield from map(_read, paths)
 

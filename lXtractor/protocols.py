@@ -99,7 +99,7 @@ def filter_selection_extended(
         if not tolerate_missing:
             for p, p_mapped in mapped_pairs:
                 if p_mapped is None:
-                    raise MissingData(f'Position {p} failed to map')
+                    raise MissingData(f'Position {p} failed to map for {c}')
 
         pos = [x[1].numbering for x in mapped_pairs if x[1] is not None]
 
@@ -360,7 +360,7 @@ def superpose_pairwise(
         the provided positions and atoms, the number of atoms between each
         fixed and mobile structure must match exactly.
 
-        2. ``strict=False`` -- a "flexible" protocol. In this case, aftter the
+        2. ``strict=False`` -- a "flexible" protocol. In this case, after the
         selection of atoms, there are two additional steps:
 
             1. Sequence alignment between the selected subsets. It's guaranteed
@@ -368,7 +368,7 @@ def superpose_pairwise(
             which may be less than the initially selected number
             (see :func:`subset_to_matching`).
 
-            2. Following this, subset each pair of residues betwen fixed and
+            2. Following this, subset each pair of residues between fixed and
             mobile to a common list of atoms (see :func:`filter_to_common_atoms
             <lXtractor.util.structure.filter_to_common_atoms>`).
 
