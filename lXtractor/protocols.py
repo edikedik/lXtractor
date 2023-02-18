@@ -32,17 +32,18 @@ _StagedSupInpStrict: t.TypeAlias = tuple[str, bst.AtomArray, bst.AtomArray]
 _StagedSupInpFlex: t.TypeAlias = tuple[str, ChainStructure, ChainStructure]
 _StagedSupInp = t.TypeVar('_StagedSupInp', _StagedSupInpStrict, _StagedSupInpFlex)
 
-_SupOutputStrict = namedtuple(
-    '_SupOutputStrict', ['ID1', 'ID2', 'RmsdSuperpose', 'RmsdTarget', 'Transformation']
+SupOutputStrict = namedtuple(
+    'SupOutputStrict',
+    ['ID_fix', 'ID_mob', 'RmsdSuperpose', 'RmsdTarget', 'Transformation'],
 )
-_SupOutputStrictT: t.TypeAlias = tuple[
+SupOutputStrictT: t.TypeAlias = tuple[
     str, str, float, float, tuple[np.ndarray, np.ndarray, np.ndarray]
 ]
-_SupOutputFlex = namedtuple(
-    '_SupOutputFlex',
+SupOutputFlex = namedtuple(
+    'SupOutputFlex',
     [
-        'ID1',
-        'ID2',
+        'ID_fix',
+        'ID_mob',
         'RmsdSuperpose',
         'RmsdTarget',
         'Transformation',
@@ -50,7 +51,7 @@ _SupOutputFlex = namedtuple(
         'DiffAtoms',
     ],
 )
-_SupOutputFlexT: t.TypeAlias = tuple[
+SupOutputFlexT: t.TypeAlias = tuple[
     str,
     str,
     float,
@@ -61,7 +62,7 @@ _SupOutputFlexT: t.TypeAlias = tuple[
 ]
 
 
-# _SupOutputT = t.TypeVar('_SupOutputT', _SupOutputStrict, _SupOutputFlex)
+# _SupOutputT = t.TypeVar('_SupOutputT', SupOutputStrict, SupOutputFlex)
 
 
 def filter_selection_extended(
@@ -174,7 +175,7 @@ def subset_to_matching(
     return c1_new, c2_new
 
 
-def superpose(fs: _StagedSupInpStrict, ms: _StagedSupInpStrict) -> _SupOutputStrictT:
+def superpose(fs: _StagedSupInpStrict, ms: _StagedSupInpStrict) -> SupOutputStrictT:
     """
     A lower-level function performing superposition and rmsd calculation
     of already prepared :class:`AtomArray`'s.
@@ -286,7 +287,7 @@ def _yield_staged_pairs(
 @curry
 def _align_and_superpose(
     fs: _StagedSupInpFlex, ms: _StagedSupInpFlex, skip_aln_if_match: str
-) -> _SupOutputFlexT:
+) -> SupOutputFlexT:
     def subset_to_common(c1, c2):
         m1, m2 = filter_to_common_atoms(c1.array, c2.array, allow_residue_mismatch=True)
         c1_sub, c2_sub = c1.array[m1], c2.array[m2]
@@ -349,7 +350,7 @@ def superpose_pairwise(
     verbose: bool = False,
     num_proc: int | None = None,
     **kwargs,
-) -> abc.Generator[_SupOutputFlex | _SupOutputStrict, None, None]:
+) -> abc.Generator[SupOutputFlex | SupOutputStrict, None, None]:
     """
 
     Superpose pairs of structures.
@@ -413,11 +414,11 @@ def superpose_pairwise(
     # TODO: does it require wrapping the output?
     # TODO: should I create a separate signature for flex and strict to simplify typing?
 
-    def wrap_output(res) -> _SupOutputFlex | _SupOutputStrict:
+    def wrap_output(res) -> SupOutputFlex | SupOutputStrict:
         if strict:
-            return _SupOutputStrict(*res)
+            return SupOutputStrict(*res)
         id1, id2, rmsd_sup, rmsd_tar, tr, diff_seq, diff_atoms = res
-        return _SupOutputFlex(
+        return SupOutputFlex(
             id1, id2, rmsd_sup, rmsd_tar, tr, _Diff(*diff_seq), _Diff(*diff_atoms)
         )
 
@@ -446,7 +447,7 @@ def superpose_pairwise(
             skip_aln_if_match=skip_aln_if_match
         )
     )
-    results: abc.Iterable[_SupOutputFlex | _SupOutputStrict]
+    results: abc.Iterable[SupOutputFlex | SupOutputStrict]
     if num_proc is not None and num_proc > 1:
         with ProcessPoolExecutor(num_proc) as executor:
             results = map(wrap_output, executor.map(fn, *unzip(pairs), **kwargs))
