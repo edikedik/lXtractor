@@ -1,8 +1,7 @@
 from pathlib import Path
-
-import biotite.structure as bst
-import pytest
 from tempfile import TemporaryDirectory
+
+import pytest
 
 from lXtractor.core.chain import ChainSequence
 from lXtractor.core.config import SeqNames
@@ -88,7 +87,7 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
     assert len(res) == 1
     res = res.pop()
     assert len(res) == 5
-    assert res.ID1 == res.ID2
+    assert res.ID_fix == res.ID_mob
     assert res.RmsdSuperpose < 0.001 and res.RmsdTarget < 0.001
 
     src_seq = ChainSequence.from_string(human_src_seq[1], name=human_src_seq[0])
@@ -107,7 +106,7 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
     )
     assert len(res) == 1
     res = res.pop()
-    assert res.ID1 == abl_str.id and res.ID2 == src_str.id
+    assert res.ID_fix == abl_str.id and res.ID_mob == src_str.id
     assert res.RmsdSuperpose <= 1 and res.RmsdTarget < 1
 
     # Trying to do the same in parallel
