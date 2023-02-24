@@ -4,7 +4,9 @@ Low-level utilities to work with structures.
 from __future__ import annotations
 
 import logging
+import operator as op
 from collections import abc
+from functools import reduce, partial
 from itertools import repeat, starmap
 
 import biotite.structure as bst
@@ -12,6 +14,7 @@ import biotite.structure.info as bstinfo
 import numpy as np
 from more_itertools import unzip
 
+from lXtractor.core.base import SOLVENTS
 from lXtractor.core.exceptions import LengthMismatch, MissingData
 from lXtractor.util.typing import is_sequence_of
 
@@ -154,6 +157,120 @@ def filter_to_common_atoms(
     )
 
     return mask1, mask2
+
+
+def _is_polymer(array, min_size, pol_type):
+    if pol_type.startswith('p'):
+        filt_fn = bst.filter_amino_acids
+    elif pol_type.startswith('n'):
+        filt_fn = bst.filter_nucleotides
+    elif pol_type.startswith('c'):
+        filt_fn = bst.filter_carbohydrates
+    else:
+        raise ValueError(f'Unsupported polymer type {pol_type}')
+
+    mask = filt_fn(array)
+    return bst.get_residue_count(array[mask]) >= min_size
+
+
+def filter_polymer(array, min_size=2, pol_type='peptide'):
+    """
+    Filter for atoms that are a part of a consecutive standard macromolecular
+    polymer entity.
+
+    Parameters
+    ----------
+    array : AtomArray or AtomArrayStack
+        The array to filter.
+    min_size : int
+        The minimum number of monomers.
+    pol_type : str
+        The polymer type, either ``"peptide"``, ``"nucleotide"``, or ``"carbohydrate"``.
+        Abbreviations are supported: ``"p"``, ``"pep"``, ``"n"``, etc.
+
+    Returns
+    -------
+    filter : ndarray, dtype=bool
+        This array is `True` for all indices in `array`, where atoms belong to
+        consecutive polymer entity having at least `min_size` monomers.
+
+    """
+
+    split_idx = np.sort(
+        np.unique(
+            np.concatenate(
+                [
+                    bst.check_res_id_continuity(array),
+                    bst.check_backbone_continuity(array),
+                ]
+            )
+        )
+    )
+    # print(
+    #     *[bst.check_res_id_continuity(array), bst.check_backbone_continuity(array)],
+    #     sep='\n',
+    # )
+
+    check_pol = partial(_is_polymer, min_size=min_size, pol_type=pol_type)
+    bool_idx = map(
+        lambda a: np.full(len(a), check_pol(bst.array(a)), dtype=bool),
+        np.split(array, split_idx),
+    )
+    return np.concatenate(list(bool_idx))
+
+
+def filter_any_polymer(a: bst.AtomArray, min_size: int = 2) -> np.ndarray:
+    """
+    Get a mask indicating atoms being a part of a macromolecular polymer:
+    peptide, nucleotide, or carbohydrate.
+
+    :param a: Array of atoms.
+    :param min_size: Min number of polymer monomers.
+    :return: A boolean mask ``True`` for polymers' atoms.
+    """
+    return reduce(
+        op.or_,
+        (filter_polymer(a, min_size, pol_type) for pol_type in ['p', 'n', 'c']),
+    )
+
+
+def filter_solvent_extended(a: bst.AtomArray) -> np.ndarray:
+    """
+    Filter for solvent atoms using a curated solvent list including non-water
+    molecules typically being a part of a crystallization solution.
+
+    :param a: Atom array.
+    :return: A boolean mask ``True`` for solvent atoms.
+    """
+    return np.isin(a.res_name, SOLVENTS)
+
+
+def filter_ligand(a: bst.AtomArray) -> np.ndarray:
+    """
+    Filter for ligand atoms -- non-polymer and non-solvent atoms.
+
+    ..note ::
+        No contact-based verification is performed here.
+
+    :param a: Atom array.
+    :return: A boolean mask ``True`` for ligand atoms.
+    """
+    is_polymer = filter_any_polymer(a)
+    is_solvent = filter_solvent_extended(a) | (np.vectorize(len)(a.res_name) != 3)
+    return ~(is_polymer | is_solvent)
+
+
+def iter_residue_masks(a: bst.AtomArray) -> abc.Generator[np.ndarray, None, None]:
+    """
+    Iterate over residue masks.
+
+    :param a: Atom array.
+    :return: A generator over boolean masks for each residue in `a`.
+    """
+    starts = bst.get_residue_starts(a, add_exclusive_stop=True)
+    arange = np.arange(len(a))
+    for i in range(len(starts) - 1):
+        yield (arange >= starts[i]) & (arange < starts[i + 1])
 
 
 def iter_canonical(a: bst.AtomArray) -> abc.Generator[bst.AtomArray | None, None, None]:

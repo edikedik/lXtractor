@@ -6,6 +6,7 @@ from __future__ import annotations
 import typing as t
 from abc import ABCMeta, abstractmethod
 from collections import abc, UserDict
+from dataclasses import dataclass
 from io import TextIOBase
 from pathlib import Path
 from typing import runtime_checkable
@@ -45,73 +46,74 @@ _AminoAcids = [
     ('GLY', 'G'),
 ]
 SOLVENTS = (
-    'HOH',
-    'MPD',
-    'EDO',
-    'DMS',
-    'PEG',
-    'PG4',
-    'MES',
-    '7PE',
-    'DTT',
-    'EPE',
     '1PE',
-    'PHU',
-    'MRD',
-    'TLA',
+    '2HT',
+    '2PE',
+    '7PE',
     'ACT',
-    'BU3',
-    'MYR',
-    'MLA',
-    'DTD',
-    'P6G',
-    'SRT',
-    'TBR',
+    'ACT',
     'BEN',
     'BME',
-    'TRS',
-    'PG0',
-    'GBL',
-    'CXS',
-    'MXE',
-    'BTB',
-    'COM',
-    'FLC',
-    'EOH',
-    'OCT',
-    'MLI',
-    'CIT',
-    'MSE',
-    'PGE',
-    'GOL',
-    'ACT',
     'BOG',
-    'MOH',
-    'TMA',
-    'TFA',
-    'MG8',
-    '2PE',
-    'TAM',
-    'HC4',
-    'P4G',
-    'GLC',
-    'DIO',
-    'SIN',
+    'BTB',
+    'BU3',
     'BUD',
-    '2HT',
-    'TFA',
-    'IPH',
-    'SIN',
-    'TAR',
-    'PGF',
-    'P4C',
-    'HSJ',
+    'CIT',
+    'COM',
+    'CXS',
+    'DIO',
+    'DMS',
+    'DTD',
+    'DTT',
     'DTV',
     'DVT',
-    'SGM',
-    'TCE',
+    'EDO',
+    'EOH',
+    'EPE',
+    'FLC',
+    'GBL',
     'GG5',
+    'GLC',
+    'GOL',
+    'HC4',
+    'HOH',
+    'HSJ',
+    'IPH',
+    'MES',
+    'MG8',
+    'MLA',
+    'MLI',
+    'MOH',
+    'MPD',
+    'MRD',
+    'MSE',
+    'MXE',
+    'MYR',
+    'OCT',
+    'P4C',
+    'P4G',
+    'P6G',
+    'PEG',
+    'PG0',
+    'PG4',
+    'PGE',
+    'PGF',
+    'PHU',
     'PTL',
+    'SGM',
+    'SIN',
+    'SIN',
+    'SO4',
+    'SRT',
+    'TAM',
+    'TAR',
+    'TBR',
+    'TCE',
+    'TFA',
+    'TFA',
+    'TLA',
+    'TMA',
+    'TRS',
 )
 
 
@@ -328,8 +330,7 @@ class AlignMethod(t.Protocol):
     """
 
     def __call__(
-        self,
-        seqs: abc.Iterable[tuple[str, str]] | Path,
+        self, seqs: abc.Iterable[tuple[str, str]] | Path
     ) -> abc.Iterable[tuple[str, str]]:
         ...
 
@@ -340,8 +341,7 @@ class SeqReader(t.Protocol):
     """
 
     def __call__(
-        self,
-        inp: Path | TextIOBase | abc.Iterable[str],
+        self, inp: Path | TextIOBase | abc.Iterable[str]
     ) -> abc.Iterable[tuple[str, str]]:
         ...
 
@@ -389,20 +389,20 @@ class UrlGetter(t.Protocol):
 
 
 @t.runtime_checkable
-class ApplyTWithArgs(t.Protocol, t.Generic[T]):
+class ApplyTWithArgs(t.Protocol[T]):
     def __call__(self, x: T, *args, **kwargs) -> T:
         ...
 
 
 # ApplyT = abc.Callable[[T], T]
 @t.runtime_checkable
-class ApplyT(t.Protocol, t.Generic[T]):
+class ApplyT(t.Protocol[T]):
     def __call__(self, x: T) -> T:
         ...
 
 
 @t.runtime_checkable
-class FilterT(t.Protocol, t.Generic[T]):
+class FilterT(t.Protocol[T]):
     def __call__(self, x: T) -> bool:
         ...
 
@@ -415,6 +415,22 @@ class NamedTupleT(t.Protocol, abc.Iterable):
     def _asdict(self) -> dict[str, t.Any]:
         ...
 
+
+Bounds = t.NamedTuple('Bounds', [('lower', float), ('upper', float)])
+
+
+@dataclass
+class BondThresholds:
+    """
+    Holds covalent and non-covalent bond length distance thresholds,
+    in angstroms.
+    """
+
+    covalent: Bounds = Bounds(1.2, 1.8)
+    non_covalent: Bounds = Bounds(1.8, 5.5)
+
+
+DefaultBondThresholds = BondThresholds()
 
 if __name__ == '__main__':
     raise RuntimeError

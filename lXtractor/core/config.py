@@ -54,6 +54,8 @@ class _MetaNames:
     pdb_id: str = 'pdb_id'
     pdb_chain: str = 'pdb_chain'
     category: str = 'category'
+    res_id: str = 'res_id'
+    res_name: str = 'res_name'
 
 
 DumpNames = _DumpNames()
