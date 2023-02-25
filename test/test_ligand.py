@@ -8,17 +8,16 @@ from lXtractor.core.ligand import find_ligands
 from lXtractor.core.structure import GenericStructure
 
 DATA = Path(__file__).parent / 'data'
-STRUCTURE_PATHS = (DATA / '2oiq.cif', DATA / '7fsh.cif')
 
 
 @pytest.mark.parametrize(
     'inp_id,expected',
     [
-        (Path('data/2oiq.cif'), {('STI', ('A',))}),
-        (Path('data/5hu9.cif'), {('66K', ('A',))}),
-        (Path('data/1aki.pdb'), set()),
+        (DATA / '2oiq.cif', {('STI', ('A',))}),
+        (DATA / '5hu9.cif', {('66K', ('A',))}),
+        (DATA / '1aki.pdb', set()),
         (
-            Path('data/7fsh.cif'),
+            DATA / '7fsh.cif',
             {
                 ('ALA', ('D',)),
                 ('DGL', ('B', 'D')),
