@@ -7,7 +7,8 @@ from toolz import valmap
 from lXtractor.core.ligand import find_ligands
 from lXtractor.core.structure import GenericStructure
 
-STRUCTURE_PATHS = (Path('data/2oiq.cif'), Path('data/7fsh.cif'))
+DATA = Path(__file__).parent / 'data'
+STRUCTURE_PATHS = (DATA / '2oiq.cif', DATA / '7fsh.cif')
 
 
 @pytest.mark.parametrize(
