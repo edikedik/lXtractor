@@ -94,8 +94,6 @@ def find_ligands(
     if is_ligand.sum() == 0:
         return
 
-    d = np.linalg.norm(a.coord[:, np.newaxis] - a.coord, axis=-1)
-
     for m_res in iter_residue_masks(a):
         m_ligand = is_ligand & m_res
 
@@ -104,9 +102,9 @@ def find_ligands(
 
         # An MxL matrix where L is the number of atoms in the structure and M is the
         # number of atoms in the ligand residue
-        d_sub = d[m_ligand]
-        d_min = np.min(d_sub, axis=0)  # min distance from ligand atoms to structure
-        d_argmin = np.argmin(d_sub, axis=0)  # ligand atom indices contacting structure
+        d = np.linalg.norm(a[m_ligand].coord[:, np.newaxis] - a.coord, axis=-1)
+        d_min = np.min(d, axis=0)  # min distance from ligand atoms to structure
+        d_argmin = np.argmin(d, axis=0)  # ligand atom indices contacting structure
 
         contacts = np.zeros_like(d_min)
         contacts[
