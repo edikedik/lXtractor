@@ -4,9 +4,11 @@ Module defines basic interfaces to interact with macromolecular structures.
 from __future__ import annotations
 
 import logging
+import operator as op
 import typing as t
 from collections import abc
 from dataclasses import dataclass
+from functools import reduce
 from os import PathLike
 from pathlib import Path
 
@@ -18,6 +20,7 @@ from typing_extensions import Self
 from lXtractor.core.base import AminoAcidDict
 from lXtractor.core.config import EMPTY_PDB_ID
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
+from lXtractor.core.ligand import find_ligands, Ligand
 from lXtractor.core.segment import Segment
 from lXtractor.util.structure import filter_selection
 
@@ -30,24 +33,41 @@ class GenericStructure:
     a single :class:`biotite.structure.AtomArray` instance.
     """
 
-    __slots__ = ('_array', 'pdb_id')
+    __slots__ = ('_array', 'pdb_id', '_ligands')
 
-    def __init__(self, array: bst.AtomArray, pdb_id: str | None = None):
+    def __init__(
+        self,
+        array: bst.AtomArray,
+        pdb_id: str | None = None,
+        ligands: bool | list[Ligand] = True,
+    ):
         """
         :param array: Atom array object.
         :param pdb_id: PDB ID of a structure in `array`.
+        :param ligands: A list of ligands or flag indicating to
         """
         #: Atom array object.
         self._array: bst.AtomArray = array
         #: PDB ID of a structure in `array`.
         self.pdb_id: str | None = pdb_id
 
+        if isinstance(ligands, bool):
+            _ligands = list(find_ligands(self)) if ligands else []
+        else:
+            _ligands = ligands
+        #: A list of ligands
+        self._ligands = _ligands
+
     def __len__(self) -> int:
         return len(self.array)
 
     def __eq__(self, other: t.Any) -> bool:
         if isinstance(other, GenericStructure):
-            return self.pdb_id == other.pdb_id and np.all(self.array == other.array)
+            return (
+                self.pdb_id == other.pdb_id
+                and len(self) == len(other)
+                and np.all(self.array == other.array)
+            )
         return False
 
     def __hash__(self):
@@ -65,6 +85,60 @@ class GenericStructure:
         return self._array
 
     @property
+    def array_polymer(self) -> bst.AtomArray:
+        """
+        :return: An atom array comprising all non-ligand atoms.
+        """
+        return self.array[~self.ligand_mask]
+
+    @property
+    def array_ligand(self) -> bst.AtomArray:
+        """
+        :return: An atom array comprising all ligand atoms.
+        """
+        return self.array[self.ligand_mask]
+
+    @property
+    def chain_ids(self) -> set[str]:
+        """
+        :return: A set of chain IDs this structure encompasses.
+        """
+        return set(self.array.chain_id)
+
+    @property
+    def chain_ids_polymer(self) -> set[str]:
+        """
+        :return: A set of non-ligand chain IDs.
+        """
+        return set(self.array_polymer.chain_id)
+
+    @property
+    def chain_ids_ligand(self) -> set[str]:
+        """
+        :return: A set of ligand chain IDs.
+        """
+        return {lig.chain_id for lig in self.ligands}
+
+    @property
+    def ligands(self) -> list[Ligand]:
+        """
+        :return: A list of ligands.
+        """
+        return self._ligands
+
+    @property
+    def ligand_mask(self) -> np.ndarray:
+        """
+        :return: A boolean mask where ``True`` points to all :meth:`ligand`
+            atoms.
+        """
+        return reduce(
+            op.or_,
+            (lig.mask for lig in self.ligands),
+            np.zeros_like(self.array, dtype=bool),
+        )
+
+    @property
     def is_empty(self) -> bool:
         """
         :return: ``True`` if the :meth:`array` is empty and ``False``
@@ -74,12 +148,16 @@ class GenericStructure:
 
     @classmethod
     def read(
-        cls, path: Path, path2id: abc.Callable[[Path], str] = lambda p: p.stem
+        cls,
+        path: Path,
+        path2id: abc.Callable[[Path], str] = lambda p: p.stem,
+        ligands: bool = True,
     ) -> Self:
         """
         :param path: Path to a structure in supported format.
         :param path2id: A callable obtaining a PDB ID from the file path.
             By default, it's a ``Path.stem``.
+        :param ligands: Search for ligands.
         :return: Parsed structure.
         """
         array = strio.load_structure(str(path))
@@ -92,7 +170,7 @@ class GenericStructure:
                 f'{path} is likely an NMR structure. '
                 f'NMR structures are not supported.'
             )
-        return cls(array, pdb_id)
+        return cls(array, pdb_id, ligands)
 
     @classmethod
     def make_empty(cls, pdb_id: str | None = None) -> Self:
@@ -100,7 +178,7 @@ class GenericStructure:
         :param pdb_id: (Optional) PDB ID of the created array.
         :return: An instance with empty :meth:`array`.
         """
-        return cls(bst.AtomArray(0), pdb_id)
+        return cls(bst.AtomArray(0), pdb_id, False)
 
     def write(self, path: Path | PathLike | str):
         """
@@ -111,10 +189,10 @@ class GenericStructure:
         """
         strio.save_structure(path, self.array)
 
-    def get_sequence(self) -> abc.Iterable[tuple[str, str, int]]:
+    def get_sequence(self) -> abc.Generator[tuple[str, str, int]]:
         """
         :return: A tuple with (1) one-letter code, (2) three-letter code,
-            (3) residue number.
+            (3) residue number of each residue in :meth:`array_polymer`.
         """
         # TODO: rm specialization towards protein seq
         if self.is_empty:
