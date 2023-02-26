@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing as t
+from collections import abc
 
 import biotite.structure as bst
 import numpy as np
@@ -17,9 +18,20 @@ if t.TYPE_CHECKING:
 class Ligand:
     """
     Ligand object is a part of the structure falling under certain criteria.
-    Namely, ligand molecule is a non-polymer and non-solvent molecule or a
-    single monomer (thus, standalone amino acids can be ligands, while peptides
+
+    Namely, a ligand is a non-polymer and non-solvent molecule or a single
+    monomer (thus, standalone amino acids are considered ligands, while peptides
     of length >= 2 are not).
+
+    Attributes :attr:`parent_ligand_mask` and :attr:`parent_contact_mask` are
+    boolean masks allowing to obtain ligand and ligand-contacting atoms from
+    :attr:`parent`.
+
+    Attributes :attr:`parent_contacts`, :attr:`ligand_idx`, and :attr:`dist`
+    are all arrays with the number of elements equal to the number of non-zero
+    element in :attr:`parent_contact_mask`, or ``parent_contact_mask.sum()``.
+    In other words, the elements of these arrays correspond to ligand-contacting
+    atoms of the parent structure.
 
     ..seealso ::
         `find_ligands`
@@ -36,13 +48,13 @@ class Ligand:
         dist: np.ndaray,
         meta: dict[str, str] | None = None,
     ):
-        if not (len(parent) == len(parent_ligand_mask) == len(parent_contact_mask)):
+        if not len(parent) == len(parent_ligand_mask) == len(parent_contact_mask):
             raise FormatError(
                 'The number of atoms in parent, the mask size and parent_contacts size '
                 f'must all have the same len. Got {len(parent)}, '
                 f'{len(parent_ligand_mask)}, and {len(parent_contact_mask)}, resp.'
             )
-        if not (len(parent_contacts) == len(ligand_idx) == len(dist)):
+        if not len(parent_contacts) == len(ligand_idx) == len(dist):
             raise FormatError(
                 'The number of contact atoms, ligand indices and distances must match. '
                 f'Got {len(parent_contacts)}, {len(parent_contacts)}, and {len(dist)}, '
@@ -67,27 +79,62 @@ class Ligand:
         #: latter to its ligand-contacting atoms.
         self.parent_contact_mask: np.ndarray = parent_contact_mask
 
+        #: An integer array where numbers indicate contact types.
+        #: ``1`` signifies a non-covalent contact, ``2`` -- a covalent one.
         self.parent_contacts = parent_contacts
+
+        #: An integer array with indices pointing to ligand atoms contacting
+        #: the parent structure.
         self.ligand_idx = ligand_idx
+
+        #: An array of distances for each ligand-contacting parent's atom.
         self.dist = dist
+
+        #: A dictionary of meta info.
         self.meta = meta
 
     @property
     def parent_contact_atoms(self) -> bst.AtomArray:
+        """
+        :return: An array of ligand-contacting atoms within :attr:`parent`.
+        """
         return self.parent.array[self.parent_contact_mask]
 
     @property
     def ligand_atoms(self) -> bst.AtomArray:
+        """
+        :return: An array of ligand atoms within :attr:`parent`.
+        """
         return self.parent.array[self.parent_ligand_mask]
 
     @property
     def parent_contact_chains(self) -> set[str]:
+        """
+        :return: A set of chain IDs involved in forming contacts with ligand.
+        """
         return set(self.parent_contact_atoms.chain_id)
 
 
 def find_ligands(
     structure: GenericStructure, ts: BondThresholds = DefaultBondThresholds
-):
+) -> abc.Generator[Ligand, None, None]:
+    """
+    Find ligands within the structure. It divides all `structure` into a ligand
+    part and non-ligand part. Namely, the ligand part comprises all non-solvent
+    residues, while residues of any macromolecular polymeric entity make up for
+    a non-ligand part. Then, for each residue within the "ligand part", it
+    calculates the distance to the atoms of the "non-ligand part." Finally,
+    finding contacts depends on the threshold values specified by `ts`.
+
+    ..seealso ::
+        :func:`lXtractor.util.structure.filter_ligand`
+        :func:`lXtractor.util.structure.filter_solvent_extended`
+        :func:`lXtractor.util.structure.filter_any_polymer`
+
+    :param structure: Arbitrary (generic) structure.
+    :param ts: Bond threshold values.
+    :return: A generator of :class:`Ligand` objects.
+    """
     a = structure.array
     is_ligand = filter_ligand(a)
 
