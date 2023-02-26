@@ -23,13 +23,13 @@ class Ligand:
     monomer (thus, standalone amino acids are considered ligands, while peptides
     of length >= 2 are not).
 
-    Attributes :attr:`parent_ligand_mask` and :attr:`parent_contact_mask` are
+    Attributes :attr:`mask` and :attr:`contact_mask` are
     boolean masks allowing to obtain ligand and ligand-contacting atoms from
     :attr:`parent`.
 
     Attributes :attr:`parent_contacts`, :attr:`ligand_idx`, and :attr:`dist`
     are all arrays with the number of elements equal to the number of non-zero
-    element in :attr:`parent_contact_mask`, or ``parent_contact_mask.sum()``.
+    element in :attr:`contact_mask`, or ``contact_mask.sum()``.
     In other words, the elements of these arrays correspond to ligand-contacting
     atoms of the parent structure.
 
@@ -41,18 +41,18 @@ class Ligand:
         self,
         name: str,
         parent: GenericStructure,
-        parent_ligand_mask: np.ndarray,
-        parent_contact_mask: np.ndarray,
+        mask: np.ndarray,
+        contact_mask: np.ndarray,
         parent_contacts: np.ndarray,
         ligand_idx: np.ndarray,
         dist: np.ndaray,
         meta: dict[str, str] | None = None,
     ):
-        if not len(parent) == len(parent_ligand_mask) == len(parent_contact_mask):
+        if not len(parent) == len(mask) == len(contact_mask):
             raise FormatError(
                 'The number of atoms in parent, the mask size and parent_contacts size '
                 f'must all have the same len. Got {len(parent)}, '
-                f'{len(parent_ligand_mask)}, and {len(parent_contact_mask)}, resp.'
+                f'{len(mask)}, and {len(contact_mask)}, resp.'
             )
         if not len(parent_contacts) == len(ligand_idx) == len(dist):
             raise FormatError(
@@ -64,6 +64,22 @@ class Ligand:
             raise FormatError(
                 'Ligand must have at least one contact atom in parent structure. Got 0.'
             )
+        ligand_atoms = parent.array[mask]
+        ligand_chains = set(ligand_atoms.chain_id)
+        ligand_resnames = set(ligand_atoms.res_name)
+        ligand_res_ids = set(ligand_atoms.res_id)
+        if len(ligand_chains) > 1:
+            raise FormatError(
+                f'Ligand atoms point to more than one chain: {ligand_chains}'
+            )
+        if len(ligand_resnames) > 1:
+            raise FormatError(
+                f'Ligand atoms point to more than one ligand res name {ligand_resnames}'
+            )
+        if len(ligand_res_ids) > 1:
+            raise FormatError(
+                f'Ligand atoms point to more than one ligand res id {ligand_res_ids}'
+            )
 
         #: Name of the ligand. Defaults to the ligand residue PDB code.
         self.name: str = name
@@ -73,11 +89,11 @@ class Ligand:
 
         #: A boolean mask such that when applied to the parent, subsets the
         #: latter to the ligand residues.
-        self.parent_ligand_mask = parent_ligand_mask
+        self.mask = mask
 
         #: A boolean mask such that when applied to the parent, subsets the
         #: latter to its ligand-contacting atoms.
-        self.parent_contact_mask: np.ndarray = parent_contact_mask
+        self.contact_mask: np.ndarray = contact_mask
 
         #: An integer array where numbers indicate contact types.
         #: ``1`` signifies a non-covalent contact, ``2`` -- a covalent one.
@@ -94,18 +110,18 @@ class Ligand:
         self.meta = meta
 
     @property
+    def array(self) -> bst.AtomArray:
+        """
+        :return: An array of ligand atoms within :attr:`parent`.
+        """
+        return self.parent.array[self.mask]
+
+    @property
     def parent_contact_atoms(self) -> bst.AtomArray:
         """
         :return: An array of ligand-contacting atoms within :attr:`parent`.
         """
-        return self.parent.array[self.parent_contact_mask]
-
-    @property
-    def ligand_atoms(self) -> bst.AtomArray:
-        """
-        :return: An array of ligand atoms within :attr:`parent`.
-        """
-        return self.parent.array[self.parent_ligand_mask]
+        return self.parent.array[self.contact_mask]
 
     @property
     def parent_contact_chains(self) -> set[str]:
@@ -113,6 +129,27 @@ class Ligand:
         :return: A set of chain IDs involved in forming contacts with ligand.
         """
         return set(self.parent_contact_atoms.chain_id)
+
+    @property
+    def chain_id(self) -> str:
+        """
+        :return: Ligand chain ID.
+        """
+        return self.array.chain_id[0]
+
+    @property
+    def res_name(self) -> str:
+        """
+        :return: Ligand residue name.
+        """
+        return self.array.res_name[0]
+
+    @property
+    def res_id(self) -> int:
+        """
+        :return: Ligand residue number.
+        """
+        return self.array.res_id[0]
 
 
 def find_ligands(
@@ -161,6 +198,9 @@ def find_ligands(
         contacts[m_ligand] = 0
         m_contacts = contacts != 0
 
+        if not np.any(m_contacts):
+            continue
+
         name = a[m_res].res_name[0]
         meta = {
             MetaNames.res_name: name,
@@ -168,16 +208,8 @@ def find_ligands(
             MetaNames.pdb_chain: a[m_res].chain_id[0],
         }
 
-        yield Ligand(
-            name,
-            structure,
-            m_ligand,
-            m_contacts,
-            contacts[m_contacts],
-            d_argmin[m_contacts],
-            d_min[m_contacts],
-            meta,
-        )
+        yield Ligand(name, structure, m_ligand, m_contacts, contacts[m_contacts],
+                     d_argmin[m_contacts], d_min[m_contacts], meta)
 
 
 if __name__ == '__main__':
