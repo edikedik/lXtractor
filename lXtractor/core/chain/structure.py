@@ -8,7 +8,7 @@ import numpy as np
 from biotite import structure as bst
 from typing_extensions import Self
 
-from lXtractor.core.base import SOLVENTS, ApplyT, FilterT
+from lXtractor.core.base import ApplyT, FilterT
 from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.list import _wrap_children, ChainList
 from lXtractor.core.chain.sequence import ChainSequence
@@ -25,7 +25,7 @@ from lXtractor.core.config import (
 from lXtractor.core.exceptions import LengthMismatch, InitError, MissingData
 from lXtractor.core.structure import GenericStructure, PDB_Chain, _validate_chain
 from lXtractor.util.io import get_files, get_dirs
-from lXtractor.util.structure import filter_selection
+from lXtractor.util.structure import filter_selection, filter_solvent_extended
 from lXtractor.variables.base import Variables
 
 
@@ -272,7 +272,7 @@ class ChainStructure:
 
         return self.__class__.from_structure(
             GenericStructure(
-                self.array[~np.isin(self.array.res_name, SOLVENTS)],
+                self.array[~filter_solvent_extended(self.array)],
                 self.pdb.id,
             ),
             self.pdb.id,
@@ -447,7 +447,7 @@ class ChainStructure:
 
         enum_field = seq.field_names().enum
         start, end = seq[enum_field][0], seq[enum_field][-1]
-        structure = self.pdb.structure.sub_structure(start, end)
+        structure = self.pdb.structure.extract_segment(start, end)
 
         child = ChainStructure(self.pdb.id, self.pdb.chain, structure, seq, self)
         if keep:

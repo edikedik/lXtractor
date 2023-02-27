@@ -69,9 +69,11 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     # 1                       256  260
     #                         +----|------------+
     #                         1    5
+    print(p)
     child = p.spawn_child(
         1, 260, str_map_from=SeqNames.map_canonical, str_map_closest=True
     )
+    print(child, child.structures, child.structures[0].seq.seq1)
     assert len(child.seq) == 260
     s = child.structures[0]
     assert len(s.seq) == 5

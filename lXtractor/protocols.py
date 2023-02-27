@@ -164,10 +164,11 @@ def subset_to_matching(
 
     pos_pairs = filter(lambda x: x[0] is not None and x[1] is not None, pos_pairs)
     _pos1, _pos2 = unzip(pos_pairs)
+    _pos1, _pos2 = map(list, [_pos1, _pos2])
 
     c1_new, c2_new = starmap(
-        lambda ref, pos: ChainStructure.from_structure(
-            ref.array[filter_selection(ref.array, list(pos))]
+        lambda s, pos: ChainStructure.from_structure(
+            s.pdb.structure.extract_positions(pos, s.pdb.chain)
         ),
         [(reference, _pos1), (c, _pos2)],
     )

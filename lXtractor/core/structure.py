@@ -22,7 +22,7 @@ from lXtractor.core.config import EMPTY_PDB_ID
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
 from lXtractor.core.ligand import find_ligands, Ligand
 from lXtractor.core.segment import Segment
-from lXtractor.util.structure import filter_selection
+from lXtractor.util.structure import filter_selection, filter_any_polymer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -87,13 +87,19 @@ class GenericStructure:
     @property
     def array_polymer(self) -> bst.AtomArray:
         """
-        :return: An atom array comprising all non-ligand atoms.
+        ..seealso ::
+            `lXtractor.util.structure.filter_any_polymer`
+
+        :return: An atom array comprising all polymer atoms.
         """
-        return self.array[~self.ligand_mask]
+        return self.array[filter_any_polymer(self.array)]
 
     @property
     def array_ligand(self) -> bst.AtomArray:
         """
+        ..seealso ::
+            `lXtractor.util.structure.filter_ligand`
+
         :return: An atom array comprising all ligand atoms.
         """
         return self.array[self.ligand_mask]
@@ -141,10 +147,16 @@ class GenericStructure:
     @property
     def is_empty(self) -> bool:
         """
-        :return: ``True`` if the :meth:`array` is empty and ``False``
-            otherwise.
+        :return: ``True`` if the :meth:`array` is empty.
         """
         return len(self) == 0
+
+    @property
+    def is_singleton(self) -> bool:
+        """
+        :return: ``True`` if the structure contains a single residue.
+        """
+        return bst.get_residue_count(self.array) == 1
 
     @classmethod
     def read(
@@ -199,7 +211,7 @@ class GenericStructure:
             return []
 
         mapping = AminoAcidDict()
-        for r in bst.residue_iter(self.array):
+        for r in bst.residue_iter(self.array_polymer):
             atom = r[0]
             try:
                 one_letter_code = mapping.three21[atom.res_name]
@@ -221,9 +233,10 @@ class GenericStructure:
         chains = (self.__class__(a.copy() if copy else a, self.pdb_id) for a in arrays)
         yield from chains
 
-    def sub_structure(self, start: int, end: int) -> Self:
+    def extract_segment(self, start: int, end: int) -> Self:
         """
-        Create a sub-structure encompassing some continuous segment.
+        Create a sub-structure encompassing some continuous segment bounded by
+        existing position boundaries.
 
         :param start: Residue number to start from (inclusive).
         :param end: Residue number to stop at (inclusive).
@@ -234,7 +247,7 @@ class GenericStructure:
 
         self_start, self_end = self.array.res_id.min(), self.array.res_id.max()
 
-        # This is needed when some coordinates are <= 0 which can occur
+        # This is needed when some positions are <= 0 which can occur
         # in PDB structures but unsupported for a Segment.
         offset_self = abs(self_start) + 1 if self_start <= 0 else 0
         offset_start = abs(start) + 1 if start <= 0 else 0
@@ -248,6 +261,30 @@ class GenericStructure:
             )
         idx = (self.array.res_id >= start) & (self.array.res_id <= end)
         return self.__class__(self.array[idx], self.pdb_id)
+
+    def extract_positions(
+        self, pos: abc.Sequence[int], chain_ids: abc.Sequence[str] | str | None = None
+    ) -> Self:
+        """
+        Extract specific positions from this structure.
+
+        :param pos: A sequence of positions (res_id) to extract.
+        :param chain_ids: Optionally, a single chain ID or a sequence of such.
+        :return: A new instance with extracted residues.
+        """
+
+        if self.is_empty:
+            return self.make_empty(self.pdb_id)
+
+        a = self.array
+
+        mask = np.isin(a.res_id, pos)
+        if chain_ids is not None:
+            if isinstance(chain_ids, str):
+                chain_ids = [chain_ids]
+            mask &= np.isin(a.chain_id, chain_ids)
+
+        return self.__class__(a[mask], self.pdb_id)
 
     def superpose(
         self,
@@ -339,11 +376,14 @@ class PDB_Chain:
 
 
 def _validate_chain(pdb: PDB_Chain):
-    if pdb.structure.is_empty:
+    if pdb.structure.is_empty or pdb.structure.is_singleton:
         return
-    chains = set(pdb.structure.array.chain_id)
+    chains = pdb.structure.chain_ids_polymer
     if len(chains) > 1:
-        raise InitError('The structure must contain a single chain')
+        raise InitError(
+            f'The structure must contain a single polymeric chain. '
+            f'Got {len(chains)}: {chains}'
+        )
     chain_id = chains.pop()
     if chain_id != pdb.chain:
         raise InitError(

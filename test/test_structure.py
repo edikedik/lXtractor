@@ -22,7 +22,7 @@ def test_degenerate(simple_structure):
     assert len(list(s.split_chains())) == 0
 
     with pytest.raises(NoOverlap):
-        s.sub_structure(1, 1)
+        s.extract_segment(1, 1)
     with pytest.raises(MissingData):
         _ = simple_structure.superpose(s)
     with pytest.raises(MissingData):
@@ -45,7 +45,7 @@ def test_sequence(simple_structure):
 
 
 def test_subsetting(simple_structure):
-    sub = simple_structure.sub_structure(1, 2)
+    sub = simple_structure.extract_segment(1, 2)
     seq = list(sub.get_sequence())
     assert len(seq) == 2
 

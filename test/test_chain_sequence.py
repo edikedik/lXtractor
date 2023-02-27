@@ -10,7 +10,7 @@ from lXtractor.core.alignment import Alignment
 from lXtractor.core.chain import ChainSequence
 from lXtractor.core.config import DumpNames
 from lXtractor.util.io import get_files, get_dirs
-from lXtractor.util.seq import read_fasta, biotite_align
+from lXtractor.util.seq import read_fasta, biotite_align, mafft_align
 
 
 @pytest.fixture
@@ -107,14 +107,18 @@ def test_map(simple_fasta_path, chicken_src_seq, human_src_seq):
 
     s1 = ChainSequence.from_string(s1[1])
     s2 = ChainSequence.from_string(s2[1])
-    mapping = s1.map_numbering(s2, save=True, name='map_smaller')
+    mapping = s1.map_numbering(
+        s2, save=True, name='map_smaller', align_method=mafft_align
+    )
     assert 'map_smaller' in s1
     assert mapping == [None, None, 1, 2, 3, 4, 5, None, None]
-    mapping = s2.map_numbering(s1, save=True, name='map_larger')
+    mapping = s2.map_numbering(
+        s1, save=True, name='map_larger', align_method=mafft_align
+    )
     assert 'map_larger' in s2
     assert mapping == [3, 4, 5, 6, 7]
 
-    mapping = s2.map_numbering(aln, save=True, name='map_aln')
+    mapping = s2.map_numbering(aln, save=True, name='map_aln', align_method=mafft_align)
     assert mapping == [3, 4, 5, 6, 7]
 
     s1 = ChainSequence.from_string(chicken_src_seq[1])

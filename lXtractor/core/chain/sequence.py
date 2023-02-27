@@ -37,7 +37,12 @@ from lXtractor.core.config import (
 from lXtractor.core.exceptions import MissingData, InitError, AmbiguousMapping
 from lXtractor.core.segment import Segment
 from lXtractor.util.io import get_files, get_dirs
-from lXtractor.util.seq import mafft_align, map_pairs_numbering, read_fasta
+from lXtractor.util.seq import (
+    mafft_align,
+    map_pairs_numbering,
+    read_fasta,
+    biotite_align,
+)
 from lXtractor.variables.base import Variables
 
 if t.TYPE_CHECKING:
@@ -595,9 +600,7 @@ class ChainSequence(Segment):
 
         return child
 
-    def iter_children(
-        self,
-    ) -> abc.Generator[ChainList[ChainSequence], None, None]:
+    def iter_children(self) -> abc.Generator[ChainList[ChainSequence], None, None]:
         """
         Iterate over a child tree in topological order.
 
