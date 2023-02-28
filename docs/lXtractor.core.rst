@@ -17,14 +17,6 @@ lXtractor.core.base module
    :undoc-members:
    :show-inheritance:
 
-lXtractor.core.chain module
----------------------------
-
-.. automodule:: lXtractor.core.chain
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 lXtractor.core.config module
 ----------------------------
 
@@ -53,6 +45,14 @@ lXtractor.core.structure module
 -------------------------------
 
 .. automodule:: lXtractor.core.structure
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+lXtractor.core.ligand module
+----------------------------
+
+.. automodule:: lXtractor.core.ligand
    :members:
    :undoc-members:
    :show-inheritance:

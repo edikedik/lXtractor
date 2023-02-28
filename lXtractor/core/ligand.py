@@ -27,13 +27,10 @@ class Ligand:
     boolean masks allowing to obtain ligand and ligand-contacting atoms from
     :attr:`parent`.
 
-    Attributes :attr:`parent_contacts`, :attr:`ligand_idx`, and :attr:`dist`
-    are all arrays with the number of elements equal to the number of non-zero
-    element in :attr:`contact_mask`, or ``contact_mask.sum()``.
-    In other words, the elements of these arrays correspond to ligand-contacting
-    atoms of the parent structure.
+    All array-type attributes, have the number of elements equal to the number
+    of atoms in :attr:`parent`.
 
-    ..seealso ::
+    .. seealso::
         `find_ligands`
     """
 
@@ -177,7 +174,7 @@ def find_ligands(
     calculates the distance to the atoms of the "non-ligand part." Finally,
     finding contacts depends on the threshold values specified by `ts`.
 
-    ..seealso ::
+    .. seealso::
         :func:`lXtractor.util.structure.filter_ligand`
         :func:`lXtractor.util.structure.filter_solvent_extended`
         :func:`lXtractor.util.structure.filter_any_polymer`

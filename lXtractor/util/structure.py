@@ -168,36 +168,27 @@ def _is_polymer(array, min_size, pol_type):
     return bst.get_residue_count(array[mask]) >= min_size
 
 
-def filter_polymer(array, min_size=2, pol_type='peptide'):
+def filter_polymer(a, min_size=2, pol_type='peptide'):
     # TODO: make a PR
     """
     Filter for atoms that are a part of a consecutive standard macromolecular
     polymer entity.
 
-    Parameters
-    ----------
-    array : AtomArray or AtomArrayStack
-        The array to filter.
-    min_size : int
-        The minimum number of monomers.
-    pol_type : str
-        The polymer type, either ``"peptide"``, ``"nucleotide"``, or ``"carbohydrate"``.
-        Abbreviations are supported: ``"p"``, ``"pep"``, ``"n"``, etc.
-
-    Returns
-    -------
-    filter : ndarray, dtype=bool
-        This array is `True` for all indices in `array`, where atoms belong to
-        consecutive polymer entity having at least `min_size` monomers.
-
+    :param a: The array to filter.
+    :param min_size: The minimum number of monomers.
+    :param pol_type: The polymer type, either ``"peptide"``, ``"nucleotide"``,
+        or ``"carbohydrate"``. Abbreviations are supported: ``"p"``, ``"pep"``,
+        ``"n"``, etc.
+    :return: This array is `True` for all indices in `array`, where atoms
+        belong to consecutive polymer entity having at least `min_size` monomers.
     """
 
     split_idx = np.sort(
         np.unique(
             np.concatenate(
                 [
-                    bst.check_res_id_continuity(array),
-                    bst.check_backbone_continuity(array),
+                    bst.check_res_id_continuity(a),
+                    bst.check_backbone_continuity(a),
                 ]
             )
         )
@@ -206,7 +197,7 @@ def filter_polymer(array, min_size=2, pol_type='peptide'):
     check_pol = partial(_is_polymer, min_size=min_size, pol_type=pol_type)
     bool_idx = map(
         lambda a: np.full(len(a), check_pol(bst.array(a)), dtype=bool),
-        np.split(array, split_idx),
+        np.split(a, split_idx),
     )
     return np.concatenate(list(bool_idx))
 

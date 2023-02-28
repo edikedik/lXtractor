@@ -87,7 +87,7 @@ class GenericStructure:
     @property
     def array_polymer(self) -> bst.AtomArray:
         """
-        ..seealso ::
+        .. seealso::
             `lXtractor.util.structure.filter_any_polymer`
 
         :return: An atom array comprising all polymer atoms.
@@ -97,7 +97,7 @@ class GenericStructure:
     @property
     def array_ligand(self) -> bst.AtomArray:
         """
-        ..seealso ::
+        .. seealso::
             `lXtractor.util.structure.filter_ligand`
 
         :return: An atom array comprising all ligand atoms.

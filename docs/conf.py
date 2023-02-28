@@ -13,7 +13,7 @@ from lXtractor.__about__ import __version__
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'lXtractor'
-copyright = '2022, iReveguk'
+copyright = '2023, iReveguk'
 author = 'iReveguk'
 release = __version__
 
@@ -24,8 +24,9 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.viewcode',
     # 'sphinx.ext.napoleon',
+    'sphinx.ext.autosummary',
     'nbsphinx',
-    'sphinxcontrib.bibtex'
+    'sphinxcontrib.bibtex',
 ]
 
 bibtex_bibfiles = ['ref.bib']
@@ -58,31 +59,33 @@ html_theme = 'sphinx_material'
 # Set link name generated in the top bar.
 html_title = 'lXtractor'
 
+html_show_sourcelink = True
+html_sidebars = {
+    "**": ["logo-text.html", "globaltoc.html", "localtoc.html", "searchbox.html"]
+}
+
 # Material theme options (see theme.conf for more information)
 html_theme_options = {
-
     # Set the name of the project to appear in the navigation.
-    'nav_title': 'lXtractor',
-
+    'nav_title': 'lXtractor documentation',
     # Set you GA account ID to enable tracking
     # 'google_analytics_account': 'UA-XXXXX',
-
     # Specify a base_url used to generate sitemap.xml. If not
     # specified, then no sitemap will be built.
     # 'base_url': 'https://project.github.io/project',
-
     # Set the color and the accent color
     'color_primary': 'blue',
-    'color_accent': 'light-green',
-
+    'color_accent': 'cyan',
+    'html_minify': False,
+    'html_prettify': True,
     # Set the repo location to get a badge with stats
     'repo_url': 'https://github.com/edikedik/lXtractor/',
     'repo_name': 'lXtractor',
-
+    'repo_type': 'github',
     # Visible levels of the global TOC; -1 means unlimited
     'globaltoc_depth': 4,
     # If False, expand all TOC entries
-    'globaltoc_collapse': False,
+    'globaltoc_collapse': True,
     # If True, show hidden TOC entries
     'globaltoc_includehidden': False,
 }
