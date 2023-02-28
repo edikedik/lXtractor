@@ -9,7 +9,7 @@ import numpy as np
 from lXtractor.core.base import BondThresholds, DefaultBondThresholds
 from lXtractor.core.config import MetaNames
 from lXtractor.core.exceptions import FormatError
-from lXtractor.util.structure import filter_ligand, iter_residue_masks
+from lXtractor.util.structure import filter_ligand, iter_residue_masks, find_contacts
 
 if t.TYPE_CHECKING:
     from lXtractor.core.structure import GenericStructure
@@ -151,6 +151,20 @@ class Ligand:
         """
         return self.array.res_id[0]
 
+    def is_locally_connected(self, mask: np.ndarray, min_connections: int = 1) -> bool:
+        """
+        Check whether this ligand is connected to a subset of parent atoms.
+
+        :param mask: A boolean mask to filter parent atoms.
+        :param min_connections: A minimum number of connections.
+        :return: ``True`` if the ligand has at least `min_connections` to
+            :attr:`parent` substructure imposed by the provided `mask`.
+        """
+        counts = np.bincount(self.parent_contacts[mask])
+        if len(counts) == 1:
+            return False
+        return counts[1:].sum() >= min_connections
+
 
 def find_ligands(
     structure: GenericStructure, ts: BondThresholds = DefaultBondThresholds
@@ -167,6 +181,7 @@ def find_ligands(
         :func:`lXtractor.util.structure.filter_ligand`
         :func:`lXtractor.util.structure.filter_solvent_extended`
         :func:`lXtractor.util.structure.filter_any_polymer`
+        :func:`lXtractor.util.structure.find_contacts`
 
     :param structure: Arbitrary (generic) structure.
     :param ts: Bond threshold values.
@@ -184,18 +199,7 @@ def find_ligands(
         if not np.any(m_ligand):
             continue
 
-        # An MxL matrix where L is the number of atoms in the structure and M is the
-        # number of atoms in the ligand residue
-        d = np.linalg.norm(a[m_ligand].coord[:, np.newaxis] - a.coord, axis=-1)
-        d_min = np.min(d, axis=0)  # min distance from ligand atoms to structure
-        d_argmin = np.argmin(d, axis=0)  # ligand atom indices contacting structure
-
-        contacts = np.zeros_like(d_min)
-        contacts[
-            (d_min >= ts.non_covalent.lower) & (d_min <= ts.non_covalent.upper)
-        ] = 1
-        contacts[(d_min >= ts.covalent.lower) & (d_min <= ts.covalent.upper)] = 2
-        contacts[m_ligand] = 0
+        contacts, dist, ligand_idx = find_contacts(a, m_ligand, ts)
         m_contacts = contacts != 0
 
         if not np.any(m_contacts):
@@ -208,8 +212,9 @@ def find_ligands(
             MetaNames.pdb_chain: a[m_res].chain_id[0],
         }
 
-        yield Ligand(name, structure, m_ligand, m_contacts, contacts[m_contacts],
-                     d_argmin[m_contacts], d_min[m_contacts], meta)
+        yield Ligand(
+            name, structure, m_ligand, m_contacts, contacts, ligand_idx, dist, meta
+        )
 
 
 if __name__ == '__main__':

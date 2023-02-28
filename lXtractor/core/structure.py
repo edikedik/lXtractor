@@ -219,6 +219,17 @@ class GenericStructure:
                 one_letter_code = 'X'
             yield one_letter_code, atom.res_name, atom.res_id
 
+    def subset_with_ligands(self, mask: np.ndarray, min_connections: int = 1) -> Self:
+        ligands = filter(
+            lambda lig: lig.is_locally_connected(mask, min_connections), self.ligands
+        )
+        ligands_mask = reduce(
+            op.or_,
+            (lig.mask for lig in ligands),
+            np.zeros_like(self.array.res_id, dtype=bool),
+        )
+        return self.__class__(self.array[mask | ligands_mask], self.pdb_id, True)
+
     def split_chains(self, *, copy: bool = False) -> abc.Iterator[Self]:
         """
         Split into separate chains. Splitting is done using
@@ -306,20 +317,23 @@ class GenericStructure:
         subset both structures so the resulting selections have the same number
         of atoms.
 
-        The subsetting achieved either by speficiying residue numbers and atom
-        names or by suppliying a binary mask of the same length as the number
+        The subsetting achieved either by specifying residue numbers and atom
+        names or by supplying a binary mask of the same length as the number
         of atoms in the structure.
 
         :param other: Other :class:`GenericStructure` or atom array.
         :param res_id_self: Residue numbers to select in this structure.
         :param res_id_other: Residue numbers to select in other structure.
         :param atom_names_self: Atom names to select in this structure given
-            either per-residue or broadcasted to selected residues.
+            either per-residue or as a single sequence broadcasted to selected
+            residues.
         :param atom_names_other: Same as `self`.
         :param mask_self: Binary mask to select atoms. Takes precedence over
             other selection arguments.
         :param mask_other: Same as `self`.
-        :return:
+        :return: A tuple of (1) an `other` structure superposed onto this one,
+            (2) an RMSD of the superposition, and (3) a transformation that
+            had been used with :func:`biotite.structure.superimpose_apply`.
         """
 
         def _get_mask(a, res_id, atom_names):

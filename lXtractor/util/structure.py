@@ -14,18 +14,13 @@ import biotite.structure.info as bstinfo
 import numpy as np
 from more_itertools import unzip
 
-from lXtractor.core.base import SOLVENTS
+from lXtractor.core.base import SOLVENTS, BondThresholds, DefaultBondThresholds
 from lXtractor.core.exceptions import LengthMismatch, MissingData
 from lXtractor.util.typing import is_sequence_of
 
 LOGGER = logging.getLogger(__name__)
 
 _BASIC_COMPARISON_ATOMS = {'N', 'CA', 'C', 'CB'}
-
-
-# def read_fast_pdb(path: Path, model: int = 1) -> bst.AtomArray:
-#     file = fastpdb.PDBFile.read(str(path))
-#     return file.get_structure(model=model)
 
 
 def calculate_dihedral(
@@ -129,7 +124,7 @@ def filter_to_common_atoms(
                 raise ValueError(
                     f'Residue names must match. Got {r1_name} from the first array '
                     f'and {r2_name} from the second one. Use `allow_residue_mismatch` '
-                    'to allow name mismatches.'
+                    'to allow residue name mismatches.'
                 )
             atom_names &= _BASIC_COMPARISON_ATOMS
 
@@ -174,6 +169,7 @@ def _is_polymer(array, min_size, pol_type):
 
 
 def filter_polymer(array, min_size=2, pol_type='peptide'):
+    # TODO: make a PR
     """
     Filter for atoms that are a part of a consecutive standard macromolecular
     polymer entity.
@@ -206,10 +202,6 @@ def filter_polymer(array, min_size=2, pol_type='peptide'):
             )
         )
     )
-    # print(
-    #     *[bst.check_res_id_continuity(array), bst.check_backbone_continuity(array)],
-    #     sep='\n',
-    # )
 
     check_pol = partial(_is_polymer, min_size=min_size, pol_type=pol_type)
     bool_idx = map(
@@ -229,8 +221,7 @@ def filter_any_polymer(a: bst.AtomArray, min_size: int = 2) -> np.ndarray:
     :return: A boolean mask ``True`` for polymers' atoms.
     """
     return reduce(
-        op.or_,
-        (filter_polymer(a, min_size, pol_type) for pol_type in ['p', 'n', 'c']),
+        op.or_, (filter_polymer(a, min_size, pol_type) for pol_type in ['p', 'n', 'c'])
     )
 
 
@@ -258,6 +249,45 @@ def filter_ligand(a: bst.AtomArray) -> np.ndarray:
     is_polymer = filter_any_polymer(a)
     is_solvent = filter_solvent_extended(a) | (np.vectorize(len)(a.res_name) != 3)
     return ~(is_polymer | is_solvent)
+
+
+def find_contacts(
+    a: bst.AtomArray, mask: np.ndarray, ts: BondThresholds = DefaultBondThresholds
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Find contacts between a subset of atoms within the structure and the rest
+    of the structure.
+
+    :param a: Atom array.
+    :param mask: A boolean mask ``True`` for atoms for which to find contacts.
+    :param ts: Bond thresholds.
+    :return: A tuple with three arrays of size equal to the `a`'s number of atoms:
+
+        #. Contacts.
+        #. Distances.
+        #. Index of an atom within ``a[mask]`` closest the structure's atom.
+
+        In contacts' array, ``0`` indicate the lack of contact, ``1`` indicate
+        a non-covalent contact, and ``2`` indicate a covalent contact.
+
+        For ``i``-th atom in `a`, ``contacts[i]``, ``distances[i]``,
+        ``indices[i]`` indicate whether ``a[i]`` has a contact, the distance
+        from this atom to the ``a[mask]`` atom whose index is specified by
+        ``a[mask][distances[i]]``.
+    """
+
+    # An MxL matrix where L is the number of atoms in the structure and M is the
+    # number of atoms in the ligand residue
+    d = np.linalg.norm(a[mask].coord[:, np.newaxis] - a.coord, axis=-1)
+    d_min = np.min(d, axis=0)  # min distance from sub atoms to the rest
+    d_argmin = np.argmin(d, axis=0)  # sub atom indices contacting structure
+
+    contacts = np.zeros_like(d_min, dtype=int)
+    contacts[(d_min >= ts.non_covalent.lower) & (d_min <= ts.non_covalent.upper)] = 1
+    contacts[(d_min >= ts.covalent.lower) & (d_min <= ts.covalent.upper)] = 2
+    contacts[mask] = 0
+
+    return contacts, d_min, d_argmin
 
 
 def iter_residue_masks(a: bst.AtomArray) -> abc.Generator[np.ndarray, None, None]:
