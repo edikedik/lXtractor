@@ -45,15 +45,21 @@ LOGGER = logging.getLogger(__name__)
 
 
 @curry
-def _get_residue_mask(
-    pos: int, array: bst.AtomArray, mapping: MappingT | None = None
-) -> np.ndarray:
-    pos = _try_map(pos, mapping)
+def residue_mask(pos: int, a: bst.AtomArray, m: MappingT | None = None) -> np.ndarray:
+    """
+    Get a boolean mask for specific position in an atom array.
 
-    mask: np.ndarray = np.equal(array.res_id, pos)
+    :param pos: Position.
+    :param a: Atom array.
+    :param m: Optional mapping to map `pos` onto structure's numbering.
+    :return: A boolean mask ``True`` for indicated `pos`.
+    """
+    pos = _try_map(pos, m)
 
-    residue_atoms = array[mask]
-    if not residue_atoms.array_length():
+    mask: np.ndarray = np.equal(a.res_id, pos)
+
+    residue_atoms = a[mask]
+    if residue_atoms.array_length() == 0:
         raise FailedCalculation(f'Missing position {pos}')
 
     num_starts = bst.get_residue_starts(residue_atoms)
@@ -65,11 +71,36 @@ def _get_residue_mask(
     return mask
 
 
+def atom_mask(
+    pos: int, atom_name: str, a: bst.AtomArray, m: MappingT | None
+) -> np.ndarray:
+    """
+    Get a boolean mask for certain atom at some position.
+
+    :param pos: Position number.
+    :param atom_name: The name of the atom within `pos`.
+    :param a: Atom array.
+    :param m: Optional mapping to map `pos` onto structure's numbering.
+    :return: A boolean mask with a single ``True`` pointing to the desired atom.
+    """
+    r_mask = residue_mask(pos, a, m)
+    a_mask = r_mask & (a.atom_name == atom_name)
+    if a[a_mask].array_length() == 0:
+        raise FailedCalculation(
+            f'Missing atom {atom_name} at position {pos} (unmapped)'
+        )
+    if a[a_mask].array_length() > 1:
+        raise FailedCalculation(
+            f'More than one atom {atom_name} at position {pos} (unmapped)'
+        )
+    return a_mask
+
+
 @curry
 def _get_residue(
     pos: int, array: bst.AtomArray, mapping: MappingT | None = None
 ) -> bst.AtomArray:
-    mask = _get_residue_mask(pos, array, mapping)
+    mask = residue_mask(pos, array, mapping)
     return array[mask]
 
 
@@ -479,7 +510,7 @@ class SASA(StructureVariable):
     def calculate(
         self, obj: GenericStructure, mapping: MappingT | None = None
     ) -> float | None:
-        m = _get_residue_mask(self.p, obj.array, mapping)
+        m = residue_mask(self.p, obj.array, mapping)
 
         if self.a is not None:
             m &= obj.array.atom_name == self.a
@@ -489,6 +520,45 @@ class SASA(StructureVariable):
 
         sasa = bst.sasa(obj.array, atom_filter=m)
         return float(np.sum(sasa[~np.isnan(sasa)]))
+
+
+class LigandContactsCount(StructureVariable):
+    """
+    The number of atoms involved in contacting ligands.
+    """
+
+    __slots__ = ('p', 'a')
+
+    def __init__(self, p: int, a: str | None = None):
+        #: Residue position.
+        self.p = p
+
+        #: Atom name. If not provided, sum contacts across all residue atoms.
+        self.a = a
+
+    @property
+    def rtype(self) -> t.Type[int]:
+        return int
+
+    def calculate(
+        self, obj: GenericStructure, mapping: MappingT | None = None
+    ) -> float:
+        mask = (
+            atom_mask(self.p, self.a, obj.array, mapping)
+            if self.a is not None
+            else residue_mask(self.p, obj.array, mapping)
+        )
+        n_contacts = 0
+        for lig in obj.ligands:
+            try:
+                lig_contacts = lig.parent_contacts[mask]
+            except IndexError as e:
+                raise FailedCalculation(
+                    f'Failed to apply obtained position mask derived from {obj.pdb_id} '
+                    f'to a ligand {lig.name} ({lig.parent.pdb_id}) parent contacts'
+                ) from e
+            n_contacts += np.sum(lig_contacts != 0)
+        return n_contacts
 
 
 if __name__ == '__main__':
