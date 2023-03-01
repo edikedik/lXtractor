@@ -9,7 +9,8 @@ import numpy as np
 from lXtractor.core.base import BondThresholds, DefaultBondThresholds
 from lXtractor.core.config import MetaNames
 from lXtractor.core.exceptions import FormatError
-from lXtractor.util.structure import filter_ligand, iter_residue_masks, find_contacts
+from lXtractor.util.structure import filter_ligand, iter_residue_masks, find_contacts, \
+    filter_solvent_extended
 
 if t.TYPE_CHECKING:
     from lXtractor.core.structure import GenericStructure
@@ -186,6 +187,7 @@ def find_ligands(
     """
     a = structure.array
     is_ligand = filter_ligand(a)
+    is_solvent = filter_solvent_extended(a)
 
     if is_ligand.sum() == 0:
         return
@@ -197,6 +199,7 @@ def find_ligands(
             continue
 
         contacts, dist, ligand_idx = find_contacts(a, m_ligand, ts)
+        contacts[is_ligand | is_solvent] = 0
         m_contacts = contacts != 0
 
         if not np.any(m_contacts):
