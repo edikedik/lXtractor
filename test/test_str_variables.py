@@ -16,7 +16,11 @@ TEST_VARIABLES = (
     (str_vs.Phi(413), -2.16),
     (str_vs.Omega(413), 3.08),
     (str_vs.LigandContactsCount(413, 'OH'), 1),
-    (str_vs.LigandContactsCount(413), 8)
+    (str_vs.LigandContactsCount(413, 'CB'), 0),
+    (str_vs.LigandContactsCount(413), 8),
+    (str_vs.LigandNames(413, 'OH'), '66K'),
+    (str_vs.LigandNames(413, 'CB'), ''),
+    (str_vs.LigandNames(413), '66K'),
 )
 
 
@@ -27,4 +31,7 @@ def test_variables(v, res, human_abl_str):
             v.calculate(human_abl_str)
     else:
         res_actual = v.calculate(human_abl_str)
-        assert abs(res - res_actual) <= EPS
+        if isinstance(res, str):
+            assert res_actual == res
+        else:
+            assert abs(res - res_actual) <= EPS

@@ -39,6 +39,8 @@ __all__ = (
     'Chi1',
     'Chi2',
     'SASA',
+    'LigandContactsCount',
+    'LigandNames'
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -559,6 +561,43 @@ class LigandContactsCount(StructureVariable):
                 ) from e
             n_contacts += np.sum(lig_contacts != 0)
         return n_contacts
+
+
+class LigandNames(StructureVariable):
+    """
+    ``","``-separated contacting ligand (residue) names.
+    """
+
+    __slots__ = ('p', 'a')
+
+    def __init__(self, p: int, a: str | None = None):
+        #: Residue position.
+        self.p = p
+
+        #: Atom name. If not provided, merge across all residue atoms.
+        self.a = a
+
+    @property
+    def rtype(self) -> t.Type[str]:
+        return str
+
+    def calculate(self, obj: GenericStructure, mapping: MappingT | None = None) -> str:
+        mask = (
+            atom_mask(self.p, self.a, obj.array, mapping)
+            if self.a is not None
+            else residue_mask(self.p, obj.array, mapping)
+        )
+        names = []
+        for lig in obj.ligands:
+            try:
+                if lig.is_locally_connected(mask):
+                    names.append(lig.res_name)
+            except IndexError as e:
+                raise FailedCalculation(
+                    f'Failed to apply obtained position mask derived from {obj.pdb_id} '
+                    f'to a ligand {lig.name} ({lig.parent.pdb_id}) parent contacts'
+                ) from e
+        return ','.join(names)
 
 
 if __name__ == '__main__':
