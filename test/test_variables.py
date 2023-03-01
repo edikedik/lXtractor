@@ -77,10 +77,10 @@ def test_parse_variable():
 
 def test_dist(simple_structure):
     v = Dist(1, 40, 'CB', 'CB')
-    r = v.calculate(simple_structure.array)
+    r = v.calculate(simple_structure)
     assert abs(round(r, 2) - 4.56) < EPS
     v = Dist(-10, 1000, 'CB', 'CB')
     with pytest.raises(FailedCalculation):
-        v.calculate(simple_structure.array)
-    r = v.calculate(simple_structure.array, mapping={-10: 1, 1000: 40})
+        v.calculate(simple_structure)
+    r = v.calculate(simple_structure, mapping={-10: 1, 1000: 40})
     assert abs(round(r, 2) - 4.56) < EPS

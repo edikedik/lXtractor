@@ -73,7 +73,7 @@ def get_obj(is_seq_str, chain_structure_seq, chain_structure):
         o, m = chain_structure_seq
         o = o.seq1
     else:
-        o, m = chain_structure.array, None
+        o, m = chain_structure.pdb.structure, None
     return o, m
 
 

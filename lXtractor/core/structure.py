@@ -17,11 +17,11 @@ import biotite.structure.io as strio
 import numpy as np
 from typing_extensions import Self
 
+import lXtractor.core.segment as lxs
 from lXtractor.core.base import AminoAcidDict
 from lXtractor.core.config import EMPTY_PDB_ID
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
 from lXtractor.core.ligand import find_ligands, Ligand
-from lXtractor.core.segment import Segment
 from lXtractor.util.structure import filter_selection, filter_any_polymer
 
 LOGGER = logging.getLogger(__name__)
@@ -289,8 +289,8 @@ class GenericStructure:
         offset_self = abs(self_start) + 1 if self_start <= 0 else 0
         offset_start = abs(start) + 1 if start <= 0 else 0
         offset = max(offset_start, offset_self)
-        seg_self = Segment(self_start + offset, self_end + offset)
-        seg_sub = Segment(start + offset, end + offset)
+        seg_self = lxs.Segment(self_start + offset, self_end + offset)
+        seg_sub = lxs.Segment(start + offset, end + offset)
         if not seg_self.bounds(seg_sub):
             raise NoOverlap(
                 f'Provided positions {start, end} lie outside '

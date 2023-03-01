@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import biotite.structure as bst
 import pytest
 
-import biotite.structure as bst
 from lXtractor.core.chain import ChainList, ChainStructure, ChainSequence, Chain
 from lXtractor.core.config import SeqNames
 from lXtractor.core.structure import GenericStructure

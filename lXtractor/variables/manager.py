@@ -25,6 +25,7 @@ from tqdm.auto import tqdm
 from lXtractor.core.chain import ChainSequence, ChainStructure
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData
+from lXtractor.core.structure import GenericStructure
 from lXtractor.variables.base import (
     VT,
     SequenceVariable,
@@ -44,7 +45,7 @@ StagedSeq: t.TypeAlias = tuple[
 ]
 StagedStr: t.TypeAlias = tuple[
     ChainStructure,
-    bst.AtomArray,
+    GenericStructure,
     abc.Sequence[StructureVariable],
     abc.Mapping[int, int] | None,
 ]
@@ -174,7 +175,7 @@ def stage(
         # since the chain structure must have an atom array.
         # to fix this, should I allow empty atom array?
         target = find_structure(obj)
-        if isinstance(target, bst.AtomArray):
+        if isinstance(target, GenericStructure):
             return obj, target, str_vs, mapping
         raise MissingData(f'Failed to find structure for calculation on {obj}')
     if isinstance(obj, ChainSequence):
@@ -183,7 +184,7 @@ def stage(
     raise TypeError(f'Invalid object type {type(obj)}')
 
 
-def find_structure(s: ChainStructure) -> bst.AtomArray | None:
+def find_structure(s: ChainStructure) -> GenericStructure | None:
     """
     Recursively search for structure up the ancestral tree.
 
@@ -195,7 +196,7 @@ def find_structure(s: ChainStructure) -> bst.AtomArray | None:
     while structure is None and parent is not None:
         structure = parent.pdb.structure
         parent = parent.parent
-    return None or structure.array
+    return None or structure
 
 
 def _split_objects(

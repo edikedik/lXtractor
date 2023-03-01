@@ -1,7 +1,7 @@
-import biotite.structure as bst
 import pandas as pd
 
 from lXtractor.core.chain import ChainSequence, ChainStructure, ChainList
+from lXtractor.core.structure import GenericStructure
 from lXtractor.variables.calculator import GenericCalculator
 from lXtractor.variables.manager import Manager
 from lXtractor.variables.sequential import SeqEl
@@ -60,7 +60,7 @@ def test_staging(sample_chain_list, simple_chain_variables):
         all(
             [
                 isinstance(x[0], ChainStructure),
-                isinstance(x[1], bst.AtomArray),
+                isinstance(x[1], GenericStructure),
                 isinstance(x[2], list),
                 x[3] is None,
             ]

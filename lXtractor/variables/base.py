@@ -10,14 +10,13 @@ from abc import abstractmethod, ABCMeta
 from collections import UserDict, abc
 from pathlib import Path
 
-import biotite.structure as bst
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
 from toolz import curry
-from typing_extensions import reveal_type
 
 from lXtractor.core.exceptions import FailedCalculation
+from lXtractor.core.structure import GenericStructure
 from lXtractor.ext import resources
 from lXtractor.util.io import read_n_col_table
 
@@ -36,7 +35,7 @@ T = t.TypeVar('T')
 V = t.TypeVar('V')
 
 MappingT: t.TypeAlias = abc.Mapping[int, t.Optional[int]]
-OT = t.TypeVar('OT', bst.AtomArray, abc.Sequence)  # object type
+OT = t.TypeVar('OT', GenericStructure, abc.Sequence)  # object type
 RT = t.TypeVar('RT')  # return type
 ERT: t.TypeAlias = tuple[bool, RT]  # extended return type
 
@@ -88,7 +87,7 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def calculate(self, obj: OT, mapping: t.Optional[MappingT] = None) -> RT:
+    def calculate(self, obj: OT, mapping: MappingT | None = None) -> RT:
         """
         Calculate variable. Each variable defines its own calculation strategy.
 
@@ -100,7 +99,7 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
         """
 
 
-class StructureVariable(AbstractVariable[bst.AtomArray, RT], t.Generic[RT]):
+class StructureVariable(AbstractVariable[GenericStructure, RT], t.Generic[RT]):
     """
     A type of variable whose :meth:`calculate` method requires protein
     structure.
@@ -109,7 +108,7 @@ class StructureVariable(AbstractVariable[bst.AtomArray, RT], t.Generic[RT]):
     __slots__ = ()
 
     @abstractmethod
-    def calculate(self, obj: bst.AtomArray, mapping: t.Optional[MappingT] = None) -> RT:
+    def calculate(self, obj: GenericStructure, mapping: MappingT | None = None) -> RT:
         """
         :param obj: Some atom array.
         :param mapping: Optional mapping between structure and some reference
@@ -129,7 +128,7 @@ class SequenceVariable(AbstractVariable[abc.Sequence[T], RT], t.Generic[T, RT]):
 
     @abstractmethod
     def calculate(
-        self, obj: abc.Sequence[T], mapping: t.Optional[MappingT] = None
+        self, obj: abc.Sequence[T], mapping: MappingT | None = None
     ) -> RT:
         """
         :param obj: Some sequence.

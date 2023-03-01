@@ -14,7 +14,6 @@ import numpy as np
 from more_itertools import unique_justseen
 from numpy import floating
 from toolz import curry, pipe
-from typing_extensions import reveal_type
 
 from lXtractor.core.exceptions import FailedCalculation, InitError
 from lXtractor.util.structure import calculate_dihedral
@@ -26,12 +25,15 @@ from lXtractor.variables.base import (
     AggFn,
 )
 
+if t.TYPE_CHECKING:
+    from lXtractor.core.structure import GenericStructure
+
 LOGGER = logging.getLogger(__name__)
 
 
 @curry
 def _get_residue_mask(
-    pos: int, array: bst.AtomArray, mapping: t.Optional[MappingT] = None
+    pos: int, array: bst.AtomArray, mapping: MappingT | None = None
 ) -> np.ndarray:
     pos = _try_map(pos, mapping)
 
@@ -75,7 +77,7 @@ def _get_atom(array: bst.AtomArray, name: str) -> bst.Atom:
 
 @curry
 def _get_coord(
-    residue: bst.AtomArray, atom_name: t.Optional[str], agg_fn: AggFn = AggFns['mean']
+    residue: bst.AtomArray, atom_name: str | None, agg_fn: AggFn = AggFns['mean']
 ) -> np.ndarray:
     if atom_name is None:
         coord = agg_fn(residue.coord, axis=0)
@@ -125,8 +127,8 @@ class Dist(StructureVariable):
         self,
         p1: int,
         p2: int,
-        a1: t.Optional[str] = None,
-        a2: t.Optional[str] = None,
+        a1: str | None = None,
+        a2: str | None = None,
         com: bool = False,
     ):
         #: Position 1.
@@ -151,10 +153,10 @@ class Dist(StructureVariable):
         return float
 
     def calculate(
-        self, obj: bst.AtomArray, mapping: t.Optional[MappingT] = None
+        self, obj: GenericStructure, mapping: MappingT | None = None
     ) -> floating:
         def get_coord(p: int, a: str | None) -> np.ndarray:
-            return _get_coord(_get_residue(p, obj, mapping), a)  # type: ignore
+            return _get_coord(_get_residue(p, obj.array, mapping), a)  # type: ignore
 
         xyz1, xyz2 = get_coord(self.p1, self.a1), get_coord(self.p2, self.a2)
 
@@ -199,11 +201,11 @@ class AggDist(StructureVariable):
         return float
 
     def calculate(
-        self, obj: bst.AtomArray, mapping: t.Optional[MappingT] = None
+        self, obj: GenericStructure, mapping: MappingT | None = None
     ) -> float:
         res1, res2 = map(
             # no type info for biotite
-            lambda p: _get_residue(p, obj, mapping),  # type: ignore
+            lambda p: _get_residue(p, obj.array, mapping),  # type: ignore
             [self.p1, self.p2],
         )
         return _agg_dist(res1, res2, AggFns[self.key])
@@ -294,12 +296,12 @@ class Dihedral(StructureVariable):
         return [self.a1, self.a2, self.a3, self.a4]
 
     def calculate(
-        self, obj: bst.AtomArray, mapping: t.Optional[MappingT] = None
+        self, obj: GenericStructure, mapping: MappingT | None = None
     ) -> float:
         # Map positions to the PDB numbering
         coordinates = starmap(
             lambda p, a: pipe(  # type: ignore  # no type info for biotite
-                _get_residue(p, obj, mapping),  # type: ignore
+                _get_residue(p, obj.array, mapping),  # type: ignore
                 _get_coord(atom_name=a),  # pylint: disable=no-value-for-parameter
             ),
             zip(self.positions, self.atoms),
@@ -389,7 +391,7 @@ class CompositeDihedral(StructureVariable):
         raise NotImplementedError('Must be implemented by the subclass')
 
     def calculate(
-        self, obj: bst.AtomArray, mapping: t.Optional[MappingT] = None
+        self, obj: GenericStructure, mapping: MappingT | None = None
     ) -> float:
         res = None
         dihedrals = self.get_dihedrals(self.p)
@@ -462,17 +464,17 @@ class SASA(StructureVariable):
         return float
 
     def calculate(
-        self, obj: bst.AtomArray, mapping: t.Optional[MappingT] = None
+        self, obj: GenericStructure, mapping: MappingT | None = None
     ) -> float | None:
-        m = _get_residue_mask(self.p, obj, mapping)
+        m = _get_residue_mask(self.p, obj.array, mapping)
 
         if self.a is not None:
-            m &= obj.atom_name == self.a
+            m &= obj.array.atom_name == self.a
 
         if m.sum() == 0:
             raise FailedCalculation('Empty selection')
 
-        sasa = bst.sasa(obj, atom_filter=m)
+        sasa = bst.sasa(obj.array, atom_filter=m)
         return float(np.sum(sasa[~np.isnan(sasa)]))
 
 
