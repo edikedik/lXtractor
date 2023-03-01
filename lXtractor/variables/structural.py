@@ -28,6 +28,19 @@ from lXtractor.variables.base import (
 if t.TYPE_CHECKING:
     from lXtractor.core.structure import GenericStructure
 
+__all__ = (
+    'Dist',
+    'AggDist',
+    'Dihedral',
+    'PseudoDihedral',
+    'Phi',
+    'Psi',
+    'Omega',
+    'Chi1',
+    'Chi2',
+    'SASA',
+)
+
 LOGGER = logging.getLogger(__name__)
 
 

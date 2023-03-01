@@ -26,8 +26,9 @@ from lXtractor.core.exceptions import LengthMismatch, InitError, MissingData
 from lXtractor.core.structure import GenericStructure, PDB_Chain, _validate_chain
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.structure import filter_selection, filter_solvent_extended
-from lXtractor.variables.base import Variables
 
+if t.TYPE_CHECKING:
+    from lXtractor.variables import Variables
 
 # TODO: subset and overlap with other structures/sequences
 
@@ -73,7 +74,7 @@ class ChainStructure:
         seq: ChainSequence | None = None,
         parent: ChainStructure | None = None,
         children: abc.Iterable[ChainStructure] | None = None,
-        variables: t.Optional[Variables] = None,
+        variables: Variables | None = None,
     ):
         """
         `pdb_id`, `pdb_chain`, and `pdb_structure` are wrapped into a
@@ -106,6 +107,7 @@ class ChainStructure:
 
         #: Variables assigned to this structure. Each should be of a
         #: :class:`lXtractor.variables.base.StructureVariable`.
+        from lXtractor.variables import Variables
         self.variables: Variables = variables or Variables()
 
         #: Any sub-structures descended from this one,
@@ -553,6 +555,7 @@ class ChainStructure:
             structure.pdb_id = pdb_id
 
         if dump_names.variables in files:
+            from lXtractor.variables import Variables
             variables = Variables.read(files[dump_names.variables]).structure
 
         cs = cls(pdb_id, chain_id, structure, seq, variables=variables)

@@ -14,9 +14,8 @@ from itertools import combinations, filterfalse, chain
 import networkx as nx
 from more_itertools import always_reversible, powerset, take, nth
 from tqdm.auto import tqdm
-from typing_extensions import Self, reveal_type
+from typing_extensions import Self
 
-import lXtractor.variables.base as vs
 from lXtractor.core.base import Ord, NamedTupleT
 from lXtractor.core.config import Sep
 from lXtractor.core.exceptions import (
@@ -26,7 +25,9 @@ from lXtractor.core.exceptions import (
     FormatError,
 )
 from lXtractor.util.misc import is_valid_field_name
-# from lXtractor.variables.base import Variables
+
+if t.TYPE_CHECKING:
+    from lXtractor.variables.base import Variables
 
 _S = t.TypeVar('_S', bound='Segment', contravariant=True)
 T = t.TypeVar('T')
@@ -132,7 +133,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         parent: Self | None = None,
         children: abc.MutableSequence[Self] | None = None,
         meta: dict[str, t.Any] | None = None,
-        variables: vs.Variables | None = None,
+        variables: Variables | None = None,
     ):
         """
         :param start: Start coordinate.
@@ -163,7 +164,9 @@ class Segment(abc.Sequence[NamedTupleT]):
         self.children = children or []
         self.meta: dict[str, t.Any] = meta or {}
         self._seqs: dict[str, abc.Sequence[t.Any]] = seqs or {}
-        self.variables: vs.Variables = variables or vs.Variables()
+
+        from lXtractor.variables.base import Variables
+        self.variables: Variables = variables or Variables()
 
         self._setup_and_validate()
 

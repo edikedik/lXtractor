@@ -8,11 +8,11 @@ from itertools import chain, zip_longest, tee
 
 from more_itertools import nth, peekable
 
+import lXtractor.core.segment as lxs
 from lXtractor.core.base import Ord, ApplyT
 from lXtractor.core.chain.base import is_chain_type_iterable, is_chain_type
 from lXtractor.core.config import MetaNames
 from lXtractor.core.exceptions import MissingData
-from lXtractor.core.segment import Segment
 
 if t.TYPE_CHECKING:
     from lXtractor.core.chain import ChainSequence, ChainStructure, Chain
@@ -392,9 +392,9 @@ class ChainList(abc.MutableSequence[CT]):
     @staticmethod
     def _get_seg_matcher(
         s: str,
-    ) -> abc.Callable[[ChainSequence, Segment, t.Optional[str]], bool]:
+    ) -> abc.Callable[[ChainSequence, lxs.Segment, t.Optional[str]], bool]:
         def matcher(
-            seq: ChainSequence, seg: Segment, map_name: t.Optional[str] = None
+            seq: ChainSequence, seg: lxs.Segment, map_name: t.Optional[str] = None
         ) -> bool:
             if map_name is not None:
                 # Get elements in the seq whose mapped sequence matches
@@ -409,7 +409,7 @@ class ChainList(abc.MutableSequence[CT]):
                 # If not such elements -> no match
 
                 # Create a new temporary segment using the mapped boundaries
-                _seq: Segment | ChainSequence = Segment(start, end)
+                _seq: lxs.Segment | ChainSequence = lxs.Segment(start, end)
             else:
                 _seq = seq
             match s:
@@ -440,10 +440,10 @@ class ChainList(abc.MutableSequence[CT]):
         self,
         seqs: abc.Iterable[ChainSequence],
         match_type: str,
-        s: Segment | abc.Iterable[Ord],
+        s: lxs.Segment | abc.Iterable[Ord],
         map_name: t.Optional[str],
     ) -> abc.Iterator[bool]:
-        if isinstance(s, Segment):
+        if isinstance(s, lxs.Segment):
             match_fn = partial(
                 self._get_seg_matcher(match_type), seg=s, map_name=map_name
             )
@@ -456,7 +456,7 @@ class ChainList(abc.MutableSequence[CT]):
         self,
         structures: abc.Iterable[ChainStructure],
         match_type: str,
-        s: Segment | abc.Collection[Ord],
+        s: lxs.Segment | abc.Collection[Ord],
         map_name: t.Optional[str],
     ) -> abc.Iterator[bool]:
         return self._filter_seqs(
@@ -465,7 +465,7 @@ class ChainList(abc.MutableSequence[CT]):
 
     def filter_pos(
         self,
-        s: Segment | abc.Collection[Ord],
+        s: lxs.Segment | abc.Collection[Ord],
         *,
         match_type: str = "overlap",
         map_name: str | None = None,

@@ -23,10 +23,11 @@ from pathlib import Path
 import pandas as pd
 from more_itertools import unzip
 
+import lXtractor.core.segment as lxs
 from lXtractor.core.base import AbstractResource
 from lXtractor.core.exceptions import MissingData
-from lXtractor.core.segment import Segment, map_segment_numbering
-from lXtractor.ext import resources as local
+# from lXtractor.core.segment import Segment, map_segment_numbering
+from lXtractor import resources as local
 from lXtractor.util.io import fetch_to_file
 from lXtractor.util.misc import col2col
 
@@ -401,7 +402,7 @@ class SIFTS(AbstractResource):
 
         group_ids, dfs = unzip(sub.groupby(['UniProt_ID', 'PDB_Chain']))
         segments = map(wrap_into_segments, dfs)
-        mappings = starmap(map_segment_numbering, segments)
+        mappings = starmap(lxs.map_segment_numbering, segments)
         yield from (
             Mapping(uni_id, pdb_chain, m)
             for (uni_id, pdb_chain), m in zip(group_ids, mappings)
@@ -441,7 +442,7 @@ class SIFTS(AbstractResource):
         return {x for x in self.id_mapping if self._categorize(x) == 'PDB_Chain'}
 
 
-def wrap_into_segments(df: pd.DataFrame) -> tuple[list[Segment], list[Segment]]:
+def wrap_into_segments(df: pd.DataFrame) -> tuple[list[lxs.Segment], list[lxs.Segment]]:
     """
     :param df: A subset of a :attr:`Sifts.df` corresponding to a unique
         "UniProt_ID -- PDB_ID:Chain_ID" pair.
@@ -459,8 +460,8 @@ def wrap_into_segments(df: pd.DataFrame) -> tuple[list[Segment], list[Segment]]:
         list,
         unzip(
             (
-                Segment(row.UniProt_start, row.UniProt_end),
-                Segment(row.PDB_start, row.PDB_end),
+                lxs.Segment(row.UniProt_start, row.UniProt_end),
+                lxs.Segment(row.PDB_start, row.PDB_end),
             )
             for _, row in df.iterrows()
         ),

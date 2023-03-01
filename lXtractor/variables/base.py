@@ -15,9 +15,10 @@ import numpy.typing as npt
 import pandas as pd
 from toolz import curry
 
+import lXtractor.resources as resources
 from lXtractor.core.exceptions import FailedCalculation
 from lXtractor.core.structure import GenericStructure
-from lXtractor.ext import resources
+# from lXtractor.ext import resources
 from lXtractor.util.io import read_n_col_table
 
 

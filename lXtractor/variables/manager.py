@@ -15,14 +15,13 @@ import typing as t
 from collections import abc, defaultdict
 from itertools import chain, groupby, repeat, tee
 
-import biotite.structure as bst
 import numpy as np
 import pandas as pd
 from more_itertools import unzip, peekable
 from toolz import curry
 from tqdm.auto import tqdm
 
-from lXtractor.core.chain import ChainSequence, ChainStructure
+import lXtractor.core.chain as lxc
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData
 from lXtractor.core.structure import GenericStructure
@@ -34,17 +33,17 @@ from lXtractor.variables.base import (
     AbstractCalculator,
 )
 
-SoS: t.TypeAlias = ChainSequence | ChainStructure
+SoS: t.TypeAlias = lxc.ChainSequence | lxc.ChainStructure
 SoSv: t.TypeAlias = SequenceVariable | StructureVariable
 CalcRes: t.TypeAlias = tuple[SoS, SoSv, bool, t.Any]
 StagedSeq: t.TypeAlias = tuple[
-    ChainSequence,
+    lxc.ChainSequence,
     abc.Sequence[t.Any],
     abc.Sequence[SequenceVariable],
     abc.Mapping[int, int] | None,
 ]
 StagedStr: t.TypeAlias = tuple[
-    ChainStructure,
+    lxc.ChainStructure,
     GenericStructure,
     abc.Sequence[StructureVariable],
     abc.Mapping[int, int] | None,
@@ -63,7 +62,7 @@ def get_mapping(obj: t.Any, map_name: str | None, map_to: str | None) -> dict | 
     """
     Obtain mapping from a Chain*-type object.
 
-    >>> s = ChainSequence.from_string('ABCD', name='seq')
+    >>> s = lxc.ChainSequence.from_string('ABCD', name='seq')
     >>> s.add_seq('some_map', [5, 6, 7, 8])
     >>> s.add_seq('another_map', ['D', 'B', 'C', 'A'])
     >>> get_mapping(s, 'some_map', None)
@@ -86,7 +85,7 @@ def get_mapping(obj: t.Any, map_name: str | None, map_to: str | None) -> dict | 
     if map_name is None:
         return None
 
-    if not isinstance(obj, ChainSequence):
+    if not isinstance(obj, lxc.ChainSequence):
         try:
             seq = obj.seq
         except AttributeError as e:
@@ -97,7 +96,7 @@ def get_mapping(obj: t.Any, map_name: str | None, map_to: str | None) -> dict | 
     fr = seq[map_name]
 
     if map_to is None:
-        if isinstance(obj, ChainStructure):
+        if isinstance(obj, lxc.ChainStructure):
             to = seq[SeqNames.enum]
         else:
             to = range(1, len(fr) + 1)
@@ -108,12 +107,12 @@ def get_mapping(obj: t.Any, map_name: str | None, map_to: str | None) -> dict | 
 
 
 @t.overload
-def _get_vs(obj: ChainStructure, missing) -> list[StructureVariable]:
+def _get_vs(obj: lxc.ChainStructure, missing) -> list[StructureVariable]:
     ...
 
 
 @t.overload
-def _get_vs(obj: ChainSequence, missing) -> list[SequenceVariable]:
+def _get_vs(obj: lxc.ChainSequence, missing) -> list[SequenceVariable]:
     ...
 
 
@@ -126,17 +125,21 @@ def _get_vs(
 
 
 @t.overload
-def stage(obj: ChainStructure, vs, *, missing, seq_name, map_name, map_to) -> StagedStr:
+def stage(
+    obj: lxc.ChainStructure, vs, *, missing, seq_name, map_name, map_to
+) -> StagedStr:
     ...
 
 
 @t.overload
-def stage(obj: ChainSequence, vs, *, missing, seq_name, map_name, map_to) -> StagedSeq:
+def stage(
+    obj: lxc.ChainSequence, vs, *, missing, seq_name, map_name, map_to
+) -> StagedSeq:
     ...
 
 
 def stage(
-    obj: ChainStructure | ChainSequence,
+    obj: lxc.ChainStructure | lxc.ChainSequence,
     vs: abc.Sequence[VT] | None,
     *,
     missing: bool = True,
@@ -165,12 +168,12 @@ def stage(
         3. A sequence of sequence or structural variables.
         4. An optional mapping.
     """
-    target: ChainStructure | abc.Sequence | None
+    target: lxc.ChainStructure | abc.Sequence | None
 
     seq_vs, str_vs = _split_variables(vs or _get_vs(obj, missing))
     mapping = get_mapping(obj, map_name, map_to)
 
-    if isinstance(obj, ChainStructure):
+    if isinstance(obj, lxc.ChainStructure):
         # TODO: searching always gets the original `obj`'s structure
         # since the chain structure must have an atom array.
         # to fix this, should I allow empty atom array?
@@ -178,13 +181,13 @@ def stage(
         if isinstance(target, GenericStructure):
             return obj, target, str_vs, mapping
         raise MissingData(f'Failed to find structure for calculation on {obj}')
-    if isinstance(obj, ChainSequence):
+    if isinstance(obj, lxc.ChainSequence):
         target = obj[seq_name]
         return obj, target, seq_vs, mapping
     raise TypeError(f'Invalid object type {type(obj)}')
 
 
-def find_structure(s: ChainStructure) -> GenericStructure | None:
+def find_structure(s: lxc.ChainStructure) -> GenericStructure | None:
     """
     Recursively search for structure up the ancestral tree.
 
@@ -201,10 +204,10 @@ def find_structure(s: ChainStructure) -> GenericStructure | None:
 
 def _split_objects(
     objs: abc.Iterable[SoS],
-) -> tuple[list[ChainSequence], list[ChainStructure]]:
+) -> tuple[list[lxc.ChainSequence], list[lxc.ChainStructure]]:
     obs1, obs2 = tee(objs)
-    seqs = [x for x in obs1 if isinstance(x, ChainSequence)]
-    strs = [x for x in obs2 if isinstance(x, ChainStructure)]
+    seqs = [x for x in obs1 if isinstance(x, lxc.ChainSequence)]
+    strs = [x for x in obs2 if isinstance(x, lxc.ChainStructure)]
     return seqs, strs
 
 
@@ -303,7 +306,7 @@ class Manager:
         provided chains.
 
         >>> from lXtractor.variables.sequential import SeqEl
-        >>> s = ChainSequence.from_string('abcd', name='seq')
+        >>> s = lxc.ChainSequence.from_string('abcd', name='seq')
         >>> manager = Manager()
         >>> manager.assign([SeqEl(1)], [s])
         >>> df = manager.aggregate_from_chains([s])
@@ -411,9 +414,8 @@ class Manager:
             :func:`stage`
             :meth:`calculate`
 
-        >>> from lXtractor.core.chain import ChainSequence
         >>> from lXtractor.variables.sequential import SeqEl
-        >>> s = ChainSequence.from_string('ABCD', name='seq')
+        >>> s = lxc.ChainSequence.from_string('ABCD', name='seq')
         >>> m = Manager()
         >>> staged = list(m.stage([s], [SeqEl(1)]))
         >>> len(staged) == 1
@@ -454,10 +456,9 @@ class Manager:
         Note that 3 and 4 are done lazily as calculation results from the
         calculator become available.
 
-        >>> from lXtractor.core.chain import ChainSequence
         >>> from lXtractor.variables.calculator import GenericCalculator
         >>> from lXtractor.variables.sequential import SeqEl
-        >>> s = ChainSequence.from_string('ABCD', name='seq')
+        >>> s = lxc.ChainSequence.from_string('ABCD', name='seq')
         >>> m = Manager()
         >>> c = GenericCalculator()
         >>> list(m.calculate([s], [SeqEl(1)], c))

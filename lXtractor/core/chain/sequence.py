@@ -13,6 +13,7 @@ import pandas as pd
 from more_itertools import first_true, always_reversible
 from typing_extensions import Self
 
+import lXtractor.core.segment as lxs
 from lXtractor.core.alignment import Alignment
 from lXtractor.core.base import (
     AminoAcidDict,
@@ -35,21 +36,18 @@ from lXtractor.core.config import (
     UNK_NAME,
 )
 from lXtractor.core.exceptions import MissingData, InitError, AmbiguousMapping
-from lXtractor.core.segment import Segment
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.seq import (
     mafft_align,
     map_pairs_numbering,
     read_fasta,
-    biotite_align,
 )
-from lXtractor.variables.base import Variables
 
 if t.TYPE_CHECKING:
     from lXtractor.core.chain import Chain, ChainStructure
 
 
-class ChainSequence(Segment):
+class ChainSequence(lxs.Segment):
     """
     A class representing polymeric sequence of a single entity (chain).
 
@@ -890,6 +888,7 @@ class ChainSequence(Segment):
         seq.meta = meta
 
         if dump_names.variables in files:
+            from lXtractor.variables import Variables
             seq.variables = Variables.read(files[dump_names.variables]).sequence
 
         if search_children and dump_names.segments_dir in dirs:
