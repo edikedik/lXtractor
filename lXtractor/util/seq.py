@@ -12,14 +12,25 @@ from itertools import filterfalse
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-import numpy as np
 import biotite.sequence as bseq
 import biotite.sequence.align as balign
+import numpy as np
 from more_itertools import split_at, partition, split_before, tail, take
 
 from lXtractor.core.base import SupportsWrite, AlignMethod
 from lXtractor.core.exceptions import LengthMismatch, MissingData
 from lXtractor.util.io import run_sp
+
+__all__ = (
+    'read_fasta',
+    'write_fasta',
+    'mafft_add',
+    'mafft_align',
+    'biotite_align',
+    'remove_gap_columns',
+    'partition_gap_sequences',
+    'map_pairs_numbering',
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -178,28 +189,6 @@ def biotite_align(
     return (h1, seq1a), (h2, seq2a)
 
 
-# def hmmer_align(
-#         seqs: t.Iterable[SeqRec],
-#         profile_path: Path,
-#         hmmalign_exe: str = 'hmmalign'
-# ) -> t.List[SeqRec]:
-#     """
-#     Align sequences using hmmalign from hmmer.
-#     The latter must be installed and available.
-#
-#     :param seqs: Sequences to align.
-#     :param profile_path: A path to a profile.
-#     :param hmmalign_exe: Name of the executable.
-#     :return: A list of aligned sequences.
-#     """
-#     handle = NamedTemporaryFile('w')
-#     SeqIO.write(seqs, handle, 'fasta')
-#     handle.seek(0)
-#
-#     cmd = f'{hmmalign_exe} {profile_path} {handle.name}'
-#     return list(SeqIO.parse(StringIO(run_sp(cmd).stdout), 'stockholm'))
-
-
 def remove_gap_columns(
     seqs: abc.Iterable[str], max_gaps: float = 1.0
 ) -> tuple[abc.Iterator[str], np.ndarray]:
@@ -310,60 +299,6 @@ def parse_cdhit(clstr_file: Path) -> t.List[t.List[str]]:
 #     return [[seqs_map[x] for x in c] for c in clusters]
 
 
-# def seq_identity(
-#         seq1: SeqRec, seq2: SeqRec, align: bool = True,
-#         align_method: _Align_method = mafft_align
-# ) -> float:
-#     """
-#     Calculate sequence identity between a pair of sequences.
-#
-#     :param seq1: Protein seq.
-#     :param seq2: Protein seq.
-#     :param align: Align before calculating.
-#         If ``False``, sequences are assumed to be aligned.
-#     :param align_method: Align method to use.
-#         Must be a callable accepting and returning a list of sequences.
-#     :return: A number of matching characters divided by a smaller sequence's length.
-#     """
-#     if align:
-#         seq1, seq2 = align_method([seq1, seq2])
-#     if len(seq1) != len(seq2):
-#         raise ValueError('Seq lengths must match')
-#     min_length = min(map(
-#         lambda s: len(str(s.seq).replace('-', '')),
-#         [seq1, seq2]))
-#     matches = sum(1 for c1, c2 in zip(seq1, seq2)
-#                   if c1 == c2 and c1 != '-' and c2 != '-')
-#     return matches / min_length
-#
-#
-# def seq_coverage(
-#         seq: SeqRec, cover: SeqRec, align: bool = True,
-#         align_method: _Align_method = mafft_align
-# ) -> float:
-#     """
-#     Calculate which fraction of ``seq`` is covered by ``cover``.
-#     The latter is assumed to be a subsequence of the former
-#     (otherwise, 100% coverage is guaranteed).
-#
-#     :param seq: A protein sequence.
-#     :param cover: A protein sequence to check against ``seq``.
-#     :param align: Align before calculating.
-#         If ``False``, sequences are assumed to be aligned.
-#     :param align_method: Align method to use.
-#         Must be a callable accepting and returning a list of sequences.
-#     :return: A number of non-gap characters divided by the ``seq``'s length.
-#     """
-#     if align:
-#         seq, cover = align_method([seq, cover])
-#     if len(seq) != len(cover):
-#         raise ValueError('Seq lengths must match')
-#     seq_len = len(str(seq.seq).replace('-', ''))
-#     num_cov = sum(1 for c1, c2 in zip(seq, cover)
-#                   if c1 != '-' and c2 != '-')
-#     return num_cov / seq_len
-
-
 def map_pairs_numbering(
     s1: str,
     s1_numbering: abc.Iterable[int],
@@ -429,50 +364,6 @@ def map_pairs_numbering(
         except StopIteration as e:
             raise RuntimeError('Numbering pool for s2 is exhausted') from e
         yield n1, n2
-
-
-# def subset_by_idx(seq: SeqRec, idx: t.Sequence[int], start=1):
-#     sub = ''.join(c for i, c in enumerate(seq, start=start) if i in idx)
-#     start, end = idx[0], idx[-1]
-#     new_id = f'{seq.id}/{start}-{end}'
-#     return SeqRec(Seq(sub), new_id, new_id, new_id)
-
-
-# def cut(
-#         rec: SeqRec, segment: Segment
-# ) -> t.Tuple[int, int, SeqRec]:
-#     """
-#     Cut sequence in ``rec`` using ``segment``'s boundaries.
-#
-#     :param rec: Sequence record.
-#     :param segment: Arbitrary segment. Makes sense for
-#         :attr:`lXtractor.base.Segment.start` and :attr:`lXtractor.base.Segment.end`
-#         to  define some subsequence's boundaries.
-#     :return: A sequence record cut according to ``segment``'s boundaries.
-#         A suffix "/{start}-{end]" is appended to ``rec``'s id, name and  description.
-#     """
-#
-#     overlap = segment.overlap_with(Segment(1, len(rec)))
-#
-#     if segment.end != overlap.end:
-#         LOGGER.warning(
-#             f"Segment's {segment} end of segment is larger "
-#             f"than the sequence it supposedly belongs to. "
-#             f"Will cut at sequence's end.")
-#     if segment.start != overlap.start:
-#         LOGGER.warning(
-#             f"Segment's {segment} start is lower than 0. "
-#             f"Will correct it to 1.")
-#
-#     start, end = overlap.start, overlap.end
-#     add = f'{start}-{end}'
-#     domain_rec = SeqRec(
-#         rec.seq[start - 1: end],
-#         id=f'{rec.id}/{add}',
-#         name=f'{rec.name}/{add}',
-#         description=rec.description)
-#
-#     return start, end, domain_rec
 
 
 if __name__ == '__main__':

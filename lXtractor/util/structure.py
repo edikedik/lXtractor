@@ -18,6 +18,21 @@ from lXtractor.core.base import SOLVENTS, BondThresholds, DefaultBondThresholds
 from lXtractor.core.exceptions import LengthMismatch, MissingData
 from lXtractor.util.typing import is_sequence_of
 
+__all__ = (
+    'calculate_dihedral',
+    'filter_selection',
+    'filter_ligand',
+    'filter_polymer',
+    'filter_any_polymer',
+    'filter_solvent_extended',
+    'filter_to_common_atoms',
+    'find_contacts',
+    'iter_canonical',
+    'iter_residue_masks',
+    'get_missing_atoms',
+    'get_observed_atoms_frac',
+)
+
 LOGGER = logging.getLogger(__name__)
 
 _BASIC_COMPARISON_ATOMS = {'N', 'CA', 'C', 'CB'}
@@ -186,10 +201,7 @@ def filter_polymer(a, min_size=2, pol_type='peptide'):
     split_idx = np.sort(
         np.unique(
             np.concatenate(
-                [
-                    bst.check_res_id_continuity(a),
-                    bst.check_backbone_continuity(a),
-                ]
+                [bst.check_res_id_continuity(a), bst.check_backbone_continuity(a)]
             )
         )
     )

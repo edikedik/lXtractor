@@ -1,32 +1,34 @@
 """
 Miscellaneous utilities that couldn't be properly categorized.
 """
-from collections import UserDict, namedtuple
+from collections import namedtuple
 from itertools import groupby
 
 import pandas as pd
-from more_itertools import take
 
 from lXtractor.core.exceptions import FormatError
 
 
-class SizedDict(UserDict):
-    """
-    Dict with limited number of keys. In case of exceeding the max number
-    of elements during the set item operation, removes the first elements
-    to abide the size constraints.
-    """
+__all__ = ('is_valid_field_name', )
 
-    def __init__(self, max_items: int, *args, **kwargs):
-        self.max_items = max_items
-        super().__init__(*args, **kwargs)
 
-    def __setitem__(self, key, value):
-        diff = len(self) - self.max_items
-        if diff > 0:
-            for k in take(diff, iter(self.keys())):
-                super().__delitem__(k)
-        super().__setitem__(key, value)
+# class SizedDict(UserDict):
+#     """
+#     Dict with limited number of keys. In case of exceeding the max number
+#     of elements during the set item operation, removes the first elements
+#     to abide the size constraints.
+#     """
+#
+#     def __init__(self, max_items: int, *args, **kwargs):
+#         self.max_items = max_items
+#         super().__init__(*args, **kwargs)
+#
+#     def __setitem__(self, key, value):
+#         diff = len(self) - self.max_items
+#         if diff > 0:
+#             for k in take(diff, iter(self.keys())):
+#                 super().__delitem__(k)
+#         super().__setitem__(key, value)
 
 
 def split_validate(inp: str, sep: str, parts: int) -> list[str]:

@@ -23,11 +23,20 @@ from lXtractor.core.base import UrlGetter
 
 T = t.TypeVar('T')
 V = t.TypeVar('V')
-# _U = t.TypeVar('_U', str, tuple[str, ...])
-# _U: t.TypeAlias = str | tuple[str, ...]
 _U = t.TypeVar('_U', tuple[str, ...], str)
 _F = t.TypeVar('_F', str, Path)
 LOGGER = logging.getLogger(__name__)
+
+__all__ = (
+    'fetch_text',
+    'fetch_to_file',
+    'fetch_files',
+    'fetch_iterable',
+    'setup_logger',
+    'get_files',
+    'get_dirs',
+    'run_sp',
+)
 
 
 # =================================== Fetching =========================================
