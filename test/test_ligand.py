@@ -32,6 +32,6 @@ def test_find_ligands(inp_id, expected):
     ligands = list(find_ligands(s))
     d = defaultdict(set)
     for lig in ligands:
-        d[lig.name] |= lig.parent_contact_chains
+        d[lig.res_name] |= lig.parent_contact_chains
     d = valmap(lambda x: tuple(sorted(x)), d)
     assert set(d.items()) == expected
