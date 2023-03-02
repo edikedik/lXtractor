@@ -4,7 +4,7 @@ import logging
 import typing as t
 from collections import abc
 from concurrent.futures import ProcessPoolExecutor, Future
-from itertools import repeat, chain
+from itertools import repeat, chain, tee
 from pathlib import Path
 
 from biotite import structure as bst
@@ -61,7 +61,7 @@ def _read_path(
     if x.suffix in supported_str_ext:
         return [
             ChainStructure.from_structure(c)
-            for c in GenericStructure.read(x).split_chains()
+            for c in GenericStructure.read(x).split_chains(polymer=True)
         ]
     if tolerate_failures:
         return None
@@ -105,6 +105,16 @@ def _init(
 
 def _map_numbering(seq1: ChainSequence, seq2: ChainSequence) -> list[None | int]:
     return seq1.map_numbering(seq2, save=False, align_method=biotite_align)
+
+
+def _try_fn(inp, fn, tolerate_failures):
+    try:
+        return fn(inp)
+    except Exception as e:
+        LOGGER.warning(f"Input {inp} failed with an error {e}")
+        if not tolerate_failures:
+            raise e
+        return None
 
 
 def map_numbering_12many(
@@ -215,20 +225,12 @@ class ChainInitializer:
 
     """
 
-    def __init__(
-        self,
-        num_proc: int | None = None,
-        tolerate_failures: bool = False,
-        verbose: bool = False,
-    ):
+    def __init__(self, tolerate_failures: bool = False, verbose: bool = False):
         """
-
-        :param num_proc: The number of processes to use.
         :param tolerate_failures: Don't stop the execution if some object fails
             to initialize.
         :param verbose: Output progress bars.
         """
-        self.num_proc = num_proc
         self.tolerate_failures = tolerate_failures
         self.verbose = verbose
 
@@ -256,7 +258,7 @@ class ChainInitializer:
             | tuple[str, str]
             | GenericStructure
         ],
-        non_blocking: bool = False,
+        num_proc: int = 1,
         callbacks: list[InitializerCallback] | None = None,
     ) -> abc.Generator[_O | Future, None, None]:
         """
@@ -271,8 +273,7 @@ class ChainInitializer:
                 4) A pair (header, seq) to initialize a :class:`ChainSequence`.
                 5) A :class:`GenericStructure` with a single chain.
 
-        :param non_blocking: Return ``Future`` objects without attempting to
-            access results.
+        :param num_proc: The number of processes to use.
         :param callbacks: A sequence of callables accepting and returning an
             initialized object.
         :return: A generator yielding initialized chain sequences and
@@ -288,7 +289,6 @@ class ChainInitializer:
                 return res
             except Exception as e:
                 LOGGER.warning(f"Input {x} failed with an error {e}")
-                # LOGGER.exception(e)
                 if not self.tolerate_failures:
                     raise e
                 return None
@@ -299,20 +299,18 @@ class ChainInitializer:
             supported_str_ext=self.supported_str_ext,
             callbacks=callbacks,
         )
+        __try_fn = curry(_try_fn, fn=__init, tolerate_failures=self.tolerate_failures)
 
-        if self.num_proc is not None:
-            with ProcessPoolExecutor(self.num_proc) as executor:
-                futures = ((x, executor.submit(__init, x)) for x in it)
-                if non_blocking:
-                    yield from (x[1] for x in futures)
+        if num_proc > 1:
+            with ProcessPoolExecutor(num_proc) as executor:
+                # futures = ((x, executor.submit(__init, x)) for x in it)
+                if self.verbose:
+                    yield from tqdm(
+                        executor.map(__try_fn, it),
+                        desc="Initializing objects in parallel",
+                    )
                 else:
-                    if self.verbose:
-                        yield from map(
-                            yield_output,
-                            tqdm(futures, desc="Initializing objects in parallel"),
-                        )
-                    else:
-                        yield from map(yield_output, futures)
+                    yield from executor.map(__try_fn, it)
         else:
             if self.verbose:
                 it = tqdm(it, desc="Initializing objects sequentially")
@@ -330,9 +328,11 @@ class ChainInitializer:
                 | tuple[Path, abc.Sequence[str]]
             ],
         ],
-        key_callbacks: t.Optional[list[InitializerCallback]] = None,
-        val_callbacks: t.Optional[list[InitializerCallback]] = None,
-        num_proc_map_numbering: int | None = None,
+        key_callbacks: list[InitializerCallback] | None = None,
+        val_callbacks: list[InitializerCallback] | None = None,
+        num_proc_read_seq: int = 1,
+        num_proc_read_str: int = 1,
+        num_proc_map_numbering: int = 1,
         **kwargs,
     ) -> list[Chain]:
         """
@@ -367,6 +367,11 @@ class ChainInitializer:
             a :class:`ChainSequence`.
         :param val_callbacks: A sequence of callables accepting and returning
             a :class:`ChainStructure`.
+        :param num_proc_read_seq: A number of processes to devote to sequence
+            parsing. Typically, sequence reading doesn't benefit from parallel
+            processing, so it's better to leave this default.
+        :param num_proc_read_str: A number of processes dedicated to structures
+            parsing.
         :param num_proc_map_numbering: A number of processes to use for mapping
             between numbering of sequences and structures. Generally, this
             should be as high as possible for faster processing. In contrast
@@ -378,9 +383,13 @@ class ChainInitializer:
         :return: A list of initialized chains.
         """
         # Process keys and values
-        keys = self.from_iterable(m, callbacks=key_callbacks)  # ChainSequences
+        keys = self.from_iterable(
+            m, num_proc=num_proc_read_seq, callbacks=key_callbacks
+        )  # ChainSequences
         values_flattened = self.from_iterable(  # ChainStructures
-            chain.from_iterable(m.values()), callbacks=val_callbacks
+            chain.from_iterable(m.values()),
+            num_proc=num_proc_read_str,
+            callbacks=val_callbacks,
         )
         values = split_into(values_flattened, map(len, m.values()))
 
@@ -392,9 +401,7 @@ class ChainInitializer:
             ),
         )
 
-        num_proc = num_proc_map_numbering or self.num_proc
-
-        if num_proc is None or num_proc == 1:
+        if num_proc_map_numbering <= 1:
             items = (
                 tqdm(m_new.items(), desc='Adding structures sequentially')
                 if self.verbose
@@ -414,7 +421,7 @@ class ChainInitializer:
             numbering_groups = map_numbering_many2many(
                 [x.seq for x in m_new],
                 [[x.seq for x in val] for val in m_new.values()],
-                num_proc=num_proc,
+                num_proc=num_proc_map_numbering,
                 verbose=self.verbose,
             )
             for (c, ss), num_group in zip(m_new.items(), numbering_groups, strict=True):

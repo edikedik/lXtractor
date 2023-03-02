@@ -32,8 +32,8 @@ def mapping(chicken_src_str_path, chicken_src_seq_path, simple_structure):
     }
 
 
-def assert_iterable(io, items):
-    res = list(io.from_iterable(items))
+def assert_iterable(io, items, num_proc=1):
+    res = list(io.from_iterable(items, num_proc=num_proc))
     assert len(res) == 6
     assert all([isinstance(r, (ChainSequence, ChainStructure, list)) for r in res])
 
@@ -44,12 +44,17 @@ def test_iterable(items):
 
 
 def test_iterable_parallel(items):
-    io = ChainInitializer(num_proc=2)
-    assert_iterable(io, items)
+    io = ChainInitializer()
+    assert_iterable(io, items, 2)
 
 
-def assert_mapping(mapping, io):
-    chains = io.from_mapping(mapping)
+def assert_mapping(mapping, io, num_proc=1):
+    chains = io.from_mapping(
+        mapping,
+        num_proc_read_str=num_proc,
+        num_proc_read_seq=num_proc,
+        num_proc_map_numbering=num_proc,
+    )
     assert len(chains) == 2
     assert all(isinstance(x, Chain) for x in chains)
     assert len(chains[0].structures) == 1
@@ -66,8 +71,8 @@ def test_mapping(mapping):
 
 
 def test_mapping_parallel(mapping):
-    io = ChainInitializer(num_proc=2)
-    assert_mapping(mapping, io)
+    io = ChainInitializer()
+    assert_mapping(mapping, io, num_proc=2)
 
 
 def test_mapping_invalid_objects(simple_chain_seq):
