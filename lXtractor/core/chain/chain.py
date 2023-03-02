@@ -19,6 +19,7 @@ from lXtractor.core.exceptions import (
     MissingData,
     NoOverlap,
     FormatError,
+    InitError,
 )
 from lXtractor.util.seq import read_fasta
 
@@ -250,9 +251,7 @@ class Chain:
     @classmethod
     @t.overload
     def from_seq(
-        cls,
-        inp: Path | TextIOBase,
-        read_method: SeqReader = read_fasta,
+        cls, inp: Path | TextIOBase, read_method: SeqReader = read_fasta
     ) -> ChainList[Self]:
         ...
 
@@ -430,11 +429,7 @@ class Chain:
                 )
             for c in self.children:
                 sub = structure.spawn_child(
-                    c.seq.start,
-                    c.seq.end,
-                    c.name,
-                    map_from=map_name,
-                    keep=False,
+                    c.seq.start, c.seq.end, c.name, map_from=map_name, keep=False
                 )
                 c.add_structure(sub, add_to_children=True)
 
@@ -535,7 +530,13 @@ class Chain:
                     keep=str_keep_child,
                     keep_seq_child=str_seq_keep_child,
                 )
-            except (AmbiguousMapping, MissingData, NoOverlap, FormatError) as e:
+            except (
+                AmbiguousMapping,
+                MissingData,
+                NoOverlap,
+                FormatError,
+                InitError,
+            ) as e:
                 msg = (
                     f"Failed to spawn substructure from {structure} using boundaries "
                     f"[{start, end}] due to {e}"
@@ -543,7 +544,7 @@ class Chain:
                 # logging.warning(msg)
                 LOGGER.warning(msg)
                 if not tolerate_failure:
-                    raise e
+                    raise InitError(msg) from e
                 return None
 
         name = name or self.seq.name
