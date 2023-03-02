@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typing as t
 from collections import abc
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -23,14 +24,43 @@ from lXtractor.core.config import (
     UNK_NAME,
 )
 from lXtractor.core.exceptions import LengthMismatch, InitError, MissingData
-from lXtractor.core.structure import GenericStructure, PDB_Chain, _validate_chain
+from lXtractor.core.structure import GenericStructure
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.structure import filter_selection, filter_solvent_extended
 
 if t.TYPE_CHECKING:
     from lXtractor.variables import Variables
 
+
 # TODO: subset and overlap with other structures/sequences
+
+
+@dataclass
+class PDB_Chain:
+    """
+    A container to hold the data of a single structural chain.
+    """
+
+    id: str
+    chain: str
+    structure: GenericStructure | None
+
+
+def _validate_chain(pdb: PDB_Chain):
+    if pdb.structure.is_empty or pdb.structure.is_singleton:
+        return
+    chains = pdb.structure.chain_ids_polymer
+    if len(chains) > 1:
+        raise InitError(
+            f'Invalid chain {pdb}: the structure must contain a single '
+            f'polymeric chain. Got {len(chains)}: {chains}'
+        )
+    chain_id = chains.pop()
+    if chain_id != pdb.chain:
+        raise InitError(
+            f'Invalid chain {pdb}. Actual chain {chain_id} does not match '
+            f'chain attribute {pdb.chain}'
+        )
 
 
 class ChainStructure:
@@ -39,12 +69,12 @@ class ChainStructure:
 
     Typical usage workflow:
 
-    1) Use :meth:`GenericStructure.read <lXtractor.core.structure.
-    GenericStructure.read>` to parse the file.
-    2) Split into chains using :meth:`split_chains <lXtractor.core.structure.
-    GenericStructure.split_chains>`.
-    3) Initialize :class:`ChainStructure` from each chain via
-    :meth:`from_structure`.
+    #. Use :meth:`GenericStructure.read <lXtractor.core.structure.
+        GenericStructure.read>` to parse the file.
+    #. Split into chains using :meth:`split_chains <lXtractor.core.structure.
+        GenericStructure.split_chains>`.
+    #. Initialize :class:`ChainStructure` from each chain via
+        :meth:`from_structure`.
 
 
     .. code-block:: python
@@ -57,9 +87,9 @@ class ChainStructure:
     Two main containers are:
 
     1) :attr:`seq` -- a :class:`ChainSequence` of this structure,
-    also containing meta info.
+        also containing meta info.
     2) :attr:`pdb` -- a container with pdb id, pdb chain id,
-    and the structure itself.
+        and the structure itself.
 
     A unique structure is defined by
     """
@@ -108,6 +138,7 @@ class ChainStructure:
         #: Variables assigned to this structure. Each should be of a
         #: :class:`lXtractor.variables.base.StructureVariable`.
         from lXtractor.variables import Variables
+
         self.variables: Variables = variables or Variables()
 
         #: Any sub-structures descended from this one,
@@ -274,8 +305,7 @@ class ChainStructure:
 
         return self.__class__.from_structure(
             GenericStructure(
-                self.array[~filter_solvent_extended(self.array)],
-                self.pdb.id,
+                self.array[~filter_solvent_extended(self.array)], self.pdb.id
             ),
             self.pdb.id,
             self.pdb.chain,
@@ -556,6 +586,7 @@ class ChainStructure:
 
         if dump_names.variables in files:
             from lXtractor.variables import Variables
+
             variables = Variables.read(files[dump_names.variables]).structure
 
         cs = cls(pdb_id, chain_id, structure, seq, variables=variables)

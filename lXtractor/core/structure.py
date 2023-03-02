@@ -7,7 +7,6 @@ import logging
 import operator as op
 import typing as t
 from collections import abc
-from dataclasses import dataclass
 from functools import reduce
 from os import PathLike
 from pathlib import Path
@@ -411,33 +410,6 @@ class GenericStructure:
             GenericStructure(other_transformed, other.pdb_id),
             rmsd_target,
             transformation,
-        )
-
-
-@dataclass
-class PDB_Chain:
-    """
-    A container to hold the data of a single structural chain.
-    """
-
-    id: str
-    chain: str
-    structure: GenericStructure | None
-
-
-def _validate_chain(pdb: PDB_Chain):
-    if pdb.structure.is_empty or pdb.structure.is_singleton:
-        return
-    chains = pdb.structure.chain_ids_polymer
-    if len(chains) > 1:
-        raise InitError(
-            f'The structure must contain a single polymeric chain. '
-            f'Got {len(chains)}: {chains}'
-        )
-    chain_id = chains.pop()
-    if chain_id != pdb.chain:
-        raise InitError(
-            f'Actual chain {chain_id} does not match .chain attribute {pdb.chain}'
         )
 
 
