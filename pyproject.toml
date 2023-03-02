@@ -30,7 +30,7 @@ maintainers = [
     { name = "Ivan Reveguk", email = "ivan.reveguk@gmail.com" }
 ]
 dependencies = [
-    "biotite>=0.35.0",
+    "biotite>=0.36",
     "more-itertools>=9.0",
     "networkx>=2.8.6",
     "numpy>=1.23",
