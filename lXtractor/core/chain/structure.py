@@ -277,7 +277,7 @@ class ChainStructure:
         if structure.is_empty:
             return cls(pdb_id, chain_id or EMPTY_CHAIN_ID, structure)
 
-        chain_id = chain_id or structure.array.chain_id[0]
+        chain_id = chain_id or structure.chain_ids_polymer.pop()
 
         return cls(pdb_id, chain_id, structure)
 
