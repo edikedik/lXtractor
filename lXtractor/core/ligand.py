@@ -9,8 +9,12 @@ import numpy as np
 from lXtractor.core.base import BondThresholds, DefaultBondThresholds
 from lXtractor.core.config import MetaNames
 from lXtractor.core.exceptions import FormatError
-from lXtractor.util.structure import filter_ligand, iter_residue_masks, find_contacts, \
-    filter_solvent_extended
+from lXtractor.util.structure import (
+    filter_ligand,
+    iter_residue_masks,
+    find_contacts,
+    filter_solvent_extended,
+)
 
 if t.TYPE_CHECKING:
     from lXtractor.core.structure import GenericStructure
@@ -33,11 +37,13 @@ class Ligand:
 
     .. seealso::
         `find_ligands`
+
+    Methods ``__repr__`` and ``__str__`` output a string in the format:
+    ``{res_name}_{res_id}:{chain_id}<-({parent})``.
     """
 
     def __init__(
         self,
-        name: str,
         parent: GenericStructure,
         mask: np.ndarray,
         contact_mask: np.ndarray,
@@ -79,9 +85,6 @@ class Ligand:
                 f'Ligand atoms point to more than one ligand res id {ligand_res_ids}'
             )
 
-        #: Name of the ligand. Defaults to the ligand residue PDB code.
-        self.name: str = name
-
         #: Parent structure.
         self.parent: GenericStructure = parent
 
@@ -106,6 +109,12 @@ class Ligand:
 
         #: A dictionary of meta info.
         self.meta = meta
+
+    def __str__(self):
+        return f'{self.res_name}_{self.res_id}:{self.chain_id}<-({self.parent})'
+
+    def __repr__(self):
+        return str(self)
 
     @property
     def array(self) -> bst.AtomArray:
@@ -213,7 +222,7 @@ def find_ligands(
         }
 
         yield Ligand(
-            name, structure, m_ligand, m_contacts, contacts, ligand_idx, dist, meta
+            structure, m_ligand, m_contacts, contacts, ligand_idx, dist, meta
         )
 
 

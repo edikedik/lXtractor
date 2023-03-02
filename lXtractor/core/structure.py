@@ -30,6 +30,9 @@ class GenericStructure:
     """
     A generic macromolecular structure with possibly many chains holding
     a single :class:`biotite.structure.AtomArray` instance.
+
+    Methods ``__repr__`` and ``__str__`` output a string in the format:
+    ``{pdb_id}:{polymer_chain_ids};{ligand_chain_ids}``.
     """
 
     __slots__ = ('_array', 'pdb_id', '_ligands')
@@ -69,12 +72,20 @@ class GenericStructure:
             )
         return False
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         atoms = tuple(
             (a.chain_id, a.res_id, a.res_name, a.atom_name, tuple(a.coord))
             for a in self.array
         )
         return hash(self.pdb_id) + hash(atoms)
+
+    def __str__(self) -> str:
+        chains_pol = ','.join(self.chain_ids_polymer)
+        chains_lig = ','.join(self.chain_ids_ligand)
+        return f'{self.pdb_id}:{chains_pol};{chains_lig}'
+
+    def __repr__(self) -> str:
+        return str(self)
 
     @property
     def array(self) -> bst.AtomArray:
@@ -240,7 +251,12 @@ class GenericStructure:
         return self.__class__(self.array[mask | ligands_mask], self.pdb_id, True)
 
     def split_chains(
-        self, *, copy: bool = False, ligands: bool = True, min_connections: int = 1
+        self,
+        *,
+        copy: bool = False,
+        polymer: bool = False,
+        ligands: bool = True,
+        min_connections: int = 1,
     ) -> abc.Iterator[Self]:
         """
         Split into separate chains. Splitting is done using
@@ -251,13 +267,15 @@ class GenericStructure:
 
         :param copy: Copy atom arrays resulting from subsetting based on
             chain annotation.
+        :param polymer: Use only polymer chains for splitting.
         :param ligands: A flag indicating whether to preserve connected ligands.
         :param min_connections: Minimum number of connections required to keep
             the ligand.
         :return: An iterable over chains found in :attr:`array`.
         """
         a = self.array.copy() if copy else self.array
-        for chain_id in np.unique(a.chain_id):
+        chain_ids = self.chain_ids_polymer if polymer else self.chain_ids
+        for chain_id in chain_ids:
             mask = a.chain_id == chain_id
             if ligands:
                 yield self.subset_with_ligands(mask, min_connections)
