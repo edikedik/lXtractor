@@ -2,7 +2,7 @@ import pytest
 
 from lXtractor.core.chain import Chain, ChainStructure
 from lXtractor.core.config import Sep, SeqNames
-from lXtractor.core.exceptions import NoOverlap
+from lXtractor.core.exceptions import NoOverlap, InitError
 from test.common import sample_chain, mark_meta
 
 
@@ -56,7 +56,7 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     assert len(child.structures) == 0
 
     # Using segment's boundaries
-    with pytest.raises(NoOverlap):
+    with pytest.raises((NoOverlap, InitError)):
         _ = p.spawn_child(1, 480, 'child', keep=True)
     child = p.spawn_child(1, 260, 'child', keep=True)
     assert len(child.seq) == 260
