@@ -41,6 +41,7 @@ __all__ = (
     'SASA',
     'LigandContactsCount',
     'LigandNames',
+    'LigandDist'
 )
 
 LOGGER = logging.getLogger(__name__)
