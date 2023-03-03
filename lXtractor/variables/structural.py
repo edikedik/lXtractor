@@ -41,7 +41,7 @@ __all__ = (
     'SASA',
     'LigandContactsCount',
     'LigandNames',
-    'LigandDist'
+    'LigandDist',
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -520,8 +520,10 @@ class SASA(StructureVariable):
 
         if m.sum() == 0:
             raise FailedCalculation('Empty selection')
-
-        sasa = bst.sasa(obj.array, atom_filter=m)
+        try:
+            sasa = bst.sasa(obj.array, atom_filter=m)
+        except Exception as e:
+            raise FailedCalculation(f'Failed to calculate {self} on {obj}') from e
         return float(np.sum(sasa[~np.isnan(sasa)]))
 
 
