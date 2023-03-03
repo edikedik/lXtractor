@@ -389,6 +389,23 @@ class ChainList(abc.MutableSequence[CT]):
         """
         yield from (s.seq for s in self.iter_structures())
 
+    @property
+    def sequences(self) -> ChainList[ChainSequence]:
+        """
+        :return: Get all :attr:`lXtractor.core.chain.Chain.seq` or
+            `lXtractor.core.chain.sequence.ChainSequence` objects within this
+            chain list.
+        """
+        return ChainList(self.iter_sequences())
+
+    @property
+    def structures(self) -> ChainList[ChainStructure]:
+        return ChainList(self.iter_structures())
+
+    @property
+    def structure_sequences(self) -> ChainList[ChainSequence]:
+        return ChainList(self.iter_structure_sequences())
+
     @staticmethod
     def _get_seg_matcher(
         s: str,
