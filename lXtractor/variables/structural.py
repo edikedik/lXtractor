@@ -40,7 +40,7 @@ __all__ = (
     'Chi2',
     'SASA',
     'LigandContactsCount',
-    'LigandNames'
+    'LigandNames',
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -557,7 +557,7 @@ class LigandContactsCount(StructureVariable):
             except IndexError as e:
                 raise FailedCalculation(
                     f'Failed to apply obtained position mask derived from {obj.pdb_id} '
-                    f'to a ligand {lig.name} ({lig.parent.pdb_id}) parent contacts'
+                    f'to a ligand {lig.res_name} ({lig.parent.pdb_id}) parent contacts'
                 ) from e
             n_contacts += np.sum(lig_contacts != 0)
         return n_contacts
@@ -595,9 +595,88 @@ class LigandNames(StructureVariable):
             except IndexError as e:
                 raise FailedCalculation(
                     f'Failed to apply obtained position mask derived from {obj.pdb_id} '
-                    f'to a ligand {lig.name} ({lig.parent.pdb_id}) parent contacts'
+                    f'to a ligand {lig.res_name} ({lig.parent.pdb_id}) parent contacts'
                 ) from e
         return ','.join(names)
+
+
+class LigandDist(StructureVariable):
+    """
+    A distance from the selected residue or a residue's atom to a connected
+    ligand.
+
+    Each ligand provides :attr:`lXtractor.core.ligand.Ligand.dist` array.
+    These arrays are stacked and aggregated atom-wise using :attr:`agg_lig`.
+    Then, :attr:`agg_res` aggregates the obtained vector of values into a
+    single number.
+
+    For instance, to obtain max distance for the closest ligand of a residue 1,
+    use ``LigandDist(1, agg_res='max')``.
+
+    If structure has no
+    :attr:`<ligands lXtractor.core.structure.GenericStructure.ligands>`,
+    this variable defaults to -1.0.
+
+    ..note ::
+        Attr :attr:`lXtractor.core.ligand.dist` provides distances from an atom
+        to the closest ligand atom.
+    """
+
+    __slots__ = ('p', 'a', 'agg_lig', 'agg_res')
+
+    def __init__(
+        self, p: int, a: str | None = None, agg_lig: str = 'min', agg_res: str = 'min'
+    ):
+        if agg_lig not in AggFns:
+            raise InitError(
+                f'Wrong agg_lig {agg_lig}. ' f'Available aggregators: {list(AggFns)}'
+            )
+        if agg_res not in AggFns:
+            raise InitError(
+                f'Wrong agg_lig {agg_res}. ' f'Available aggregators: {list(AggFns)}'
+            )
+
+        #: Residue position
+        self.p = p
+
+        #: Atom name. If not provided, aggregate across residue atoms.
+        self.a = a
+
+        #: Aggregator function for ligands.
+        self.agg_lig = agg_lig
+
+        #: Aggregator function for a residue atoms.
+        self.agg_res = agg_res
+
+    @property
+    def rtype(self) -> t.Type[float]:
+        return float
+
+    def calculate(
+        self, obj: GenericStructure, mapping: MappingT | None = None
+    ) -> float:
+        mask = (
+            atom_mask(self.p, self.a, obj.array, mapping)
+            if self.a is not None
+            else residue_mask(self.p, obj.array, mapping)
+        )
+
+        if not obj.ligands:
+            return -1.0
+
+        dists = []
+        for lig in obj.ligands:
+            try:
+                dists.append(lig.dist[mask])
+            except IndexError as e:
+                raise FailedCalculation(
+                    f'Failed to apply obtained position mask derived from {obj.pdb_id} '
+                    f'to a ligand {lig.res_name} ({lig.parent.pdb_id}) parent contacts'
+                ) from e
+        d = np.vstack(dists)
+        d = AggFns[self.agg_lig](d, axis=0)
+        d = AggFns[self.agg_res](d)
+        return d
 
 
 if __name__ == '__main__':

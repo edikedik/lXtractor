@@ -21,6 +21,10 @@ TEST_VARIABLES = (
     (str_vs.LigandNames(413, 'OH'), '66K'),
     (str_vs.LigandNames(413, 'CB'), ''),
     (str_vs.LigandNames(413), '66K'),
+    (str_vs.LigandDist(413), 3.827),
+    (str_vs.LigandDist(413, 'OH'), 3.827),
+    (str_vs.LigandDist(413, agg_res='max'), 7.915),
+    (str_vs.LigandDist(413, agg_lig='max', agg_res='max'), 23.135),
 )
 
 

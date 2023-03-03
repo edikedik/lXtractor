@@ -80,8 +80,8 @@ class GenericStructure:
         return hash(self.pdb_id) + hash(atoms)
 
     def __str__(self) -> str:
-        chains_pol = ','.join(self.chain_ids_polymer)
-        chains_lig = ','.join(self.chain_ids_ligand)
+        chains_pol = ','.join(sorted(self.chain_ids_polymer))
+        chains_lig = ','.join(sorted(self.chain_ids_ligand))
         return f'{self.pdb_id}:{chains_pol};{chains_lig}'
 
     def __repr__(self) -> str:
@@ -275,7 +275,7 @@ class GenericStructure:
         """
         a = self.array.copy() if copy else self.array
         chain_ids = self.chain_ids_polymer if polymer else self.chain_ids
-        for chain_id in chain_ids:
+        for chain_id in sorted(chain_ids):
             mask = a.chain_id == chain_id
             if ligands:
                 yield self.subset_with_ligands(mask, min_connections)
