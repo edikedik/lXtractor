@@ -56,9 +56,7 @@ def _validate_chain(pdb: PDB_Chain):
             f'polymeric chain. Got {len(chains)}: {chains}'
         )
     if len(chains) == 0:
-        raise InitError(
-            f'No chains for {pdb}'
-        )
+        raise InitError(f'No chains for {pdb}')
     chain_id = chains.pop()
     if chain_id != pdb.chain:
         raise InitError(
@@ -109,6 +107,7 @@ class ChainStructure:
         parent: ChainStructure | None = None,
         children: abc.Iterable[ChainStructure] | None = None,
         variables: Variables | None = None,
+        skip_validation: bool = False,
     ):
         """
         `pdb_id`, `pdb_chain`, and `pdb_structure` are wrapped into a
@@ -125,13 +124,17 @@ class ChainStructure:
             This contained is used to record sub-structures obtained via
             :meth:`spawn_child`.
         :param variables: Variables associated with this structure.
+        :param skip_validation: Skip validating that only a single chain is
+            present. This might be useful when there is a need to initialize
+            chain structure from a peculiar subset of atoms.
         :raise InitError: If invalid (e.g., multi-chain structure) is provided.
         """
         #: A container with PDB ID, PDB Chain, and parsed structure.
         if pdb_structure is None:
             pdb_structure = GenericStructure.make_empty(pdb_id)
         self.pdb: PDB_Chain = PDB_Chain(pdb_id, pdb_chain, pdb_structure)
-        _validate_chain(self.pdb)
+        if not skip_validation:
+            _validate_chain(self.pdb)
 
         #: Sequence of this structure.
         self.seq: ChainSequence
@@ -263,6 +266,7 @@ class ChainStructure:
         structure: bst.AtomArray | GenericStructure,
         pdb_id: str | None = None,
         chain_id: str | None = None,
+        **kwargs,
     ) -> ChainStructure:
         """
         :param structure: An `AtomArray` or `GenericStructure`,
@@ -271,6 +275,9 @@ class ChainStructure:
             (Chain ID will be inferred from the `AtomArray`).
         :param chain_id: Chain identifier. If not provided, will take the first
             atom's chain ID from the provided structure.
+        :param kwargs: Passed to initializer. Avoid using `pdb_id`, `chain_id`,
+            or `structure` since they are supplied internally within this
+            method.
         :return: Initialized chain structure.
         """
         if isinstance(structure, bst.AtomArray):
@@ -283,20 +290,23 @@ class ChainStructure:
 
         chain_id = chain_id or structure.chain_ids_polymer.pop()
 
-        return cls(pdb_id, chain_id, structure)
+        return cls(pdb_id, chain_id, structure, **kwargs)
 
     @classmethod
     def make_empty(
-        cls, pdb_id: str = EMPTY_PDB_ID, pdb_chain: str = EMPTY_CHAIN_ID
+        cls, pdb_id: str = EMPTY_PDB_ID, pdb_chain: str = EMPTY_CHAIN_ID, **kwargs
     ) -> ChainStructure:
         """
         Create an empty chain structure.
 
         :param pdb_id: PDB ID.
         :param pdb_chain: Chain ID.
+        :param kwargs: Passed to initializer. Avoid using `pdb_id`, `chain_id`,
+            or `structure` since they are supplied internally within this
+            method.
         :return: An empty chain structure.
         """
-        return cls(pdb_id, pdb_chain, GenericStructure.make_empty(pdb_id))
+        return cls(pdb_id, pdb_chain, GenericStructure.make_empty(pdb_id), **kwargs)
 
     def rm_solvent(self) -> Self:
         """
