@@ -55,9 +55,14 @@ def _validate_chain(pdb: PDB_Chain):
             f'Invalid chain {pdb}: the structure must contain a single '
             f'polymeric chain. Got {len(chains)}: {chains}'
         )
-    if len(chains) == 0:
-        raise InitError(f'No chains for {pdb}')
-    chain_id = chains.pop()
+    try:
+        chain_id = (
+            pdb.structure.chain_ids_polymer.pop()
+            if pdb.structure.chain_ids_polymer
+            else pdb.structure.chain_ids.pop()
+        )
+    except KeyError as e:
+        raise InitError(f'No chains for {pdb}') from e
     if chain_id != pdb.chain:
         raise InitError(
             f'Invalid chain {pdb}. Actual chain {chain_id} does not match '
@@ -288,7 +293,11 @@ class ChainStructure:
         if structure.is_empty:
             return cls(pdb_id, chain_id or EMPTY_CHAIN_ID, structure)
 
-        chain_id = chain_id or structure.chain_ids_polymer.pop()
+        chain_id = chain_id or (
+            structure.chain_ids_polymer.pop()
+            if structure.chain_ids_polymer
+            else structure.chain_ids.pop()
+        )
 
         return cls(pdb_id, chain_id, structure, **kwargs)
 
