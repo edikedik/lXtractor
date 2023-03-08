@@ -16,7 +16,7 @@ from more_itertools import unzip
 from toolz import curry
 from tqdm.auto import tqdm
 
-from lXtractor.core.chain import ChainStructure
+from lXtractor.core.chain import ChainStructure, ChainSequence
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData, LengthMismatch, InitError
 from lXtractor.ext.pdb_ import PDB
@@ -229,6 +229,24 @@ def _stage_inp(
     to_array: bool,
     tolerate_missing: bool,
 ) -> _StagedSupInpStrict | _StagedSupInpFlex:
+    def init_sub_chain(a):
+        m = c.seq.get_map(SeqNames.enum)
+        seqs = {
+            SeqNames.enum: [m[p].numbering for p in a.res_id],
+            SeqNames.seq3: list(a.res_name),
+        }
+        try:
+            seq = ChainSequence.from_string(
+                ''.join(m[p].seq1 for p in a.res_id), name=c.seq.name, **seqs
+            )
+            return ChainStructure.from_structure(
+                a, c.pdb.id, c.pdb.chain, seq=seq, skip_validation=True
+            )
+        except Exception as e:
+            raise InitError(
+                f'Failed to create ChainStructure from array {a} for {c}'
+            ) from e
+
     pos_sup, atoms_sup = selection_superpose
     pos_rmsd, atoms_rmsd = selection_rmsd
 
@@ -263,22 +281,8 @@ def _stage_inp(
     if to_array:
         return c.id, a_sup, a_rmsd
 
-    try:
-        c_sup = ChainStructure.from_structure(
-            a_sup, c.pdb.id, c.pdb.chain, skip_validation=True
-        )
-    except Exception as e:
-        raise InitError(
-            f'Failed to create ChainStructure from superposition array {a_sup} for {c}'
-        ) from e
-    try:
-        c_rmsd = ChainStructure.from_structure(
-            a_rmsd, c.pdb.id, c.pdb.chain, skip_validation=True
-        )
-    except Exception as e:
-        raise InitError(
-            f'Failed to create ChainStructure from RMSD array {a_rmsd} for {c}'
-        ) from e
+    c_sup = init_sub_chain(a_sup)
+    c_rmsd = init_sub_chain(a_rmsd)
 
     return c.id, c_sup, c_rmsd
 
