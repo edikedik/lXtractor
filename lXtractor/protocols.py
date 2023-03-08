@@ -18,7 +18,7 @@ from tqdm.auto import tqdm
 
 from lXtractor.core.chain import ChainStructure
 from lXtractor.core.config import SeqNames
-from lXtractor.core.exceptions import MissingData, LengthMismatch
+from lXtractor.core.exceptions import MissingData, LengthMismatch, InitError
 from lXtractor.ext.pdb_ import PDB
 from lXtractor.util.seq import biotite_align
 from lXtractor.util.structure import filter_selection, filter_to_common_atoms
@@ -263,9 +263,22 @@ def _stage_inp(
     if to_array:
         return c.id, a_sup, a_rmsd
 
-    c_sup, c_rmsd = map(
-        lambda x: ChainStructure.from_structure(x, c.pdb.id), [a_sup, a_rmsd]
-    )
+    try:
+        c_sup = ChainStructure.from_structure(
+            a_sup, c.pdb.id, c.pdb.chain, skip_validation=True
+        )
+    except Exception as e:
+        raise InitError(
+            f'Failed to create ChainStructure from superposition array {a_sup} for {c}'
+        ) from e
+    try:
+        c_rmsd = ChainStructure.from_structure(
+            a_rmsd, c.pdb.id, c.pdb.chain, skip_validation=True
+        )
+    except Exception as e:
+        raise InitError(
+            f'Failed to create ChainStructure from RMSD array {a_rmsd} for {c}'
+        ) from e
 
     return c.id, c_sup, c_rmsd
 
