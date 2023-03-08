@@ -221,7 +221,8 @@ class GenericStructure:
             return []
 
         mapping = AminoAcidDict()
-        for r in bst.residue_iter(self.array_polymer):
+        a = self.array if len(self.array_polymer) == 0 else self.array_polymer
+        for r in bst.residue_iter(a):
             atom = r[0]
             try:
                 one_letter_code = mapping.three21[atom.res_name]
