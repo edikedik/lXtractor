@@ -157,6 +157,28 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
     assert diff_atoms.SuperposeMobile == diff_atoms.RmsdMobile
     assert res[2] < 1
 
+    # 3. Flexible with backbone atoms, same selection
+    # ===============================================
+
+    res = next(
+        superpose_pairwise(
+            [abl_str],
+            [src_str],
+            selection_superpose=(pos, ['N', 'CA', 'C']),
+            map_name='REF',
+            strict=False,
+        )
+    )
+
+    print(res)
+    diff_seq, diff_atoms = res[-2:]
+
+    assert diff_seq.SuperposeFixed == diff_seq.SuperposeMobile == 0
+    assert diff_seq.RmsdFixed == diff_seq.RmsdMobile == 0
+    assert diff_atoms.SuperposeFixed == diff_atoms.RmsdFixed
+    assert diff_atoms.SuperposeMobile == diff_atoms.RmsdMobile
+    assert res[2] < 1
+
 
 @pytest.mark.parametrize(
     'method,pdb_ids,accepted',
