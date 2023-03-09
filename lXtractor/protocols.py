@@ -230,18 +230,8 @@ def _stage_inp(
     tolerate_missing: bool,
 ) -> _StagedSupInpStrict | _StagedSupInpFlex:
     def init_sub_chain(a):
-        m = c.seq.get_map(SeqNames.enum)
-        seqs = {
-            SeqNames.enum: [m[p].numbering for p in a.res_id],
-            SeqNames.seq3: list(a.res_name),
-        }
         try:
-            seq = ChainSequence.from_string(
-                ''.join(m[p].seq1 for p in a.res_id), name=c.seq.name, **seqs
-            )
-            return ChainStructure.from_structure(
-                a, c.pdb.id, c.pdb.chain, seq=seq, skip_validation=True
-            )
+            return ChainStructure.from_structure(a, c.pdb.id, c.pdb.chain)
         except Exception as e:
             raise InitError(
                 f'Failed to create ChainStructure from array {a} for {c}'
