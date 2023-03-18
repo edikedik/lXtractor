@@ -34,6 +34,7 @@ from lXtractor.core.config import (
     DumpNames,
     _DumpNames,
     UNK_NAME,
+    ColNames,
 )
 from lXtractor.core.exceptions import MissingData, InitError, AmbiguousMapping
 from lXtractor.util.io import get_files, get_dirs
@@ -889,6 +890,7 @@ class ChainSequence(lxs.Segment):
 
         if dump_names.variables in files:
             from lXtractor.variables import Variables
+
             seq.variables = Variables.read(files[dump_names.variables]).sequence
 
         if search_children and dump_names.segments_dir in dirs:
@@ -960,6 +962,22 @@ class ChainSequence(lxs.Segment):
                 child.write(
                     child_dir, dump_names=dump_names, write_children=write_children
                 )
+
+    def summary(self, meta: bool = True, children: bool = False) -> pd.DataFrame:
+        parent_id = self.parent.id if self.parent is not None else np.NaN
+        vs = [parent_id, self.id, self.start, self.end]
+        cols = [ColNames.parent_id, ColNames.id, ColNames.start, ColNames.end]
+
+        if meta:
+            vs += list(self.meta.values())
+            cols += list(self.meta)
+
+        rows = [pd.Series(vs, index=cols)]
+
+        if self.children and children:
+            rows += [c.summary(meta=meta, children=children) for c in self.children]
+
+        return pd.DataFrame(rows)
 
 
 if __name__ == '__main__':

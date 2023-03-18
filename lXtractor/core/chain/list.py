@@ -6,6 +6,7 @@ from collections import abc
 from functools import partial
 from itertools import chain, zip_longest, tee
 
+import pandas as pd
 from more_itertools import nth, peekable
 
 import lXtractor.core.segment as lxs
@@ -574,6 +575,9 @@ class ChainList(abc.MutableSequence[CT]):
         :return: A new chain list with application results.
         """
         return ChainList((fn(c) for c in self))
+
+    def summary(self, meta: bool = True, children: bool = False) -> pd.DataFrame:
+        return pd.concat([c.summary(meta, children) for c in self])
 
 
 def _wrap_children(children: abc.Iterable[CT] | None) -> ChainList[CT]:

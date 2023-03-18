@@ -6,6 +6,7 @@ from collections import abc
 from io import TextIOBase
 from pathlib import Path
 
+import pandas as pd
 from typing_extensions import Self
 
 from lXtractor.core.base import SeqReader, ApplyT, FilterT
@@ -13,7 +14,7 @@ from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.list import ChainList, _wrap_children
 from lXtractor.core.chain.sequence import ChainSequence
 from lXtractor.core.chain.structure import ChainStructure
-from lXtractor.core.config import DumpNames, SeqNames, _DumpNames
+from lXtractor.core.config import DumpNames, SeqNames, _DumpNames, ColNames
 from lXtractor.core.exceptions import (
     AmbiguousMapping,
     MissingData,
@@ -569,6 +570,23 @@ class Chain:
         if keep:
             self.children.append(child)
         return child
+
+    def summary(
+        self, meta: bool = True, children: bool = False, structures: bool = True
+    ) -> pd.DataFrame:
+        s = self.seq.summary(meta=meta, children=False)
+        s[ColNames.id] = [self.id]
+        if structures and self.structures:
+            str_summaries = pd.concat(
+                s.summary(meta=meta, children=False) for s in self.structures
+            )
+            s = pd.concat([s, str_summaries])
+        if children and self.children:
+            child_summaries = pd.concat(
+                c.summary(meta=meta, children=children) for c in self.children
+            )
+            s = pd.concat([s, child_summaries])
+        return s
 
 
 if __name__ == '__main__':

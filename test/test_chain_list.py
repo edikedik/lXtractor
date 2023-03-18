@@ -1,6 +1,7 @@
 import pytest
 
-from lXtractor.core.chain import ChainList, ChainSequence, ChainStructure
+from lXtractor.core.chain import ChainList, ChainSequence, ChainStructure, Chain
+from lXtractor.core.config import ColNames
 from lXtractor.core.segment import Segment
 
 
@@ -162,3 +163,26 @@ def test_iter_children(sample_chain_list):
     assert len(l) == 2
     assert len(l[0]) == 2
     assert len(l[1]) == 1
+
+
+def test_summary(simple_chain_structure):
+    c = Chain.from_seq(('S', 'XXXXX'))
+    s = simple_chain_structure
+    c.spawn_child(1, 1)
+    c.add_structure(s, map_to_seq=False)
+    c.spawn_child(1, 2)
+    c2 = Chain.from_seq(('S2', 'XXX'))
+    cl = ChainList([c, c2])
+    df = cl.summary()
+    # Two chains and one chain structure
+    assert len(df) == 3
+    print(df)
+    c.seq.meta['TestField'] = '1'
+    df = cl.summary(children=True)
+    print(df)
+    assert 'TestField' in df.columns
+    # The above + one chain child 1-1 + one chain child 1-2
+    # + one chain structure child = 6
+    assert len(df) == 6
+    # Two initial chains and one chain structure
+    assert len(df[df[ColNames.parent_id].isna()]) == 3

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from biotite import structure as bst
 from typing_extensions import Self
 
@@ -22,6 +23,7 @@ from lXtractor.core.config import (
     EMPTY_PDB_ID,
     EMPTY_CHAIN_ID,
     UNK_NAME,
+    ColNames,
 )
 from lXtractor.core.exceptions import LengthMismatch, InitError, MissingData
 from lXtractor.core.structure import GenericStructure
@@ -656,6 +658,16 @@ class ChainStructure:
                 child_name = child.seq.name or UNK_NAME
                 child_dir = base_dir / DumpNames.segments_dir / child_name
                 child.write(child_dir, fmt, dump_names=dump_names, write_children=True)
+
+    def summary(self, meta: bool = True, children: bool = False) -> pd.DataFrame:
+        s = self.seq.summary(meta=meta, children=False)
+        s[ColNames.id] = [self.id]
+        if children and self.children:
+            child_summaries = pd.concat(
+                [c.summary(meta=meta, children=children) for c in self.children]
+            )
+            s = pd.concat([s, child_summaries])
+        return s
 
 
 if __name__ == '__main__':

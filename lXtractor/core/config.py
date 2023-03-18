@@ -58,9 +58,18 @@ class _MetaNames:
     res_name: str = 'res_name'
 
 
+@dataclass
+class _ColNames:
+    id: str = 'ObjectID'
+    parent_id: str = 'ParentID'
+    start: str = 'Start'
+    end: str = 'End'
+
+
 DumpNames = _DumpNames()
 SeqNames = _SeqNames()
 MetaNames = _MetaNames()
+ColNames = _ColNames()
 
 MetaColumns = (
     # Taken from https://bioservices.readthedocs.io/en/main/_modules/bioservices/uniprot.html#UniProt
