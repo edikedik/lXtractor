@@ -243,8 +243,8 @@ class PyHMMer:
                 seq.meta[f'{new_map_name}_pvalue'] = dom.pvalue
                 seq.meta[f'{new_map_name}_score'] = dom.score
                 seq.meta[f'{new_map_name}_bias'] = dom.bias
-                seq.meta[f'{new_map_name}_cov_seq'] = cov_seq
-                seq.meta[f'{new_map_name}_cov_hmm'] = cov_hmm
+                seq.meta[f'{new_map_name}_cov_seq'] = str(cov_seq)
+                seq.meta[f'{new_map_name}_cov_hmm'] = str(cov_hmm)
                 yield sub
 
 
