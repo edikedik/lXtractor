@@ -359,16 +359,18 @@ LOGGER = logging.getLogger(__name__)
 
 
 def fetch_uniprot(
-        acc: t.Iterable[str], fmt: str = 'fasta',
-        chunk_size: int = 100, fields: t.Optional[str] = None,
-        **kwargs
+    acc: t.Iterable[str],
+    fmt: str = 'fasta',
+    chunk_size: int = 100,
+    fields: t.Optional[str] = None,
+    **kwargs,
 ) -> str:
     """
     An interface for the UniProt's search.
 
     Base URL: https://rest.uniprot.org/uniprotkb/stream
 
-    Available DB identifiers: https://www.uniprot.org/help/api_idmapping
+    Available DB identifiers: https://bioservices.readthedocs.io/en/main/_modules/bioservices/uniprot.html
 
     Will use :func:`fetch_chunks lXtractor.util.io.fetch_chunks` internally.
 
@@ -386,7 +388,7 @@ def fetch_uniprot(
     def fetch_chunk(chunk: t.Iterable[str]):
         params = {
             'format': fmt,
-            'query': ' OR '.join(map(lambda a: f'accession:{a}', chunk))
+            'query': ' OR '.join(map(lambda a: f'accession:{a}', chunk)),
         }
         if fmt == 'tsv' and fields is not None:
             params['fields'] = fields
