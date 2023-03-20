@@ -176,10 +176,8 @@ def test_summary(simple_chain_structure):
     df = cl.summary()
     # Two chains and one chain structure
     assert len(df) == 3
-    print(df)
     c.seq.meta['TestField'] = '1'
     df = cl.summary(children=True)
-    print(df)
     assert 'TestField' in df.columns
     # The above + one chain child 1-1 + one chain child 1-2
     # + one chain structure child = 6
