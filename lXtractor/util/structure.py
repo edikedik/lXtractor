@@ -66,6 +66,19 @@ def calculate_dihedral(
     return res
 
 
+def check_het_continuity(array: bst.AtomArray):
+    """
+    Find indices of atoms delineating sequences of hetero and non-hetero atoms.
+
+    :param array: Atom aray.
+    :return: Indices of atoms such that:
+        (1) if the atom is non-hetero, the previous atom is hetero, and
+        (2) if the atom is hetero, the previous atom is non-hetero.
+    """
+    diff = np.diff(array.hetero)
+    return np.where(diff != 0)[0] + 1
+
+
 def filter_selection(
     array: bst.AtomArray,
     res_id: abc.Sequence[int] | None,
@@ -198,17 +211,18 @@ def filter_polymer(a, min_size=2, pol_type='peptide'):
         belong to consecutive polymer entity having at least `min_size` monomers.
     """
 
-    split_idx = np.sort(
-        np.unique(
-            np.concatenate(
-                [bst.check_res_id_continuity(a), bst.check_backbone_continuity(a)]
-            )
-        )
-    )
+    res_breaks = bst.check_res_id_continuity(a)
+    bb_breaks = bst.check_backbone_continuity(a)
+    het_breaks = check_het_continuity(a)
+    if len(het_breaks) != 0:
+        # take only het tail to avoid including modified residues
+        het_breaks = het_breaks[-1:]
+
+    split_idx = np.sort(np.unique(np.concatenate([res_breaks, bb_breaks, het_breaks])))
 
     check_pol = partial(_is_polymer, min_size=min_size, pol_type=pol_type)
     bool_idx = map(
-        lambda a: np.full(len(a), check_pol(bst.array(a)), dtype=bool),
+        lambda x: np.full(len(x), check_pol(bst.array(x)), dtype=bool),
         np.split(a, split_idx),
     )
     return np.concatenate(list(bool_idx))
