@@ -39,9 +39,8 @@ Installation
 ============
 
 ``lXtractor`` requires python>=3.10 installed on a Unix system and is
-installable via pip:
+installable via pip::
 
-.. code::
     pip install lXtractor
 
 We encourage users to first create a virtual environment
