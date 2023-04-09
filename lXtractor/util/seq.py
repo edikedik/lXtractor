@@ -17,9 +17,9 @@ import biotite.sequence.align as balign
 import numpy as np
 from more_itertools import split_at, partition, split_before, tail, take
 
+import lXtractor.util.io as lxio
 from lXtractor.core.base import SupportsWrite, AlignMethod
 from lXtractor.core.exceptions import LengthMismatch, MissingData
-from lXtractor.util.io import run_sp
 
 __all__ = (
     'read_fasta',
@@ -134,7 +134,7 @@ def mafft_add(
         f'--inputorder --thread {thread} {msa_path}'
     )
 
-    return tail(len(seqs), read_fasta(StringIO(run_sp(cmd).stdout)))
+    return tail(len(seqs), read_fasta(StringIO(lxio.run_sp(cmd).stdout)))
 
 
 def mafft_align(
@@ -154,14 +154,14 @@ def mafft_align(
     """
     if isinstance(seqs, Path):
         cmd = f'{mafft} --anysymbol --thread {thread} --inputorder {seqs}'
-        return read_fasta(StringIO(run_sp(cmd).stdout))
+        return read_fasta(StringIO(lxio.run_sp(cmd).stdout))
     else:
         with NamedTemporaryFile('w') as handle:
             write_fasta(seqs, handle)
             handle.seek(0)
             filename = handle.name
             cmd = f'{mafft} --anysymbol --thread {thread} --inputorder {filename}'
-            return read_fasta(StringIO(run_sp(cmd).stdout))
+            return read_fasta(StringIO(lxio.run_sp(cmd).stdout))
 
 
 def biotite_align(
@@ -293,7 +293,7 @@ def parse_cdhit(clstr_file: Path) -> t.List[t.List[str]]:
 #     out_handle = NamedTemporaryFile('w')
 #     cmd = f'{cdhit_exec} -i {msa_handle.name} -o {out_handle.name} ' \
 #           f'-c {round(ts, 2)} -g 1 -T 0 -M 0 -d 0 -n {get_word_length()}'
-#     run_sp(cmd)
+#     lxio.run_sp(cmd)
 #     LOGGER.debug(f'successfully executed {cmd}')
 #     clusters = parse_cdhit(Path(f'{out_handle.name}.clstr'))
 #     return [[seqs_map[x] for x in c] for c in clusters]
