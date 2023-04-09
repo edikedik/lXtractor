@@ -65,31 +65,30 @@ In creating data collections, one could define the following steps::
 5. Save the data for later usage or modifications.
 
 ``lXtractor`` defines objects and routines helpful throughout this process.
-Namely, :class:`PDB`, :class:`SIFTS`, :class:`AlphaFold`, :func:`fetch_uniprot`
+Namely, ``PDB``, ``SIFTS``, ``AlphaFold``, ``fetch_uniprot()``
 can aid in the first step.
-Then, :class:`Alignment` and :class:`PyHMMer` can facilitate step 2.
+Then, ``Alignment`` and ``PyHMMer`` can facilitate step 2.
 At the end of the step 2 one will get a collection of ``Chain*``-type objects.
 If working with sequence-only collections, these are going to be
-:class:`ChainSequence` objects.
-For structure-only data, these are going to be :class:`ChainStructure` containers,
-embedding :class:`ChainSequence` and :class:`GenericStructure` objects.
+``ChainSequence`` objects.
+For structure-only data, these are going to be ``ChainStructure`` containers,
+embedding ``ChainSequence`` and ``GenericStructure`` objects.
 Finally, dealing with mappings between canonical sequence associated with
-a group of structures will result in :class:`Chain` objects.
+a group of structures will result in ``Chain`` objects.
 
-:class:`ChainList` wraps ``Chain*``-type objects into a list-like collection with
+``ChainList`` wraps ``Chain*``-type objects into a list-like collection with
 useful operations allowing to quickly filter and bulk-modify ``Chain*``-type
 objects.
-Thus, filtering typically comes down to using :meth:`ChainList.filter` method
-an object-oriented :func:`filter` that accepts a ``Callable[Chain*, bool]`` and
-returns a filtered :class:`ChainList`.
-One can save/load the collected objects using :class:`ChainIO` and proceed
+Thus, filtering typically comes down to using ``ChainList.filter()`` method that
+accepts a ``Callable[Chain*, bool]`` and returns a filtered ``ChainList``.
+One can save/load the collected objects using ``ChainIO`` and proceed
 with the feature extraction.
 
 ``lXtractor`` defines various sequence and structure variables.
-Variable-related operations are handled by :class:`GenericCalculator` and
-:class:`Manager` classes. The former defines the calculation strategy and how
+Variable-related operations are handled by ``GenericCalculator`` and
+``Manager`` classes. The former defines the calculation strategy and how
 the calculations are parallelized, while the latter handles the calculations
-and aggregates the results into a pandas :class:`DataFrame`.
+and aggregates the results into a pandas ``DataFrame``.
 
 As a result, one is left with a collection of ``Chain*``-type objects and a
 table with calculated variables. In addition, one can store the calculated
