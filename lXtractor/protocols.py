@@ -2,13 +2,11 @@
 A sandbox module to encapsulate high-level operations based on core
 `lXtractor`'s functionality.
 """
-import json
 import logging
 import typing as t
 from collections import abc, namedtuple
 from concurrent.futures import ProcessPoolExecutor
 from itertools import starmap, combinations
-from pathlib import Path
 
 import biotite.structure as bst
 import numpy as np
@@ -16,10 +14,9 @@ from more_itertools import unzip
 from toolz import curry
 from tqdm.auto import tqdm
 
-from lXtractor.core.chain import ChainStructure, ChainSequence
+from lXtractor.core.chain import ChainStructure
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData, LengthMismatch, InitError
-from lXtractor.ext.pdb_ import PDB
 from lXtractor.util.seq import biotite_align
 from lXtractor.util.structure import filter_selection, filter_to_common_atoms
 
@@ -467,68 +464,6 @@ def superpose_pairwise(
         if verbose:
             results = tqdm(results, desc='Superposing pairs', total=n)
         yield from results
-
-
-def filter_by_method(
-    pdb_ids: abc.Iterable[str],
-    pdb: PDB = PDB(),
-    method: str = 'X-ray',
-    dir_: Path | None = None,
-) -> list[str]:
-    """
-    .. seealso::
-        :meth:`PDB.fetch_info <lXtractor.ext.pdb_.PDB.fetch_info>`
-
-    .. note::
-        Keys for the info dict are 'rcsb_entry_info' -> 'experimental_method'
-
-    :param pdb_ids: An iterable over PDB IDs.
-    :param pdb: Fetcher instance. If not provided, will init with
-        default params.
-    :param method: Method to match. Must correspond exactly.
-    :param dir_: Dir to save info "entry" json dumps.
-    :return: A list of PDB IDs obtained by desired experimental
-        procedure.
-    """
-
-    def method_matches(d: dict) -> bool:
-        try:
-            return d['rcsb_entry_info']['experimental_method'] == method
-        except KeyError as e:
-            LOGGER.warning(f'Missing required key {e}')
-            return False
-
-    def get_existing(ids: abc.Iterable[str], _dir: Path) -> list[tuple[str, Path]]:
-        res = ((x, (_dir / f'{x}.json')) for x in ids)
-        return [x for x in res if x[1].exists()]
-
-    def load_file(inp: str | Path | dict, base: Path | None) -> dict:
-        try:
-            if isinstance(inp, dict):
-                return inp
-            if isinstance(inp, str):
-                assert base is not None, 'base path provided with base filename'
-                inp = base / f'{inp}.json'
-            with inp.open() as f:
-                res = json.load(f)
-                assert isinstance(res, dict), 'loaded json correctly'
-                return res
-        except FileNotFoundError:
-            LOGGER.warning(f'Missing supposedly fetched {inp}')
-            return {}
-
-    pdb_ids = list(pdb_ids)
-    existing = get_existing(pdb_ids, dir_) if dir_ is not None else []
-    fetched, missed = pdb.fetch_info('entry', pdb_ids, dir_)
-    fetched += existing
-    fetched = [(x[0], load_file(x[1], dir_)) for x in fetched]
-
-    if missed:
-        missed_display = ','.join(missed) if len(missed) < 100 else ''
-        LOGGER.warning(f'Failed to fetch {len(missed)} ids: {missed_display}')
-
-    # fails to recognize x[1] must be dict
-    return [x[0] for x in fetched if method_matches(x[1])]  # type: ignore
 
 
 if __name__ == '__main__':

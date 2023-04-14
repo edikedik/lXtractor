@@ -7,10 +7,9 @@ from collections import abc
 from itertools import repeat
 from pathlib import Path
 
-import requests
-
 from lXtractor.core.base import UrlGetter
 from lXtractor.ext.base import ApiBase
+from lXtractor.protocols import LOGGER
 from lXtractor.util.io import fetch_files, fetch_text
 
 # ArgT: t.TypeAlias = tuple[str, ...] | str
@@ -179,6 +178,68 @@ class PDB(ApiBase):
         text = fetch_text(OBSOLETE_LINK, decode=True)
         lines = map(str.split, text.split('\n')[1:])
         return {x[2]: (x[3] if len(x) == 4 else '') for x in lines if len(x) >= 3}
+
+
+def filter_by_method(
+    pdb_ids: abc.Iterable[str],
+    pdb: PDB = PDB(),
+    method: str = 'X-ray',
+    dir_: Path | None = None,
+) -> list[str]:
+    """
+    .. seealso::
+        :meth:`PDB.fetch_info <lXtractor.ext.pdb_.PDB.fetch_info>`
+
+    .. note::
+        Keys for the info dict are 'rcsb_entry_info' -> 'experimental_method'
+
+    :param pdb_ids: An iterable over PDB IDs.
+    :param pdb: Fetcher instance. If not provided, will init with
+        default params.
+    :param method: Method to match. Must correspond exactly.
+    :param dir_: Dir to save info "entry" json dumps.
+    :return: A list of PDB IDs obtained by desired experimental
+        procedure.
+    """
+
+    def method_matches(d: dict) -> bool:
+        try:
+            return d['rcsb_entry_info']['experimental_method'] == method
+        except KeyError as e:
+            LOGGER.warning(f'Missing required key {e}')
+            return False
+
+    def get_existing(ids: abc.Iterable[str], _dir: Path) -> list[tuple[str, Path]]:
+        res = ((x, (_dir / f'{x}.json')) for x in ids)
+        return [x for x in res if x[1].exists()]
+
+    def load_file(inp: str | Path | dict, base: Path | None) -> dict:
+        try:
+            if isinstance(inp, dict):
+                return inp
+            if isinstance(inp, str):
+                assert base is not None, 'base path provided with base filename'
+                inp = base / f'{inp}.json'
+            with inp.open() as f:
+                res = json.load(f)
+                assert isinstance(res, dict), 'loaded json correctly'
+                return res
+        except FileNotFoundError:
+            LOGGER.warning(f'Missing supposedly fetched {inp}')
+            return {}
+
+    pdb_ids = list(pdb_ids)
+    existing = get_existing(pdb_ids, dir_) if dir_ is not None else []
+    fetched, missed = pdb.fetch_info('entry', pdb_ids, dir_)
+    fetched += existing
+    fetched = [(x[0], load_file(x[1], dir_)) for x in fetched]
+
+    if missed:
+        missed_display = ','.join(missed) if len(missed) < 100 else ''
+        LOGGER.warning(f'Failed to fetch {len(missed)} ids: {missed_display}')
+
+    # fails to recognize x[1] must be dict
+    return [x[0] for x in fetched if method_matches(x[1])]  # type: ignore
 
 
 if __name__ == '__main__':

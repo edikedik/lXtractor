@@ -13,23 +13,28 @@ are available for a UniProt "PXXXXXX" accession?)
 """
 import json
 import logging
+import operator as op
 import os
 import typing as t
+import warnings
 from collections import abc
 from importlib import resources
-from itertools import starmap
+from itertools import starmap, chain
 from pathlib import Path
 
 import pandas as pd
 from more_itertools import unzip
+from toolz import itemfilter, valmap, groupby, valfilter, keymap
 
 import lXtractor.core.segment as lxs
-from lXtractor.core.base import AbstractResource
-from lXtractor.core.exceptions import MissingData
-# from lXtractor.core.segment import Segment, map_segment_numbering
 from lXtractor import resources as local
+from lXtractor.core.base import AbstractResource
+from lXtractor.core.chain import ChainSequence
+from lXtractor.core.exceptions import MissingData
 from lXtractor.util.io import fetch_to_file
 from lXtractor.util.misc import col2col
+
+_Mkey = t.TypeVar('_Mkey', ChainSequence, tuple[str, str], Path)
 
 LOGGER = logging.getLogger(__name__)
 SIFTS_FTP = (
@@ -162,7 +167,7 @@ class SIFTS(AbstractResource):
 
     def __init__(
         self,
-        resource_path: t.Optional[Path] = None,
+        resource_path: Path | None = None,
         resource_name: str = 'SIFTS',
         load_segments: bool = False,
         load_id_mapping: bool = False,
@@ -419,6 +424,116 @@ class SIFTS(AbstractResource):
         if res is None:
             LOGGER.warning(f"Couldn't find {x} in SIFTS")
         return res
+
+    @t.overload
+    def prepare_mapping(
+        self,
+        seqs: abc.Iterable[str],
+        pdb_method: str | None = 'X-ray',
+        pdb_base: Path | None = None,
+        pdb_fmt: str = 'cif',
+        pdb_method_filter_kwargs: abc.Mapping[str, t.Any] | None = None,
+    ) -> abc.Mapping[str, list[tuple[str | Path, list[str]]]]:
+        ...
+
+    @t.overload
+    def prepare_mapping(
+        self,
+        seqs: abc.Mapping[str, _Mkey],
+        pdb_method: str | None = 'X-ray',
+        pdb_base: Path | None = None,
+        pdb_fmt: str = 'cif',
+        pdb_method_filter_kwargs: abc.Mapping[str, t.Any] | None = None,
+    ) -> abc.Mapping[_Mkey, list[tuple[str | Path, list[str]]]]:
+        ...
+
+    @t.overload
+    def prepare_mapping(
+        self,
+        seqs: abc.Iterable[str] | abc.Mapping[str, _Mkey],
+        pdb_method: str | None = 'X-ray',
+        pdb_base: None = None,
+        pdb_fmt: str = 'cif',
+        pdb_method_filter_kwargs: abc.Mapping[str, t.Any] | None = None,
+    ) -> abc.Mapping[str | _Mkey, list[tuple[str, list[str]]]]:
+        ...
+
+    @t.overload
+    def prepare_mapping(
+        self,
+        seqs: abc.Iterable[str] | abc.Mapping[str, _Mkey],
+        pdb_method: str | None = 'X-ray',
+        pdb_base: Path = None,
+        pdb_fmt: str = 'cif',
+        pdb_method_filter_kwargs: abc.Mapping[str, t.Any] | None = None,
+    ) -> abc.Mapping[str | _Mkey, list[tuple[Path, list[str]]]]:
+        ...
+
+    def prepare_mapping(
+        self,
+        seqs: abc.Iterable[str] | abc.Mapping[str, _Mkey],
+        pdb_method: str | None = 'X-ray',
+        pdb_base: Path | None = None,
+        pdb_fmt: str = 'cif',
+        pdb_method_filter_kwargs: abc.Mapping[str, t.Any] | None = None,
+    ) -> abc.Mapping[str | _Mkey, list[tuple[str | Path, list[str]]]]:
+        """
+        Prepare mapping to use with
+        :meth:`lXtractor.core.chain.initializer.ChainInitializer.from_mapping`.
+
+        Uses SIFTS' UniProt-PDB mappings to derive mapping of the form::
+
+            UniProtID => [(PDB code, [PDB chains]), ...]
+
+        :param seqs: UniProt IDs to map with :class:`SIFTS` or a mapping of
+            UniProt IDs to objects allowed as keys in ``from_mapping()``.
+        :param pdb_method: Filter PDB IDs by experimental method.
+        :param pdb_base: A path to a PDB files' dir. If provided, the mapping
+            takes the form::
+
+                UniProtID => [(PDB path, [PDB chains]), ...]
+
+        :param pdb_fmt: PDB file format for files in `pdb_base`.
+        :param pdb_method_filter_kwargs: A keyword arguments passed to
+            :func:`lXtractor.ext.pdb_.filter_by_method` used to filter PDB IDs.
+        :return: A mapping that is almost ready to be used with
+            :class:`lXtractor.core.chain.initializer.ChainInitializer`. The only
+            preparation step left is to replace the keys with compatible type.
+        """
+
+        def group_chains(ids: abc.Iterable[str]) -> list[tuple[str, list[str]]]:
+            groups = groupby(op.itemgetter(0), map(lambda x: x.split(':'), ids))
+            groups = valmap(lambda val: [x[1] for x in val], groups)
+            return list(groups.items())
+
+        m = {u_id: self.map_id(u_id) for u_id in seqs}
+        m = itemfilter(lambda item: item[1] is not None, m)
+        m = valmap(group_chains, m)
+
+        if pdb_method:
+            from lXtractor.ext import filter_by_method
+
+            pdb_kwargs = (
+                {} if pdb_method_filter_kwargs is None else pdb_method_filter_kwargs
+            )
+            pdb_ids = chain.from_iterable(
+                map(lambda val: (x[0] for x in val), m.values())
+            )
+            pdb_ids = filter_by_method(pdb_ids, method=pdb_method, **pdb_kwargs)
+            m = valmap(lambda val: list(filter(lambda x: x[0] in pdb_ids, val)), m)
+            m = valfilter(bool, m)
+
+        if pdb_base:
+            if not pdb_base.exists():
+                warnings.warn(f'`pdb_base` {pdb_base} does not exist')
+            m = valmap(
+                lambda val: [(pdb_base / f'{x[0]}.{pdb_fmt}', x[1]) for x in val], m
+            )
+
+        if isinstance(seqs, abc.Mapping):
+            m = keymap(lambda x: seqs[x], m)
+
+        return m
 
     @property
     def uniprot_ids(self) -> set[str]:

@@ -6,11 +6,11 @@ import pytest
 from lXtractor.core.chain import ChainSequence
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData
+from lXtractor.ext import filter_by_method
 from lXtractor.protocols import (
     filter_selection_extended,
     subset_to_matching,
     superpose_pairwise,
-    filter_by_method,
 )
 from lXtractor.util.seq import biotite_align
 
