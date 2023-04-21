@@ -41,7 +41,7 @@ def test_basic(sample_chain_list, sequence, structure):
 
     assert sequence not in cl
     assert structure in cl
-    assert 'ChainStructure(1234:A|1-207)' in cl
+    assert structure.id in cl
 
     with pytest.raises(TypeError):
         cl.insert(1, 1)

@@ -2,6 +2,7 @@ from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import biotite.structure as bst
 import pytest
 
 from lXtractor.core.chain import ChainStructure
@@ -165,14 +166,16 @@ def test_superpose(simple_chain_structure):
 
 def test_rm_solvent(simple_chain_structure):
     s = simple_chain_structure
-    assert 'HOH' in s.seq.seq3
-    n_hoh = sum(1 for x in s.seq.seq3 if x == 'HOH')
-    n_rest = sum(1 for x in s.seq.seq3 if x != 'HOH')
-    assert n_hoh + n_rest == len(s.seq)
+    _, seq = bst.get_residues(s.array)
+    assert 'HOH' in seq
+    n_hoh = sum(1 for x in seq if x == 'HOH')
+    n_rest = sum(1 for x in seq if x != 'HOH')
+    assert n_hoh + n_rest == len(seq)
     srm = s.rm_solvent()
-    assert 'HOH' not in srm.seq.seq3
-    assert len(srm.seq) == n_rest
-    assert len(srm.seq) + n_hoh == len(s.seq)
+    _, seq_rm = bst.get_residues(srm.array)
+    assert 'HOH' not in seq_rm
+    assert len(seq_rm) == n_rest
+    assert len(seq_rm) + n_hoh == len(seq)
 
 
 def test_filter_children(simple_chain_structure):

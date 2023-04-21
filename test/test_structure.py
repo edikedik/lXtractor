@@ -1,5 +1,6 @@
 from copy import deepcopy
 
+import biotite.structure as bst
 import pytest
 
 from lXtractor.core.exceptions import LengthMismatch, MissingData, NoOverlap
@@ -41,7 +42,8 @@ def test_split(simple_structure):
 
 def test_sequence(simple_structure):
     seq = list(simple_structure.get_sequence())
-    assert len(seq) == 207
+    seq_, _ = bst.get_residues(simple_structure.array_polymer)
+    assert len(seq) == len(seq_) == 129
 
 
 def test_subsetting(simple_structure):

@@ -44,7 +44,7 @@ SIFTS_FTP = (
 RAW_SEGMENTS = 'uniprot_segments_observed.csv.gz'
 ID_MAPPING = 'id_mapping.json'
 DF_SIFTS = 'sifts.tsv'
-RESOURCES = Path(__file__).parent / 'resources'
+RESOURCES = Path(__file__).parent.parent / 'resources'
 
 # TODO: Create a remote interface. (this may include segment-based mappings,
 # although for many files it can be slow)

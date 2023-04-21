@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from lXtractor.ext import SIFTS
+from lXtractor.ext import SIFTS, PDB
 
 
 @pytest.fixture()
@@ -35,7 +35,7 @@ def test_prepare_mapping(sifts, u_id, base_path, pdb_method):
         u_id,
         pdb_method=pdb_method,
         pdb_base=base_path,
-        pdb_method_filter_kwargs=dict(num_threads=20),
+        pdb_method_filter_kwargs=dict(pdb=PDB(num_threads=3)),
     )
     assert len(m) == len(u_id)
     pdb_ids = next(iter(m.values()))
