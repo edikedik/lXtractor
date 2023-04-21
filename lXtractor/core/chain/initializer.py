@@ -1,21 +1,24 @@
+"""
+A module encompassing the :class:`ChainInitializer` used to init ``Chain*``-type
+objects from various input types. It enables parallelization of reading structures
+and seq2seq mappings and is flexible thanks to callbacks.
+"""
 from __future__ import annotations
 
 import logging
 import typing as t
 from collections import abc
 from concurrent.futures import ProcessPoolExecutor, Future
-from itertools import repeat, chain, tee
+from itertools import repeat, chain
 from pathlib import Path
 
 from biotite import structure as bst
 from more_itertools import unzip, split_into, collapse
-from toolz import valmap, keymap, keyfilter, curry
+from toolz import valmap, keymap, keyfilter, curry, itemmap, valfilter
 from tqdm.auto import tqdm
 
 from lXtractor.core.alignment import Alignment
-from lXtractor.core.chain.chain import Chain
-from lXtractor.core.chain.sequence import ChainSequence
-from lXtractor.core.chain.structure import ChainStructure
+from lXtractor.core.chain import ChainList, Chain, ChainStructure, ChainSequence
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import InitError, LengthMismatch
 from lXtractor.core.structure import GenericStructure
@@ -26,10 +29,13 @@ _O: t.TypeAlias = ChainSequence | ChainStructure | list[ChainStructure] | None
 LOGGER = logging.getLogger(__name__)
 
 
-class InitializerCallback(t.Protocol):
+# TODO: itemmap callback for initializer
+
+
+class SingletonCallback(t.Protocol):
     """
     A protocol defining signature for a callback used with
-    :class:`ChainInitializer`.
+    :class:`ChainInitializer` on single objects right after parsing.
     """
 
     @t.overload
@@ -47,6 +53,18 @@ class InitializerCallback(t.Protocol):
     def __call__(
         self, inp: CT | list[ChainStructure] | None
     ) -> CT | list[ChainStructure] | None:
+        ...
+
+
+class ItemCallback(t.Protocol):
+    """
+    A callback applied to processed items in
+    :meth:`ChainInitializer.from_mapping`.
+    """
+
+    def __call__(
+        self, inp: tuple[Chain, list[ChainStructure]]
+    ) -> tuple[Chain | None, list[ChainStructure]]:
         ...
 
 
@@ -73,7 +91,7 @@ def _init(
     tolerate_failures: bool,
     supported_seq_ext: list[str],
     supported_str_ext: list[str],
-    callbacks: list[InitializerCallback] | None,
+    callbacks: list[SingletonCallback] | None,
 ) -> _O:
     res: _O
     match inp:
@@ -259,7 +277,7 @@ class ChainInitializer:
             | GenericStructure
         ],
         num_proc: int = 1,
-        callbacks: list[InitializerCallback] | None = None,
+        callbacks: abc.Sequence[SingletonCallback] | None = None,
     ) -> abc.Generator[_O | Future, None, None]:
         """
         Initialize :class:`ChainSequence`s or/and :class:`ChainStructure`'s
@@ -279,19 +297,6 @@ class ChainInitializer:
         :return: A generator yielding initialized chain sequences and
             structures parsed from the inputs.
         """
-
-        def yield_output(_future: tuple[object, Future]) -> _O:
-            x, f = _future
-            try:
-                res: ChainSequence | ChainStructure | list[
-                    ChainStructure
-                ] | None = f.result()
-                return res
-            except Exception as e:
-                LOGGER.warning(f"Input {x} failed with an error {e}")
-                if not self.tolerate_failures:
-                    raise e
-                return None
 
         __init = curry(_init)(
             tolerate_failures=self.tolerate_failures,
@@ -328,13 +333,14 @@ class ChainInitializer:
                 | tuple[Path, abc.Sequence[str]]
             ],
         ],
-        key_callbacks: list[InitializerCallback] | None = None,
-        val_callbacks: list[InitializerCallback] | None = None,
+        key_callbacks: abc.Sequence[SingletonCallback] | None = None,
+        val_callbacks: abc.Sequence[SingletonCallback] | None = None,
+        item_callbacks: abc.Sequence[ItemCallback] | None = None,
         num_proc_read_seq: int = 1,
         num_proc_read_str: int = 1,
         num_proc_map_numbering: int = 1,
         **kwargs,
-    ) -> list[Chain]:
+    ) -> ChainList[Chain]:
         """
         Initialize :class:`Chain`'s from mapping between sequences and
         structures.
@@ -367,6 +373,13 @@ class ChainInitializer:
             a :class:`ChainSequence`.
         :param val_callbacks: A sequence of callables accepting and returning
             a :class:`ChainStructure`.
+        :param item_callbacks: A sequence of callables accepting and returning
+            a parsed item -- a tuple of :class:`ChainSequence` and a sequence of
+            associated :class:`ChainStructure`s. Currently, they are applied
+            sequentially and after parsing keys/values (and applying key/value
+            callbacks). Callback may return empty values: ``None`` as the first
+            element and empty sequence as second. In that case, such items will
+            be filtered out.
         :param num_proc_read_seq: A number of processes to devote to sequence
             parsing. Typically, sequence reading doesn't benefit from parallel
             processing, so it's better to leave this default.
@@ -393,13 +406,21 @@ class ChainInitializer:
         )
         values = split_into(values_flattened, map(len, m.values()))
 
-        m_new = valmap(
+        m_new: dict[Chain, list[ChainStructure]] = valmap(
             lambda vs: collapse(filter(bool, vs)),
             keymap(
                 Chain,  # create `Chain` objects from `ChainSequence`s
-                keyfilter(bool, dict(zip(keys, values))),  # Filter possible failures
+                keyfilter(  # Filter possible failures
+                    bool, dict(zip(keys, values))  # Wrap back into a mapping
+                ),
             ),
         )
+        if item_callbacks:
+            for cb in item_callbacks:
+                # 1. Apply a callback to each item
+                # 2. Filter out cases yielding empty keys
+                # 3. Filter out cases yielding empty values
+                m_new = valfilter(bool, keyfilter(bool, itemmap(cb, m_new)))
 
         if num_proc_map_numbering <= 1:
             items = (
@@ -442,7 +463,7 @@ class ChainInitializer:
                         if not self.tolerate_failures:
                             raise e
 
-        return list(m_new)
+        return ChainList(m_new)
 
 
 if __name__ == '__main__':

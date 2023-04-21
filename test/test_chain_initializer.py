@@ -95,6 +95,9 @@ def test_callbacks(items, mapping):
             obj.name = 'X'
         return obj
 
+    def empty_structures(item):
+        return item[0], []
+
     io = ChainInitializer()
     xs = list(io.from_iterable(items, callbacks=[accept]))
     assert len(xs) == 6
@@ -102,3 +105,8 @@ def test_callbacks(items, mapping):
 
     chains = io.from_mapping(mapping, key_callbacks=[accept])
     assert all([c.seq.name == 'X' for c in chains])
+
+    # Emptying structures results in subsequent filtering to produce
+    # an empty mapping
+    chains = io.from_mapping(mapping, item_callbacks=[empty_structures])
+    assert len(chains) == 0
