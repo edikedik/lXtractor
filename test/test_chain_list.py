@@ -28,6 +28,16 @@ def test_init(simple_structure, structure, sequence):
     assert len(ChainList([sequence])) == 1
 
 
+def test_categories():
+    cl = ChainList([
+        ChainSequence.from_string('aaa', name='A'),
+        ChainSequence.from_string('bbb', name='B')
+    ], categories=['AB', 'AB'])
+    cl.append(ChainSequence.from_string('ccc', name='C'))
+    assert cl.categories == {'AB'}
+    assert len(cl['AB']) == 2
+
+
 def test_basic(sample_chain_list, sequence, structure):
     cl = ChainList([sequence, sequence])
     assert len(cl) == 2
@@ -85,7 +95,6 @@ def test_modifying(sequence, structure):
 
     with pytest.raises(TypeError):
         cl.insert(1, structure)
-        print(cl)
 
     with pytest.raises(TypeError):
         cl += [structure]

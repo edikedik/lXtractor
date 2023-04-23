@@ -1,3 +1,8 @@
+"""
+The module defines the :class:`ChainList` - a list of `Chain*`-type objects that
+behaves like a regular list but has additional bells and whistles tailored
+towards `Chain*` data structures.
+"""
 from __future__ import annotations
 
 import operator as op
