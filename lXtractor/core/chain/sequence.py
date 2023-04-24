@@ -48,6 +48,11 @@ if t.TYPE_CHECKING:
     from lXtractor.core.chain import Chain, ChainStructure
 
 
+# TODO: add "reset_numbering()" method for a segment
+# It "reenumerates" the segment from the new start (1 by default)
+# and may keep an existing numbering
+
+
 class ChainSequence(lxs.Segment):
     """
     A class representing polymeric sequence of a single entity (chain).

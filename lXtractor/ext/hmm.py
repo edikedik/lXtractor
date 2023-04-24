@@ -225,9 +225,22 @@ class PyHMMer:
 
             for dom_i, dom in enumerate(hit.domains, start=1):
                 aln = dom.alignment
+
+                # compute coverages
+                # HMM: - 1 2 3 - 4 - 5
+                # SEQ: A - A A A A - A
+
+                # HMM node numbers falling onto valid sequence elements
+                # => - 2 3 - 4 5
                 num = [hmm_i for seq_i, hmm_i in _enumerate_numbering(aln) if seq_i]
+
+                # n = the number of valid HMM nodes covered by seq
+                # => 2 3 4 5 => 4
                 n = sum(1 for x in num if x is not None)
+
+                # SEQ coverage 4 / 6
                 cov_seq = n / len(num)
+                # HMM coverage 4 / M
                 cov_hmm = n / self.hmm.M
 
                 if not accept_domain(dom, cov_hmm, cov_seq):
