@@ -7,6 +7,8 @@ from collections import abc
 from itertools import repeat
 from pathlib import Path
 
+from toolz import valfilter
+
 from lXtractor.core.base import UrlGetter
 from lXtractor.ext.base import ApiBase
 from lXtractor.protocols import LOGGER
@@ -177,7 +179,9 @@ class PDB(ApiBase):
         """
         text = fetch_text(OBSOLETE_LINK, decode=True)
         lines = map(str.split, text.split('\n')[1:])
-        return {x[2]: (x[3] if len(x) == 4 else '') for x in lines if len(x) >= 3}
+        return valfilter(
+            bool, {x[2]: (x[3] if len(x) == 4 else '') for x in lines if len(x) >= 3}
+        )
 
 
 def filter_by_method(
