@@ -250,6 +250,7 @@ def filter_solvent_extended(a: bst.AtomArray) -> np.ndarray:
     :param a: Atom array.
     :return: A boolean mask ``True`` for solvent atoms.
     """
+    # TODO: should use size threshold to automatically exclude small ligands
     return np.isin(a.res_name, SOLVENTS)
 
 

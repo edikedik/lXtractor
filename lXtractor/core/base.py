@@ -11,8 +11,6 @@ from io import TextIOBase
 from pathlib import Path
 from typing import runtime_checkable
 
-from lXtractor.core.config import DumpNames, _DumpNames
-
 T = t.TypeVar('T')
 _T = t.TypeVar('_T', contravariant=True)
 KT = t.TypeVar('KT', bound=abc.Hashable)
@@ -72,6 +70,7 @@ SOLVENTS = (
     'EOH',
     'EPE',
     'FLC',
+    'FMT',
     'GBL',
     'GG5',
     'GLC',
@@ -80,6 +79,7 @@ SOLVENTS = (
     'HOH',
     'HSJ',
     'IOD',
+    'IPA',
     'IPH',
     'MES',
     'MG8',
@@ -123,31 +123,6 @@ SOLVENTS = (
 )
 
 
-# class SoftMapper(UserDict, t.Generic[KT, VT, T]):
-#     """
-#     A dict with ``[]`` syntax behaving as :meth:`dict.get`.
-#     """
-#
-#     def __init__(self, *args, unk: T, **kwargs):
-#         """
-#
-#         :param args: Passed to :class:`dict`.
-#         :param unk: A value returned when `item` is not in dict.
-#         :param kwargs: Passed to :class:`dict`.
-#         """
-#         self.unk = unk
-#         super().__init__(*args, **kwargs)
-#
-#     def __getitem__(self, item: KT) -> VT | T:
-#         # !!! Below fails with the recursion error !!!
-#         # return super().get(item, self.unk)
-#         try:
-#             return self.data[item]
-#             # return super().__getitem__(item)
-#         except KeyError:
-#             return self.unk
-
-
 class AminoAcidDict(UserDict):
     """
     Provides mapping between 3->1 and 1->3-letter amino acid residue codes.
@@ -162,7 +137,7 @@ class AminoAcidDict(UserDict):
     """
 
     def __init__(
-        self, aa1_unk: str = 'X', aa3_unk: str = 'UNK', any_unk: t.Optional[str] = None
+        self, aa1_unk: str = 'X', aa3_unk: str = 'UNK', any_unk: str | None = None
     ):
         """
         :param aa1_unk: Unknown character when mapping 3->1
@@ -197,7 +172,7 @@ class AbstractResource(metaclass=ABCMeta):
     Abstract base class defining basic interface any resource must provide.
     """
 
-    def __init__(self, resource_path: t.Optional[Path], resource_name: t.Optional[str]):
+    def __init__(self, resource_path: str | Path, resource_name: str | None):
         self.name = resource_name
         self.path = resource_path
 
@@ -228,61 +203,6 @@ class AbstractResource(metaclass=ABCMeta):
         Download the resource.
         """
         raise NotImplementedError
-
-
-# class AbstractStructure(metaclass=ABCMeta):
-#     """
-#     Generic structure abstract interface.
-#     """
-#
-#     __slots__ = ()
-#
-#     @classmethod
-#     @abstractmethod
-#     def read(cls, path: Path):
-#         """
-#         Read an object.
-#         """
-#
-#     @abstractmethod
-#     def write(self, path: Path):
-#         """
-#         Write an object to disk.
-#         """
-#
-#     @abstractmethod
-#     def get_sequence(self) -> abc.Iterable[tuple[str, int]]:
-#         """
-#         Get sequence (e.g., residues) and its numbering.
-#         """
-
-
-# class AbstractChain(metaclass=ABCMeta):
-#     """
-#     Chain basic interface definition.
-#     """
-#
-#     __slots__ = ()
-#
-#     @classmethod
-#     @abstractmethod
-#     def read(cls, path: Path, dump_names: _DumpNames = DumpNames, **kwargs):
-#         """
-#         Read an object.
-#         """
-#
-#     @abstractmethod
-#     def write(self, path: Path, dump_names: _DumpNames = DumpNames, **kwargs):
-#         """
-#         Write an object to disk.
-#         """
-#
-#     @property
-#     @abstractmethod
-#     def id(self) -> str:
-#         """
-#         Unique identifier.
-#         """
 
 
 @t.runtime_checkable
