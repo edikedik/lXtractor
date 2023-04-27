@@ -17,6 +17,27 @@ from lXtractor.util.io import fetch_files, fetch_text
 # ArgT: t.TypeAlias = tuple[str, ...] | str
 ArgT = t.TypeVar('ArgT', tuple[str, ...], str)
 OBSOLETE_LINK = 'https://files.wwpdb.org/pub/pdb/data/status/obsolete.dat'
+SERVICES = (
+    # Single argument group
+    ('chem_comp', 'comp_id'),
+    ('drugbank', 'comp_id'),
+    ('entry', 'entry_id'),
+    ('pubmed', 'entry_id'),
+    ('entry_groups', 'group_id'),
+    ('polymer_entity_groups', 'group_id'),
+    ('group_provenance', 'group_provenance_id'),
+    # Two arguments group
+    ('assembly', 'entry_id', 'assembly_id'),
+    ('branched_entity', 'entry_id', 'entity_id'),
+    ('nonpolymer_entity', 'entry_id', 'entity_id'),
+    ('polymer_entity', 'entry_id', 'entity_id'),
+    ('branched_entity_instance', 'entry_id', 'asym_id'),
+    ('nonpolymer_entity_instance', 'entry_id', 'asym_id'),
+    ('polymer_entity_instance', 'entry_id', 'asym_id'),
+    ('uniprot', 'entry_id', 'entity_id'),
+    # Three argument group
+    ('interface', 'entry_id', 'assembly_id', 'interface_id'),
+)
 
 
 def url_getters() -> dict[str, UrlGetter]:
@@ -33,29 +54,7 @@ def url_getters() -> dict[str, UrlGetter]:
 
     base = 'https://data.rcsb.org/rest/v1/core'
 
-    staged = [
-        # Single argument group
-        ('chem_comp', 'comp_id'),
-        ('drugbank', 'comp_id'),
-        ('entry', 'entry_id'),
-        ('pubmed', 'entry_id'),
-        ('entry_groups', 'group_id'),
-        ('polymer_entity_groups', 'group_id'),
-        ('group_provenance', 'group_provenance_id'),
-        # Two arguments group
-        ('assembly', 'entry_id', 'assembly_id'),
-        ('branched_entity', 'entry_id', 'entity_id'),
-        ('nonpolymer_entity', 'entry_id', 'entity_id'),
-        ('polymer_entity', 'entry_id', 'entity_id'),
-        ('branched_entity_instance', 'entry_id', 'asym_id'),
-        ('nonpolymer_entity_instance', 'entry_id', 'asym_id'),
-        ('polymer_entity_instance', 'entry_id', 'asym_id'),
-        ('uniprot', 'entry_id', 'entity_id'),
-        # Three argument group
-        ('interface', 'entry_id', 'assembly_id', 'interface_id'),
-    ]
-
-    result = {x[0]: _url_getter_factory(*x) for x in staged}
+    result = {x[0]: _url_getter_factory(*x) for x in SERVICES}
     result['files'] = lambda entry_id, fmt: (
         f'https://files.rcsb.org/download/{entry_id}.{fmt}'
     )
@@ -148,11 +147,16 @@ class PDB(ApiBase):
         >>> assert {args1, args2} == {('2SRC', ), ('2OIQ', )}
         >>> assert isinstance(res1, dict) and isinstance(res2, dict)
 
+        .. seealso:
+            :meth:`list_services` for a list of services and url args.
+
         :param service_name: The name of the service to use.
         :param dir_: Dir to save files to. If ``None``, will keep downloaded
             files as strings.
-        :param url_args: Arguments to a `url_getter`. Check :meth:`url_args`
-            to see which getters require which arguments.
+        :param url_args: Arguments to a `url_getter`. Check :meth:`list_services`
+            to see which getters require which arguments. Each element of this
+            iterable is a tuple of string arguments that should produce a valid
+            url for the API.
         :param overwrite: Overwrite existing files if `dir_` is provided.
         :return: A tuple with fetched and remaining inputs.
             Fetched inputs are tuples, where the first element is the original
@@ -182,6 +186,16 @@ class PDB(ApiBase):
         return valfilter(
             bool, {x[2]: (x[3] if len(x) == 4 else '') for x in lines if len(x) >= 3}
         )
+
+    @staticmethod
+    def list_services() -> list[tuple[str, ...]]:
+        """
+        :return: List of services to be used with :meth:`fetch_info`. Each entry
+            is a tuple where the first element is the service name and the rest
+            are the argument names required to provide when using a service
+            (``url_getters``).
+        """
+        return list(SERVICES)
 
 
 def filter_by_method(
