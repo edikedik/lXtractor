@@ -14,7 +14,7 @@ from pathlib import Path
 
 from biotite import structure as bst
 from more_itertools import unzip, split_into, collapse
-from toolz import valmap, keymap, keyfilter, curry, itemmap, valfilter
+from toolz import curry, compose_left
 from tqdm.auto import tqdm
 
 from lXtractor.core.alignment import Alignment
@@ -24,12 +24,9 @@ from lXtractor.core.exceptions import InitError, LengthMismatch
 from lXtractor.core.structure import GenericStructure
 from lXtractor.util.seq import biotite_align
 
-CT = t.TypeVar('CT', ChainStructure, ChainSequence, Chain)
+CT = t.TypeVar("CT", ChainStructure, ChainSequence, Chain)
 _O: t.TypeAlias = ChainSequence | ChainStructure | list[ChainStructure] | None
 LOGGER = logging.getLogger(__name__)
-
-
-# TODO: itemmap callback for initializer
 
 
 class SingletonCallback(t.Protocol):
@@ -135,6 +132,31 @@ def _try_fn(inp, fn, tolerate_failures):
         return None
 
 
+def _apply_sequentially(fn, it, verbose, desc):
+    if verbose:
+        it = tqdm(it, desc=desc)
+    yield from map(fn, it)
+
+
+def _apply_parallel(fn, it, verbose, desc, num_proc):
+    assert num_proc > 1, "More than 1 CPU requested"
+    with ProcessPoolExecutor(num_proc) as executor:
+        if verbose:
+            yield from tqdm(
+                executor.map(fn, it),
+                desc=desc,
+            )
+        else:
+            yield from executor.map(fn, it)
+
+
+def _apply(fn, it, verbose, desc, num_proc):
+    if num_proc > 1:
+        yield from _apply_parallel(fn, it, verbose, desc, num_proc)
+    else:
+        yield from _apply_sequentially(fn, it, verbose, desc)
+
+
 def map_numbering_12many(
     obj_to_map: str | tuple[str, str] | ChainSequence | Alignment,
     seqs: abc.Iterable[ChainSequence],
@@ -200,6 +222,8 @@ def map_numbering_many2many(
           ]
 
     """
+    # TODO: refactor using _apply
+
     if len(objs_to_map) != len(seq_groups):
         raise LengthMismatch(
             f"The number of objects to map {len(objs_to_map)} != "
@@ -306,20 +330,7 @@ class ChainInitializer:
         )
         __try_fn = curry(_try_fn, fn=__init, tolerate_failures=self.tolerate_failures)
 
-        if num_proc > 1:
-            with ProcessPoolExecutor(num_proc) as executor:
-                # futures = ((x, executor.submit(__init, x)) for x in it)
-                if self.verbose:
-                    yield from tqdm(
-                        executor.map(__try_fn, it),
-                        desc="Initializing objects in parallel",
-                    )
-                else:
-                    yield from executor.map(__try_fn, it)
-        else:
-            if self.verbose:
-                it = tqdm(it, desc="Initializing objects sequentially")
-            yield from map(__init, it)
+        yield from _apply(__try_fn, it, self.verbose, "Initializing objects", num_proc)
 
     def from_mapping(
         self,
@@ -336,9 +347,12 @@ class ChainInitializer:
         key_callbacks: abc.Sequence[SingletonCallback] | None = None,
         val_callbacks: abc.Sequence[SingletonCallback] | None = None,
         item_callbacks: abc.Sequence[ItemCallback] | None = None,
+        *,
+        map_numberings: bool = True,
         num_proc_read_seq: int = 1,
         num_proc_read_str: int = 1,
         num_proc_map_numbering: int = 1,
+        num_proc_item_callbacks: int = 1,
         **kwargs,
     ) -> ChainList[Chain]:
         """
@@ -406,46 +420,60 @@ class ChainInitializer:
         )
         values = split_into(values_flattened, map(len, m.values()))
 
-        m_new: dict[Chain, list[ChainStructure]] = valmap(
-            lambda vs: collapse(filter(bool, vs)),
-            keymap(
-                Chain,  # create `Chain` objects from `ChainSequence`s
-                keyfilter(  # Filter possible failures
-                    bool, dict(zip(keys, values))  # Wrap back into a mapping
-                ),
-            ),
+        items: abc.Iterable[tuple[Chain, list[ChainStructure]]] = map(
+            lambda x: (Chain(x[0]), list(collapse(filter(bool, x[1])))),
+            filter(lambda x: bool(x[0]),  zip(keys, values)),
         )
-        if item_callbacks:
-            for cb in item_callbacks:
-                # 1. Apply a callback to each item
-                # 2. Filter out cases yielding empty keys
-                # 3. Filter out cases yielding empty values
-                m_new = valfilter(bool, keyfilter(bool, itemmap(cb, m_new)))
 
-        if num_proc_map_numbering <= 1:
-            items = (
-                tqdm(m_new.items(), desc='Adding structures sequentially')
-                if self.verbose
-                else m_new.items()
+        if item_callbacks:
+            fn = compose_left(*item_callbacks)
+            # 1. Apply a callback to each item
+            # 2. Filter out cases yielding empty seqs or structures
+            items = _apply(
+                fn,
+                items,
+                self.verbose,
+                "Applying item callbacks",
+                num_proc_item_callbacks,
             )
+            items = filter(lambda x: bool(x[0]) and bool(x[1]), items)
+
+        # m_new: dict[Chain, list[ChainStructure]] = valmap(
+        #     lambda vs: collapse(filter(bool, vs)),
+        #     keyfilter(  # Filter possible failures
+        #         bool, dict(zip(keys, values))  # Wrap back into a mapping
+        #     ),
+        # )
+        # if item_callbacks:
+        #     for cb in item_callbacks:
+
+        #         m_new = valfilter(bool, keyfilter(bool, itemmap(cb, m_new)))
+
+        items = list(items)
+
+        if num_proc_map_numbering <= 1 or not map_numberings:
+            items = (
+                tqdm(items, desc="Adding structures sequentially")
+                if self.verbose
+                else items
+            )
+            if not map_numberings and "map_to_seq" not in kwargs:
+                kwargs["map_to_seq"] = False
             for c, ss in items:
                 for s in ss:
                     c.add_structure(s, **kwargs)
         else:
             map_name = kwargs.get("map_name") or SeqNames.map_canonical
 
-            # explicitly unpack value iterable into lists
-            m_new = valmap(list, m_new)
-
             # create numbering groups -- lists of lists with numberings
             # for each structure in values
             numbering_groups = map_numbering_many2many(
-                [x.seq for x in m_new],
-                [[x.seq for x in val] for val in m_new.values()],
+                [x.seq for x, _ in items],
+                [[x.seq for x in strs] for _, strs in items],
                 num_proc=num_proc_map_numbering,
                 verbose=self.verbose,
             )
-            for (c, ss), num_group in zip(m_new.items(), numbering_groups, strict=True):
+            for (c, ss), num_group in zip(items, numbering_groups, strict=True):
                 if len(num_group) != len(ss):
                     raise LengthMismatch(
                         f"The number of mapped numberings {len(num_group)} must match "
@@ -463,8 +491,8 @@ class ChainInitializer:
                         if not self.tolerate_failures:
                             raise e
 
-        return ChainList(m_new)
+        return ChainList(x[0] for x in items)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError
