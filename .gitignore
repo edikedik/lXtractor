@@ -8,6 +8,7 @@ tok.txt
 todo.md
 *.ipynb
 stash
+.directory
 
 # User-specific stuff
 .idea/**/workspace.xml
