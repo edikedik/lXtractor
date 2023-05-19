@@ -184,8 +184,8 @@ class GenericStructure:
         """
         array = strio.load_structure(str(path))
         pdb_id = path2id(path)
-        if not len(pdb_id) == 4:
-            pdb_id = EMPTY_PDB_ID
+        # if not len(pdb_id) == 4:
+        #     pdb_id = EMPTY_PDB_ID
             # LOGGER.warning(f'Did not obtain a valid PDB ID {pdb_id} from {path}')
         if isinstance(array, bst.AtomArrayStack):
             raise InitError(
