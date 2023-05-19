@@ -13,7 +13,7 @@ from itertools import repeat, chain
 from pathlib import Path
 
 from biotite import structure as bst
-from more_itertools import unzip, split_into, collapse
+from more_itertools import unzip, split_into, collapse, ilen
 from toolz import curry, compose_left
 from tqdm.auto import tqdm
 
@@ -93,7 +93,7 @@ def _init(
 ) -> _O:
     res: _O
     match inp:
-        case ChainSequence() | ChainStructure():
+        case Chain() | ChainSequence() | ChainStructure():
             res = inp
         case [str(), str()]:
             res = ChainSequence.from_string(inp[1], name=inp[0])
@@ -278,6 +278,7 @@ class ChainInitializer:
         ],
         num_proc: int = 1,
         callbacks: abc.Sequence[SingletonCallback] | None = None,
+        desc: str = "Initializing objects",
     ) -> abc.Generator[_O | Future, None, None]:
         """
         Initialize :class:`ChainSequence`s or/and :class:`ChainStructure`'s
@@ -294,6 +295,8 @@ class ChainInitializer:
         :param num_proc: The number of processes to use.
         :param callbacks: A sequence of callables accepting and returning an
             initialized object.
+        :param desc: Progress bar description used if :attr:`verbose` is
+            ``True``.
         :return: A generator yielding initialized chain sequences and
             structures parsed from the inputs.
         """
@@ -306,7 +309,7 @@ class ChainInitializer:
         )
         __try_fn = curry(_try_fn, fn=__init, tolerate_failures=self.tolerate_failures)
 
-        yield from apply(__try_fn, it, self.verbose, "Initializing objects", num_proc)
+        yield from apply(__try_fn, it, self.verbose, desc, num_proc)
 
     def from_mapping(
         self,
@@ -398,18 +401,27 @@ class ChainInitializer:
         """
         # Process keys and values
         keys = self.from_iterable(
-            m, num_proc=num_proc_read_seq, callbacks=key_callbacks
+            m,
+            num_proc=num_proc_read_seq,
+            callbacks=key_callbacks,
+            desc="Initializing sequences",
         )  # ChainSequences
         values_flattened = self.from_iterable(  # ChainStructures
             chain.from_iterable(m.values()),
             num_proc=num_proc_read_str,
             callbacks=val_callbacks,
+            desc="Initializing structures",
         )
-        values = split_into(values_flattened, map(len, m.values()))
-
-        items: abc.Iterable[tuple[Chain, list[ChainStructure]]] = map(
-            lambda x: (Chain(x[0]), list(collapse(filter(bool, x[1])))),
-            filter(lambda x: bool(x[0]), zip(keys, values)),
+        values = map(
+            compose_left(collapse, list),  # Collapse all separated chains into a list
+            split_into(  # Split into original sizes
+                values_flattened, map(len, m.values())
+            ),
+        )
+        items = (
+            (Chain(key) if not isinstance(key, Chain) else key, vs_group)
+            for key, vs_group in zip(keys, values, strict=True)
+            if key is not None and len(vs_group) > 0
         )
 
         if item_callbacks:
@@ -426,6 +438,12 @@ class ChainInitializer:
             items = filter(lambda x: bool(x[0]) and bool(x[1]), items)
 
         items = list(items)
+        if ilen(items) == 0:
+            LOGGER.warning(
+                "No items left after parsing and applying callbacks; "
+                "returning an empty ChainList."
+            )
+            return ChainList([])
 
         if num_proc_map_numbering <= 1 or not map_numberings:
             items = (
