@@ -22,6 +22,7 @@ from lXtractor.core.chain import ChainList, Chain, ChainStructure, ChainSequence
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import InitError, LengthMismatch
 from lXtractor.core.structure import GenericStructure
+from lXtractor.util.misc import apply
 from lXtractor.util.seq import biotite_align
 
 CT = t.TypeVar("CT", ChainStructure, ChainSequence, Chain)
@@ -130,31 +131,6 @@ def _try_fn(inp, fn, tolerate_failures):
         if not tolerate_failures:
             raise e
         return None
-
-
-def _apply_sequentially(fn, it, verbose, desc):
-    if verbose:
-        it = tqdm(it, desc=desc)
-    yield from map(fn, it)
-
-
-def _apply_parallel(fn, it, verbose, desc, num_proc):
-    assert num_proc > 1, "More than 1 CPU requested"
-    with ProcessPoolExecutor(num_proc) as executor:
-        if verbose:
-            yield from tqdm(
-                executor.map(fn, it),
-                desc=desc,
-            )
-        else:
-            yield from executor.map(fn, it)
-
-
-def _apply(fn, it, verbose, desc, num_proc):
-    if num_proc > 1:
-        yield from _apply_parallel(fn, it, verbose, desc, num_proc)
-    else:
-        yield from _apply_sequentially(fn, it, verbose, desc)
 
 
 def map_numbering_12many(
@@ -330,7 +306,7 @@ class ChainInitializer:
         )
         __try_fn = curry(_try_fn, fn=__init, tolerate_failures=self.tolerate_failures)
 
-        yield from _apply(__try_fn, it, self.verbose, "Initializing objects", num_proc)
+        yield from apply(__try_fn, it, self.verbose, "Initializing objects", num_proc)
 
     def from_mapping(
         self,
@@ -433,14 +409,14 @@ class ChainInitializer:
 
         items: abc.Iterable[tuple[Chain, list[ChainStructure]]] = map(
             lambda x: (Chain(x[0]), list(collapse(filter(bool, x[1])))),
-            filter(lambda x: bool(x[0]),  zip(keys, values)),
+            filter(lambda x: bool(x[0]), zip(keys, values)),
         )
 
         if item_callbacks:
             fn = compose_left(*item_callbacks)
             # 1. Apply a callback to each item
             # 2. Filter out cases yielding empty seqs or structures
-            items = _apply(
+            items = apply(
                 fn,
                 items,
                 self.verbose,
