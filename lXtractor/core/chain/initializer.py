@@ -14,7 +14,7 @@ from pathlib import Path
 
 from biotite import structure as bst
 from more_itertools import unzip, split_into, collapse
-from toolz import valmap, keymap, keyfilter, curry, itemmap, valfilter
+from toolz import curry, compose_left
 from tqdm.auto import tqdm
 
 from lXtractor.core.alignment import Alignment
@@ -22,14 +22,12 @@ from lXtractor.core.chain import ChainList, Chain, ChainStructure, ChainSequence
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import InitError, LengthMismatch
 from lXtractor.core.structure import GenericStructure
+from lXtractor.util.misc import apply
 from lXtractor.util.seq import biotite_align
 
-CT = t.TypeVar('CT', ChainStructure, ChainSequence, Chain)
+CT = t.TypeVar("CT", ChainStructure, ChainSequence, Chain)
 _O: t.TypeAlias = ChainSequence | ChainStructure | list[ChainStructure] | None
 LOGGER = logging.getLogger(__name__)
-
-
-# TODO: itemmap callback for initializer
 
 
 class SingletonCallback(t.Protocol):
@@ -200,6 +198,8 @@ def map_numbering_many2many(
           ]
 
     """
+    # TODO: refactor using _apply
+
     if len(objs_to_map) != len(seq_groups):
         raise LengthMismatch(
             f"The number of objects to map {len(objs_to_map)} != "
@@ -306,20 +306,7 @@ class ChainInitializer:
         )
         __try_fn = curry(_try_fn, fn=__init, tolerate_failures=self.tolerate_failures)
 
-        if num_proc > 1:
-            with ProcessPoolExecutor(num_proc) as executor:
-                # futures = ((x, executor.submit(__init, x)) for x in it)
-                if self.verbose:
-                    yield from tqdm(
-                        executor.map(__try_fn, it),
-                        desc="Initializing objects in parallel",
-                    )
-                else:
-                    yield from executor.map(__try_fn, it)
-        else:
-            if self.verbose:
-                it = tqdm(it, desc="Initializing objects sequentially")
-            yield from map(__init, it)
+        yield from apply(__try_fn, it, self.verbose, "Initializing objects", num_proc)
 
     def from_mapping(
         self,
@@ -336,8 +323,11 @@ class ChainInitializer:
         key_callbacks: abc.Sequence[SingletonCallback] | None = None,
         val_callbacks: abc.Sequence[SingletonCallback] | None = None,
         item_callbacks: abc.Sequence[ItemCallback] | None = None,
+        *,
+        map_numberings: bool = True,
         num_proc_read_seq: int = 1,
         num_proc_read_str: int = 1,
+        num_proc_item_callbacks: int = 1,
         num_proc_map_numbering: int = 1,
         **kwargs,
     ) -> ChainList[Chain]:
@@ -349,6 +339,12 @@ class ChainInitializer:
         refer (see below) and then create maps between each sequence and
         associated structures, saving these into structure
         :attr:`ChainStructure.seq`'s.
+
+        .. note::
+            ``key/value_callback`` are distributed to parser and applied right
+            after parsing the object. As a result, their application will
+            be parallelized depending on the``num_proc_read_seq`` and
+            ``num_proc_read_str`` parameters.
 
         :param m:
             A mapping of the form ``{seq => [structures]}``, where `seq`
@@ -374,17 +370,22 @@ class ChainInitializer:
         :param val_callbacks: A sequence of callables accepting and returning
             a :class:`ChainStructure`.
         :param item_callbacks: A sequence of callables accepting and returning
-            a parsed item -- a tuple of :class:`ChainSequence` and a sequence of
-            associated :class:`ChainStructure`s. Currently, they are applied
-            sequentially and after parsing keys/values (and applying key/value
-            callbacks). Callback may return empty values: ``None`` as the first
-            element and empty sequence as second. In that case, such items will
-            be filtered out.
+            a parsed item -- a tuple of :class:`Chain` and a sequence of
+            associated :class:`ChainStructure`s. Callbacks are applied
+            sequentially to each item as a function composition in the supplied
+            order (left to right). It the last callback returns ``None`` as a
+            first element or an empty list as a second element, such item will
+            be filtered out. Item callbacks are applied after parsing sequences
+            and structures and converting chain sequences to chains.
+        :param map_numberings: Map PDB numberings to canonical sequence's
+            numbering via pairwise sequence alignments.
         :param num_proc_read_seq: A number of processes to devote to sequence
             parsing. Typically, sequence reading doesn't benefit from parallel
             processing, so it's better to leave this default.
         :param num_proc_read_str: A number of processes dedicated to structures
             parsing.
+        :param num_proc_item_callbacks: A number of CPUs to parallelize item
+            callbacks' application.
         :param num_proc_map_numbering: A number of processes to use for mapping
             between numbering of sequences and structures. Generally, this
             should be as high as possible for faster processing. In contrast
@@ -406,46 +407,49 @@ class ChainInitializer:
         )
         values = split_into(values_flattened, map(len, m.values()))
 
-        m_new: dict[Chain, list[ChainStructure]] = valmap(
-            lambda vs: collapse(filter(bool, vs)),
-            keymap(
-                Chain,  # create `Chain` objects from `ChainSequence`s
-                keyfilter(  # Filter possible failures
-                    bool, dict(zip(keys, values))  # Wrap back into a mapping
-                ),
-            ),
+        items: abc.Iterable[tuple[Chain, list[ChainStructure]]] = map(
+            lambda x: (Chain(x[0]), list(collapse(filter(bool, x[1])))),
+            filter(lambda x: bool(x[0]), zip(keys, values)),
         )
-        if item_callbacks:
-            for cb in item_callbacks:
-                # 1. Apply a callback to each item
-                # 2. Filter out cases yielding empty keys
-                # 3. Filter out cases yielding empty values
-                m_new = valfilter(bool, keyfilter(bool, itemmap(cb, m_new)))
 
-        if num_proc_map_numbering <= 1:
-            items = (
-                tqdm(m_new.items(), desc='Adding structures sequentially')
-                if self.verbose
-                else m_new.items()
+        if item_callbacks:
+            fn = compose_left(*item_callbacks)
+            # 1. Apply a callback to each item
+            # 2. Filter out cases yielding empty seqs or structures
+            items = apply(
+                fn,
+                items,
+                self.verbose,
+                "Applying item callbacks",
+                num_proc_item_callbacks,
             )
+            items = filter(lambda x: bool(x[0]) and bool(x[1]), items)
+
+        items = list(items)
+
+        if num_proc_map_numbering <= 1 or not map_numberings:
+            items = (
+                tqdm(items, desc="Adding structures sequentially")
+                if self.verbose
+                else items
+            )
+            if not map_numberings and "map_to_seq" not in kwargs:
+                kwargs["map_to_seq"] = False
             for c, ss in items:
                 for s in ss:
                     c.add_structure(s, **kwargs)
         else:
             map_name = kwargs.get("map_name") or SeqNames.map_canonical
 
-            # explicitly unpack value iterable into lists
-            m_new = valmap(list, m_new)
-
             # create numbering groups -- lists of lists with numberings
             # for each structure in values
             numbering_groups = map_numbering_many2many(
-                [x.seq for x in m_new],
-                [[x.seq for x in val] for val in m_new.values()],
+                [x.seq for x, _ in items],
+                [[x.seq for x in strs] for _, strs in items],
                 num_proc=num_proc_map_numbering,
                 verbose=self.verbose,
             )
-            for (c, ss), num_group in zip(m_new.items(), numbering_groups, strict=True):
+            for (c, ss), num_group in zip(items, numbering_groups, strict=True):
                 if len(num_group) != len(ss):
                     raise LengthMismatch(
                         f"The number of mapped numberings {len(num_group)} must match "
@@ -463,8 +467,8 @@ class ChainInitializer:
                         if not self.tolerate_failures:
                             raise e
 
-        return ChainList(m_new)
+        return ChainList(x[0] for x in items)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError

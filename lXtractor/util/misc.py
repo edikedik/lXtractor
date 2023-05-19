@@ -1,15 +1,22 @@
 """
 Miscellaneous utilities that couldn't be properly categorized.
 """
-from collections import namedtuple
+from __future__ import annotations
+
+import typing as t
+from collections import namedtuple, abc
+from concurrent.futures import ProcessPoolExecutor
 from itertools import groupby
 
 import pandas as pd
+from tqdm.auto import tqdm
 
 from lXtractor.core.exceptions import FormatError
 
+__all__ = ("is_valid_field_name", "apply")
 
-__all__ = ('is_valid_field_name', )
+T = t.TypeVar("T")
+R = t.TypeVar("R")
 
 
 # class SizedDict(UserDict):
@@ -43,7 +50,7 @@ def split_validate(inp: str, sep: str, parts: int) -> list[str]:
     split = inp.split(sep)
     if len(split) != parts:
         raise FormatError(
-            f'Expected {parts} "{sep}" separators, ' f'got {len(split) - 1} in {inp}'
+            f'Expected {parts} "{sep}" separators, ' f"got {len(split) - 1} in {inp}"
         )
     return split
 
@@ -69,11 +76,52 @@ def is_valid_field_name(s: str) -> bool:
         operations else ``False``.
     """
     try:
-        namedtuple('x', [s])
+        namedtuple("x", [s])
         return True
     except ValueError:
         return False
 
 
-if __name__ == '__main__':
+def _apply_sequentially(fn, it, verbose, desc):
+    if verbose:
+        it = tqdm(it, desc=desc)
+    yield from map(fn, it)
+
+
+def _apply_parallel(fn, it, verbose, desc, num_proc):
+    assert num_proc > 1, "More than 1 CPU requested"
+    with ProcessPoolExecutor(num_proc) as executor:
+        if verbose:
+            yield from tqdm(
+                executor.map(fn, it),
+                desc=desc,
+            )
+        else:
+            yield from executor.map(fn, it)
+
+
+def apply(
+    fn: abc.Callable[[T], R],
+    it: abc.Iterable[T],
+    verbose: bool,
+    desc: str,
+    num_proc: int,
+) -> abc.Iterator[R]:
+    """
+    :param fn: A one-argument function.
+    :param it: An iterable over some objects.
+    :param verbose: Display progress bar.
+    :param desc: Progress bar description.
+    :param num_proc: The number of processes to use. Anything below ``1``
+        indicates sequential processing. Otherwise, will apply ``fn``
+        in parallel using ``ProcessPoolExecutor``.
+    :return:
+    """
+    if num_proc > 1:
+        yield from _apply_parallel(fn, it, verbose, desc, num_proc)
+    else:
+        yield from _apply_sequentially(fn, it, verbose, desc)
+
+
+if __name__ == "__main__":
     raise RuntimeError
