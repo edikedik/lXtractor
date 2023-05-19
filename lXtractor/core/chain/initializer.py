@@ -351,8 +351,8 @@ class ChainInitializer:
         map_numberings: bool = True,
         num_proc_read_seq: int = 1,
         num_proc_read_str: int = 1,
-        num_proc_map_numbering: int = 1,
         num_proc_item_callbacks: int = 1,
+        num_proc_map_numbering: int = 1,
         **kwargs,
     ) -> ChainList[Chain]:
         """
@@ -363,6 +363,12 @@ class ChainInitializer:
         refer (see below) and then create maps between each sequence and
         associated structures, saving these into structure
         :attr:`ChainStructure.seq`'s.
+
+        .. note::
+            ``key/value_callback`` are distributed to parser and applied right
+            after parsing the object. As a result, their application will
+            be parallelized depending on the``num_proc_read_seq`` and
+            ``num_proc_read_str`` parameters.
 
         :param m:
             A mapping of the form ``{seq => [structures]}``, where `seq`
@@ -388,17 +394,22 @@ class ChainInitializer:
         :param val_callbacks: A sequence of callables accepting and returning
             a :class:`ChainStructure`.
         :param item_callbacks: A sequence of callables accepting and returning
-            a parsed item -- a tuple of :class:`ChainSequence` and a sequence of
-            associated :class:`ChainStructure`s. Currently, they are applied
-            sequentially and after parsing keys/values (and applying key/value
-            callbacks). Callback may return empty values: ``None`` as the first
-            element and empty sequence as second. In that case, such items will
-            be filtered out.
+            a parsed item -- a tuple of :class:`Chain` and a sequence of
+            associated :class:`ChainStructure`s. Callbacks are applied
+            sequentially to each item as a function composition in the supplied
+            order (left to right). It the last callback returns ``None`` as a
+            first element or an empty list as a second element, such item will
+            be filtered out. Item callbacks are applied after parsing sequences
+            and structures and converting chain sequences to chains.
+        :param map_numberings: Map PDB numberings to canonical sequence's
+            numbering via pairwise sequence alignments.
         :param num_proc_read_seq: A number of processes to devote to sequence
             parsing. Typically, sequence reading doesn't benefit from parallel
             processing, so it's better to leave this default.
         :param num_proc_read_str: A number of processes dedicated to structures
             parsing.
+        :param num_proc_item_callbacks: A number of CPUs to parallelize item
+            callbacks' application.
         :param num_proc_map_numbering: A number of processes to use for mapping
             between numbering of sequences and structures. Generally, this
             should be as high as possible for faster processing. In contrast
@@ -437,17 +448,6 @@ class ChainInitializer:
                 num_proc_item_callbacks,
             )
             items = filter(lambda x: bool(x[0]) and bool(x[1]), items)
-
-        # m_new: dict[Chain, list[ChainStructure]] = valmap(
-        #     lambda vs: collapse(filter(bool, vs)),
-        #     keyfilter(  # Filter possible failures
-        #         bool, dict(zip(keys, values))  # Wrap back into a mapping
-        #     ),
-        # )
-        # if item_callbacks:
-        #     for cb in item_callbacks:
-
-        #         m_new = valfilter(bool, keyfilter(bool, itemmap(cb, m_new)))
 
         items = list(items)
 
