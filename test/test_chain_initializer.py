@@ -93,8 +93,7 @@ def test_mapping_invalid_objects(simple_chain_seq):
 
     io = ChainInitializer(tolerate_failures=True)
     chains = list(io.from_mapping(m))
-    assert len(chains) == 1
-    assert SeqNames.map_canonical not in chains[0].seq
+    assert len(chains) == 0
 
 
 def accept(obj):

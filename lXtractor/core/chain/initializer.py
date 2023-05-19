@@ -413,7 +413,9 @@ class ChainInitializer:
             desc="Initializing structures",
         )
         values = map(
-            compose_left(collapse, list),  # Collapse all separated chains into a list
+            compose_left(  # Collapse all separated chains into a list
+                collapse, lambda x: list(filter(bool, x))
+            ),
             split_into(  # Split into original sizes
                 values_flattened, map(len, m.values())
             ),
@@ -435,7 +437,7 @@ class ChainInitializer:
                 "Applying item callbacks",
                 num_proc_item_callbacks,
             )
-            items = filter(lambda x: bool(x[0]) and bool(x[1]), items)
+            items = filter(lambda x: x[0] is not None and len(x[1]) > 0, items)
 
         items = list(items)
         if ilen(items) == 0:
