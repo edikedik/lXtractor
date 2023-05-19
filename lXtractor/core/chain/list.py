@@ -19,18 +19,19 @@ from lXtractor.core.base import Ord, ApplyT
 from lXtractor.core.chain.base import is_chain_type_iterable, is_chain_type
 from lXtractor.core.config import MetaNames
 from lXtractor.core.exceptions import MissingData
+from lXtractor.util import apply
 
 if t.TYPE_CHECKING:
     from lXtractor.core.chain import ChainSequence, ChainStructure, Chain
 
-    CT = t.TypeVar('CT', ChainStructure, ChainSequence, Chain)
+    CT = t.TypeVar("CT", ChainStructure, ChainSequence, Chain)
     # CT = t.TypeVar('CT', bound=t.Union[ChainSequence, ChainStructure, Chain])
-    CS = t.TypeVar('CS', ChainStructure, ChainSequence)
+    CS = t.TypeVar("CS", ChainStructure, ChainSequence)
     CTU: t.TypeAlias = ChainSequence | ChainStructure | Chain
 else:
-    CT = t.TypeVar('CT')
+    CT = t.TypeVar("CT")
 
-T = t.TypeVar('T')
+T = t.TypeVar("T")
 
 
 def add_category(c: t.Any, cat: str):
@@ -40,7 +41,7 @@ def add_category(c: t.Any, cat: str):
     :return:
     """
 
-    if hasattr(c, 'meta'):
+    if hasattr(c, "meta"):
         meta = c.meta
     else:
         raise TypeError(f"Failed to find .meta attr in {c}")
@@ -56,7 +57,7 @@ def add_category(c: t.Any, cat: str):
 
 def _check_chain_types(objs: abc.Sequence[T]):
     if not is_chain_type_iterable(objs):
-        raise TypeError('A sequence of objects is not a Chain*-type sequence')
+        raise TypeError("A sequence of objects is not a Chain*-type sequence")
 
 
 class ChainList(abc.MutableSequence[CT]):
@@ -222,9 +223,8 @@ class ChainList(abc.MutableSequence[CT]):
         ...
 
     def __setitem__(self, index: t.SupportsIndex | slice, value: CT | abc.Iterable[CT]):
-
         if len(self) == 0:
-            raise MissingData('Not possible to use __setitem__ when ChainList is empty')
+            raise MissingData("Not possible to use __setitem__ when ChainList is empty")
         self_type = type(self._chains[0])
         if is_chain_type(value):
             other_type = type(value)
@@ -234,21 +234,20 @@ class ChainList(abc.MutableSequence[CT]):
                 value = peekable(value)  # type: ignore
                 other_type = type(value.peek())
             else:
-                raise TypeError('Incompatible value type')
+                raise TypeError("Incompatible value type")
 
         if self_type is other_type or id(self_type) == id(other_type):
             self._chains[index] = value  # type: ignore  # overloading failure
         else:
             raise TypeError(
-                f'Value type {other_type} conflicts with existing '
-                f'items type {self_type}'
+                f"Value type {other_type} conflicts with existing "
+                f"items type {self_type}"
             )
 
     def __delitem__(self, index: t.SupportsIndex | int | slice):
         self._chains.__delitem__(index)
 
     def __contains__(self, item: object) -> bool:
-
         if isinstance(item, str):
             for c in self:
                 if c.id == item:
@@ -572,14 +571,24 @@ class ChainList(abc.MutableSequence[CT]):
         """
         return self.filter(lambda c: any(cat == name for cat in c.categories))
 
-    def apply(self, fn: ApplyT) -> ChainList[CT]:
+    def apply(
+        self,
+        fn: ApplyT,
+        verbose: bool = False,
+        desc: str = "Applying to objects",
+        num_proc: int = 1,
+    ) -> ChainList[CT]:
         """
         Apply a function to each object and return a new chain list of results.
 
         :param fn: A callable to apply.
+        :param verbose: Display progress bar.
+        :param desc: Progress bar description.
+        :param num_proc: The number of CPUs to use. ``num_proc <= 1`` indicates
+            sequential processing.
         :return: A new chain list with application results.
         """
-        return ChainList((fn(c) for c in self))
+        return ChainList(apply(fn, self._chains, verbose, desc, num_proc))
 
     def summary(self, meta: bool = True, children: bool = False) -> pd.DataFrame:
         return pd.concat([c.summary(meta, children) for c in self])
@@ -594,5 +603,5 @@ def _wrap_children(children: abc.Iterable[CT] | None) -> ChainList[CT]:
     return ChainList([])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError
