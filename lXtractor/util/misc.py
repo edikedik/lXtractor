@@ -9,7 +9,7 @@ from concurrent.futures import ProcessPoolExecutor
 from itertools import groupby
 
 import pandas as pd
-from tqdm.asyncio import tqdm
+from tqdm.auto import tqdm
 
 from lXtractor.core.exceptions import FormatError
 
