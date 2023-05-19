@@ -580,6 +580,8 @@ class Chain:
             str_summaries = pd.concat(
                 s.summary(meta=meta, children=False) for s in self.structures
             )
+            str_summaries['Structure'] = True
+            str_summaries['ParentChain'] = self.id
             s = pd.concat([s, str_summaries])
         if children and self.children:
             child_summaries = pd.concat(

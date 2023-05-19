@@ -590,8 +590,8 @@ class ChainList(abc.MutableSequence[CT]):
         """
         return ChainList(apply(fn, self._chains, verbose, desc, num_proc))
 
-    def summary(self, meta: bool = True, children: bool = False) -> pd.DataFrame:
-        return pd.concat([c.summary(meta, children) for c in self])
+    def summary(self, **kwargs) -> pd.DataFrame:
+        return pd.concat([c.summary(**kwargs) for c in self])
 
 
 def _wrap_children(children: abc.Iterable[CT] | None) -> ChainList[CT]:
