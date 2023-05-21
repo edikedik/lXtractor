@@ -57,7 +57,7 @@ class SeqEl(SequenceVariable[T, T]):
         return eval(self._rtype)
 
     def calculate(
-        self, obj: abc.Sequence[T], mapping: t.Optional[MappingT] = None
+        self, obj: abc.Sequence[T], mapping: MappingT | None = None
     ) -> T:
         p: int = _try_map(self.p, mapping)
         try:
@@ -93,7 +93,7 @@ class PFP(SequenceVariable):
         return float
 
     def calculate(
-        self, obj: abc.Sequence[str], mapping: t.Optional[MappingT] = None
+        self, obj: abc.Sequence[str], mapping: MappingT | None = None
     ) -> float:
         p = _try_map(self.p, mapping)
         try:
@@ -173,7 +173,7 @@ class SliceTransformReduce(SequenceVariable, t.Generic[T, V, K]):
         return seq
 
     def calculate(
-        self, obj: abc.Iterable[K], mapping: t.Optional[MappingT] = None
+        self, obj: abc.Iterable[K], mapping: MappingT | None = None
     ) -> V:
         start, stop, step = map(
             lambda x: None if x is None else _try_map(x, mapping),
@@ -189,6 +189,7 @@ class SliceTransformReduce(SequenceVariable, t.Generic[T, V, K]):
 # TODO: isn't compatible with parallel computation because ABC aren't serializable
 # monitor https://github.com/uqfoundation/dill/issues/332 the solution in the next
 # versions of dill
+# It works now: https://stackoverflow.com/a/69253561 might be a quick hack around
 def make_str(
     reduce: abc.Callable[[abc.Iterable[T]], V],
     rtype: t.Type,
