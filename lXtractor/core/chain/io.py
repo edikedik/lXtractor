@@ -95,13 +95,14 @@ class ChainIO:
         path: Path | abc.Iterable[Path],
         callbacks: abc.Sequence[_CB] | None = None,
         **kwargs,
-    ) -> abc.Generator[CT | Future | None, None, None]:
+    ) -> abc.Generator[CT | None, None, None]:
         """
-        Read object dump.
+        Read ``obj_type``-type objects from a path or an iterable of paths.
 
         :param obj_type: Some class with ``@classmethod(read(path))``.
         :param path: Path to the dump to read from. It's a path to directory
-            holding files necessary to init a given `obj_type`.
+            holding files necessary to init a given `obj_type`, or an iterable
+            over such paths.
         :param callbacks: Callables applied sequentially to parsed object.
         :param kwargs: Passed to the object's :meth:`read` method.
         :return: A generator over initialized objects or futures.
@@ -130,7 +131,7 @@ class ChainIO:
 
     def read_chain(
         self, path: Path | abc.Iterable[Path], **kwargs
-    ) -> abc.Generator[Chain | Future | None, None, None]:
+    ) -> abc.Generator[Chain | None, None, None]:
         """
         Read :class:`Chain`'s from the provided path.
 
@@ -141,14 +142,13 @@ class ChainIO:
 
         :param path: Path to a dump or a dir of dumps.
         :param kwargs: Passed to :meth:`read`.
-        :return: An single chain or iterator over chain objects read
-            sequentially or in parallel.
+        :return: An iterator over :class:`Chain` objects.
         """
-        return self.read(Chain, path, **kwargs)
+        yield from self.read(Chain, path, **kwargs)
 
     def read_chain_seq(
         self, path: Path | abc.Iterable[Path], **kwargs
-    ) -> abc.Generator[ChainSequence | Future | None, None, None]:
+    ) -> abc.Generator[ChainSequence | None, None, None]:
         """
         Read :class:`ChainSequence`'s from the provided path.
 
@@ -159,14 +159,13 @@ class ChainIO:
 
         :param path: Path to a dump or a dir of dumps.
         :param kwargs: Passed to :meth:`read`.
-        :return: A single chain sequence or iterator over
-            :class:`ChainSequence` objects read sequentially or in parallel.
+        :return: An iterator over :class:`ChainSequence` objects.
         """
-        return self.read(ChainSequence, path, **kwargs)
+        yield from self.read(ChainSequence, path, **kwargs)
 
     def read_chain_struc(
         self, path: Path | abc.Iterable[Path], **kwargs
-    ) -> abc.Generator[ChainStructure | Future | None, None, None]:
+    ) -> abc.Generator[ChainStructure | None, None, None]:
         """
         Read :class:`ChainStructure`'s from the provided path.
 
@@ -177,10 +176,9 @@ class ChainIO:
 
         :param path: Path to a dump or a dir of dumps.
         :param kwargs: Passed to :meth:`read`.
-        :return: A single chain sequence or iterator over
-            :class:`ChainStructure` objects read sequentially or in parallel.
+        :return: An iterator over :class:`ChainStructure` objects.
         """
-        return self.read(ChainStructure, path, **kwargs)
+        yield from self.read(ChainStructure, path, **kwargs)
 
     def write(
         self,
