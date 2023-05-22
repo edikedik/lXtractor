@@ -6,89 +6,89 @@ import biotite.structure as bst
 import pytest
 
 from lXtractor.core.chain import ChainList, ChainStructure, ChainSequence, Chain
-from lXtractor.core.config import SeqNames
+from lXtractor.core.config import SeqNames, DumpNames
 from lXtractor.core.structure import GenericStructure
 from lXtractor.util.seq import read_fasta
 from lXtractor.variables.sequential import SeqEl
 from lXtractor.variables.structural import Dist, PseudoDihedral
 from test.common import sample_chain, get_fst_chain
 
-DATA = Path(__file__).parent / 'data'
+DATA = Path(__file__).parent / "data"
 EPS = 10e-5
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def simple_structure_path() -> Path:
-    path = DATA / '1aki.pdb'
+    path = DATA / "1aki.pdb"
     assert path.exists()
     return path
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def four_chain_structure_path() -> Path:
-    path = DATA / '3i6x.pdb'
+    path = DATA / "3i6x.pdb"
     assert path.exists()
     return path
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def four_chain_structure_seq_path() -> Path:
-    path = DATA / 'P46940.fasta'
+    path = DATA / "P46940.fasta"
     assert path.exists()
     return path
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def chicken_src_str_path() -> Path:
-    path = DATA / '2oiq.cif'
+    path = DATA / "2oiq.cif"
     assert path.exists()
     return path
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def chicken_src_seq_path() -> Path:
-    path = DATA / 'P00523.fasta'
+    path = DATA / "P00523.fasta"
     assert path.exists()
     return path
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def human_src_seq_path() -> Path:
-    path = DATA / 'P12931.fasta'
+    path = DATA / "P12931.fasta"
     assert path.exists()
     return path
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def pkinase_hmm_path() -> Path:
-    path = DATA / 'Pkinase.hmm'
+    path = DATA / "Pkinase.hmm"
     assert path.exists()
     return path
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def human_abl_str_path() -> Path:
-    path = DATA / '5hu9.cif'
+    path = DATA / "5hu9.cif"
     assert path.exists()
     return path
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def simple_structure(simple_structure_path) -> GenericStructure:
     return GenericStructure.read(simple_structure_path)
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def four_chain_structure(four_chain_structure_path) -> GenericStructure:
     return GenericStructure.read(four_chain_structure_path)
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def chicken_src_str(chicken_src_str_path) -> GenericStructure:
     return GenericStructure.read(chicken_src_str_path)
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def human_abl_str(human_abl_str_path) -> GenericStructure:
     return GenericStructure.read(human_abl_str_path)
 
@@ -103,9 +103,9 @@ def human_src_seq(human_src_seq_path) -> tuple[str, str]:
     return next(read_fasta(human_src_seq_path))
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def simple_fasta_path() -> Path:
-    path = DATA / 'simple.fasta'
+    path = DATA / "simple.fasta"
     assert path.exists()
     return path
 
@@ -115,8 +115,8 @@ def sample_chain_list(simple_structure) -> ChainList:
     chain_str = ChainStructure.from_structure(simple_structure)
     return ChainList(
         [
-            sample_chain(prefix='c', structure=chain_str),
-            sample_chain(prefix='k', structure=chain_str),
+            sample_chain(prefix="c", structure=chain_str),
+            sample_chain(prefix="k", structure=chain_str),
         ]
     )
 
@@ -136,23 +136,23 @@ def src_str(chicken_src_str):
 #     return deepcopy(_sample_chain_list)
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def simple_chain_variables() -> tuple[PseudoDihedral, Dist, SeqEl]:
-    return PseudoDihedral(1, 2, 3, 4), Dist(1, 40, 'CB', 'CB'), SeqEl(1)
+    return PseudoDihedral(1, 2, 3, 4), Dist(1, 40, "CB", "CB"), SeqEl(1)
 
 
 @pytest.fixture()
 def simple_chain_seq() -> tuple[SeqNames, ChainSequence]:
     fields = ChainSequence.field_names()
-    s = ChainSequence(1, 5, 'S', {fields.seq1: 'ABCDE'})
+    s = ChainSequence(1, 5, "S", {fields.seq1: "ABCDE"})
     return fields, s
 
 
 @pytest.fixture()
 def simple_chain_structure(simple_chain_seq) -> ChainStructure:
     _, s = simple_chain_seq
-    a = bst.array([bst.Atom([1, 2, 3], chain_id='X', res_name=c) for c in s.seq1])
-    return ChainStructure('XXXX', 'X', GenericStructure(a))
+    a = bst.array([bst.Atom([1, 2, 3], chain_id="X", res_name=c) for c in s.seq1])
+    return ChainStructure("XXXX", "X", GenericStructure(a))
 
 
 @pytest.fixture
@@ -161,3 +161,30 @@ def src_chain(chicken_src_seq, src_str, abl_str) -> Chain:
     c.add_structure(src_str)
     c.add_structure(abl_str)
     return c
+
+
+@pytest.fixture(scope="session")
+def fake_chain_dump(tmp_path_factory) -> tuple[Path, dict[str, Path]]:
+    base = tmp_path_factory.mktemp("base", numbered=False)
+    paths = dict(
+        base=base,
+        X=base / "segments" / "X",
+        x1=base / "segments" / "X" / "segments" / "x",
+        Y=base / "segments" / "Y",
+        x2=base / "segments" / "Y" / "segments" / "x",
+        s1=base / "structures" / "s1",
+        s2=base / "structures" / "s2",
+    )
+
+    for name in ["x1", "x2", "s1", "s2"]:
+        p = paths[name]
+        p.mkdir(parents=True)
+
+    for name in ["base", "X", "x1", "Y", "s1", "s2"]:
+        p = paths[name]
+        open(p / DumpNames.meta, "w").close()
+        open(p / DumpNames.sequence, "w").close()
+
+    open(paths["s1"] / f"{DumpNames.structure_base_name}.pdb", "w").close()
+
+    return base, paths

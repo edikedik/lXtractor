@@ -11,31 +11,34 @@ import urllib
 from collections import abc
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from itertools import filterfalse, starmap, chain, repeat
-from os import PathLike
+from os import PathLike, walk
 from pathlib import Path
 
+import networkx as nx
 import pandas as pd
 import requests
 from more_itertools import chunked_even, peekable
 from tqdm.auto import tqdm
 
 from lXtractor.core.base import UrlGetter
+from lXtractor.core.config import DumpNames
 
-T = t.TypeVar('T')
-V = t.TypeVar('V')
-_U = t.TypeVar('_U', tuple[str, ...], str)
-_F = t.TypeVar('_F', str, Path)
+T = t.TypeVar("T")
+V = t.TypeVar("V")
+_U = t.TypeVar("_U", tuple[str, ...], str)
+_F = t.TypeVar("_F", str, Path)
 LOGGER = logging.getLogger(__name__)
 
 __all__ = (
-    'fetch_text',
-    'fetch_to_file',
-    'fetch_files',
-    'fetch_iterable',
-    'setup_logger',
-    'get_files',
-    'get_dirs',
-    'run_sp',
+    "fetch_text",
+    "fetch_to_file",
+    "fetch_files",
+    "fetch_iterable",
+    "setup_logger",
+    "get_files",
+    "get_dirs",
+    "run_sp",
+    "path_tree",
 )
 
 
@@ -53,13 +56,13 @@ def fetch_text(url: str, decode: bool = True, **kwargs) -> str | bytes:
     chunk_size = 1024 * 8
     if r.ok:
         decoded = (
-            chunk.decode('utf-8') if decode else chunk
+            chunk.decode("utf-8") if decode else chunk
             for chunk in r.iter_content(chunk_size=chunk_size)
         )
         return "".join(decoded) if decode else b"".join(decoded)
     raise RuntimeError(
-        f'Downloading url {url} failed with status code '
-        f'{r.status_code} and output {r.text}'
+        f"Downloading url {url} failed with status code "
+        f"{r.status_code} and output {r.text}"
     )
 
 
@@ -86,15 +89,15 @@ def fetch_to_file(
     """
     if fpath is None:
         root_dir = root_dir or Path().cwd()
-        fname = fname or url.split('/')[-1]
+        fname = fname or url.split("/")[-1]
         fpath = root_dir / fname
     if not fpath.parent.exists():
-        raise ValueError(f'Directory {fpath.parent} must exist')
-    if not text or url.startswith('ftp'):
+        raise ValueError(f"Directory {fpath.parent} must exist")
+    if not text or url.startswith("ftp"):
         urllib.request.urlretrieve(url, fpath, **kwargs)
     else:
         res = fetch_text(url, decode=True, **kwargs)
-        with fpath.open('w') as f:
+        with fpath.open("w") as f:
             print(res, file=f)
     return fpath
 
@@ -157,7 +160,7 @@ def fetch_iterable(
             if not allow_failure:
                 raise e
             if verbose:
-                LOGGER.warning(f'Failed to fetch input {inp} due to error {e}')
+                LOGGER.warning(f"Failed to fetch input {inp} due to error {e}")
                 LOGGER.exception(e)
             return None
 
@@ -165,7 +168,7 @@ def fetch_iterable(
     if num_threads is None:
         results = (x for x in starmap(_try_get_result, zip(it, repeat(None))) if x)
         if verbose:
-            results = tqdm(results, desc='Fetching')
+            results = tqdm(results, desc="Fetching")
         yield from results
     else:
         with ThreadPoolExecutor(num_threads) as executor:
@@ -173,7 +176,7 @@ def fetch_iterable(
             futures: abc.Iterable[Future] = as_completed(list(futures_map))
 
             if verbose:
-                futures = tqdm(futures, desc='Fetching', total=len(futures_map))
+                futures = tqdm(futures, desc="Fetching", total=len(futures_map))
 
             results = ((futures_map[f], f) for f in futures)
 
@@ -216,7 +219,7 @@ def fetch_max_trials(
     remaining = list(it)
     trial = 1
     pbar = (
-        tqdm(desc='Fetching trials', total=max_trials, position=0, leave=True)
+        tqdm(desc="Fetching trials", total=max_trials, position=0, leave=True)
         if verbose
         else None
     )
@@ -227,7 +230,7 @@ def fetch_max_trials(
             trials.append(fetched)
             remaining = get_remaining(fetched, remaining)
         else:
-            LOGGER.warning(f'failed to fetch anything on trial {trial}')
+            LOGGER.warning(f"failed to fetch anything on trial {trial}")
         trial += 1
         if pbar is not None:
             pbar.update()
@@ -282,10 +285,10 @@ def fetch_files(
         url = url_getter(args) if isinstance(args, str) else url_getter(*args)
         if dir_ is None:
             text = fetch_text(url)
-            assert isinstance(text, str), 'Text is decoded'
+            assert isinstance(text, str), "Text is decoded"
             return callback(text) if callback else text
         fname_base: str = args if isinstance(args, str) else args[fname_idx]
-        return fetch_to_file(url, fname=f'{fname_base}.{fmt}', root_dir=dir_)
+        return fetch_to_file(url, fname=f"{fname_base}.{fmt}", root_dir=dir_)
 
     def fetcher(
         chunk: abc.Iterable[_U],
@@ -307,10 +310,10 @@ def fetch_files(
     def filter_existing(args):
         def exists(arg):
             if isinstance(arg, str):
-                return f'{arg}.{fmt}' in existing_names
-            return f'{arg[fname_idx]}.{fmt}' in existing_names
+                return f"{arg}.{fmt}" in existing_names
+            return f"{arg[fname_idx]}.{fmt}" in existing_names
 
-        existing_names = {x.name for x in dir_.glob(f'*.{fmt}')}
+        existing_names = {x.name for x in dir_.glob(f"*.{fmt}")}
         return list(filterfalse(exists, args))
 
     if not isinstance(url_getter_args, list):
@@ -350,17 +353,17 @@ def setup_logger(
 ) -> logging.Logger:
     logging.getLogger("requests").setLevel(logging.ERROR)
     logging.getLogger("urllib3").setLevel(logging.ERROR)
-    logging.getLogger('parso.python.diff').disabled = True
+    logging.getLogger("parso.python.diff").disabled = True
 
     formatter = logging.Formatter(
-        '%(asctime)s %(levelname)s [%(module)s--%(funcName)s]: %(message)s'
+        "%(asctime)s %(levelname)s [%(module)s--%(funcName)s]: %(message)s"
     )
     if logger is None:
         logger = logging.getLogger(__name__)
     handler: logging.FileHandler | logging.StreamHandler
     if log_path is not None:
         level = file_level or logging.DEBUG
-        handler = logging.FileHandler(log_path, 'w')
+        handler = logging.FileHandler(log_path, "w")
         handler.setFormatter(formatter)
         handler.setLevel(level)
         logger.addHandler(handler)
@@ -415,8 +418,8 @@ def run_sp(cmd: str, split: bool = True):
             command, capture_output=True, text=True, check=False, shell=not split
         )
         raise ValueError(
-            f'Command {command} failed with an error {e}, '
-            f'stdout {res.stdout}, stderr {res.stderr}'
+            f"Command {command} failed with an error {e}, "
+            f"stdout {res.stdout}, stderr {res.stderr}"
         ) from e
     return res
 
@@ -448,21 +451,82 @@ def get_dirs(path: Path) -> dict[str, Path]:
     return {p.name: p for p in path.iterdir() if p.is_dir()}
 
 
+def _is_valid_seq_path(path: Path) -> bool:
+    files = get_files(path)
+    return DumpNames.meta in files and DumpNames.sequence in files
+
+
+def _is_valid_str_path(path: Path) -> bool:
+    base_names = [x.split(".")[0] for x in get_files(path)]
+    return _is_valid_seq_path(path) and DumpNames.structure_base_name in base_names
+
+
+# TODO: make doctests
+def path_tree(path: Path) -> nx.Graph:
+    """
+    Create a tree graph from Chain*-type objects saved to the filesystem.
+
+    The function will recursively walk starting from the provided path,
+    connecting parent and children paths (residing within "segments" directory).
+    If it meets a path containing "structures" directory, it will save valid
+    structure paths under a node's "structures" attribute. In that case,
+    such structures are assumed to be nested under a chain, and they do not
+    form nodes in this graph.
+
+    A path to a Chain*-type object is valid if it contains "sequence.tsv"
+    and "meta.tsv" files. A valid structure path must contain "sequence.tsv",
+    "meta.tsv", and "structure.*" files.
+
+    :param path: A root path to start with.
+    :return: An undirected graph with paths as nodes and edges representing
+        parent-child relationships.
+    """
+
+    d = nx.Graph()
+    d.add_node(path)
+
+    for root, dirs, files in walk(path):
+        root_path = Path(root)
+        if (
+            DumpNames.meta in files
+            and DumpNames.structures_dir != root_path.parent.name
+        ):
+            d.add_node(root_path)
+        else:
+            parent, child = root_path.parent.name, root_path.name
+            if child == DumpNames.segments_dir:
+                for seg in dirs:
+                    if _is_valid_seq_path(root_path / seg):
+                        d.add_edge(root_path.parent, root_path / seg)
+                    else:
+                        LOGGER.warning(f"Invalid segment object in {root_path / seg}")
+            if child == DumpNames.structures_dir:
+                structures = []
+                for s_dir in dirs:
+                    if _is_valid_str_path(root_path / s_dir):
+                        structures.append(root_path / s_dir)
+                    else:
+                        LOGGER.warning(f"Invalid structure in {root_path / s_dir}")
+                if structures:
+                    d.nodes[root_path.parent]["structures"] = structures
+    return d
+
+
 # =================================== Parsing ==========================================
 
 
-def read_n_col_table(path: Path, n: int, sep='\t') -> t.Optional[pd.DataFrame]:
+def read_n_col_table(path: Path, n: int, sep="\t") -> t.Optional[pd.DataFrame]:
     """
     Read table from file and ensure it has exactly `n` columns.
     """
     df = pd.read_csv(path, sep=sep, header=None)
     if len(df.columns) != n:
         LOGGER.error(
-            f'Expected two columns in the table {path}, ' f'but found {len(df.columns)}'
+            f"Expected two columns in the table {path}, " f"but found {len(df.columns)}"
         )
         return None
     return df
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError
