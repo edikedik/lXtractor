@@ -13,9 +13,9 @@ from lXtractor.core.chain.chain import Chain
 from lXtractor.core.chain.sequence import ChainSequence
 from lXtractor.core.chain.structure import ChainStructure
 from lXtractor.core.config import DumpNames, _DumpNames
-from lXtractor.util.io import get_dirs
+from lXtractor.util import get_dirs, apply
 
-CT = t.TypeVar('CT', ChainSequence, ChainStructure, Chain)
+CT = t.TypeVar("CT", ChainSequence, ChainStructure, Chain)
 LOGGER = logging.getLogger(__name__)
 
 _CB: t.TypeAlias = abc.Callable[[CT], CT]
@@ -64,7 +64,7 @@ class ChainIO:
     # TODO: implement context manager
     def __init__(
         self,
-        num_proc: None | int = None,
+        num_proc: int = 1,
         verbose: bool = False,
         tolerate_failures: bool = False,
         dump_names: _DumpNames = DumpNames,
@@ -93,7 +93,6 @@ class ChainIO:
         self,
         obj_type: t.Type[CT],
         path: Path | abc.Iterable[Path],
-        non_blocking: bool = False,
         callbacks: abc.Sequence[_CB] | None = None,
         **kwargs,
     ) -> abc.Generator[CT | Future | None, None, None]:
@@ -103,8 +102,6 @@ class ChainIO:
         :param obj_type: Some class with ``@classmethod(read(path))``.
         :param path: Path to the dump to read from. It's a path to directory
             holding files necessary to init a given `obj_type`.
-        :param non_blocking: Return `Future` objects without attempting to
-            retrieve the result.
         :param callbacks: Callables applied sequentially to parsed object.
         :param kwargs: Passed to the object's :meth:`read` method.
         :return: A generator over initialized objects or futures.
@@ -123,83 +120,13 @@ class ChainIO:
         )
 
         if DumpNames.segments_dir in dirs or not dirs and isinstance(path, Path):
-            yield _read(path)
-            return
-
-        paths = iter(dirs.values())
-
-        if self.num_proc is None:
-
-            if self.verbose:
-                yield from map(_read, tqdm(paths, desc=f"Reading {obj_type.__class__}"))
-            else:
-                yield from map(_read, paths)
-
+            paths = [path]
         else:
+            paths = iter(dirs.values())
 
-            with ProcessPoolExecutor(self.num_proc) as executor:
-
-                futures: abc.Iterator[Future] = as_completed(
-                    [executor.submit(_read, d) for d in paths]
-                )
-
-                if non_blocking:
-                    yield from futures
-
-                _futures = (
-                    tqdm(futures, desc=f"Reading {obj_type}")
-                    if self.verbose
-                    else futures
-                )
-
-                for f in _futures:
-                    yield f.result()
-
-    def write(
-        self,
-        objs: CT | abc.Iterable[CT],
-        base: Path,
-        non_blocking: bool = False,
-        **kwargs,
-    ) -> abc.Generator[Path | None | Future, None, None]:
-        """
-        :param objs: A single or multiple objects to write.
-            Each must have a `write` method accepting a directory.
-        :param base: A writable dir. If `objs` are many, dump into `id`
-            directories.
-        :param non_blocking: If :attr:`num_proc` is >= 1, return `Future`
-            objects instead of waiting for the result.
-        :param kwargs: Passed to the `write` method of each object.
-        :return: Whatever `write` method returns.
-        """
-        if isinstance(objs, (ChainSequence, ChainStructure, Chain)):
-            objs.write(base)
-        else:
-            _write = _write_obj(tolerate_failures=self.tolerate_failures, **kwargs)
-
-            if self.num_proc is None:
-                if self.verbose:
-                    objs = tqdm(objs, desc="Writing objects")
-                for obj in objs:
-                    yield _write(obj, base / obj.id)
-            else:
-                with ProcessPoolExecutor(self.num_proc) as executor:
-
-                    futures = as_completed(
-                        [executor.submit(_write, obj, base / obj.id) for obj in objs]
-                    )
-
-                    if non_blocking:
-                        yield from futures
-
-                    _futures = (
-                        tqdm(futures, desc="Writing objects")
-                        if self.verbose
-                        else futures
-                    )
-
-                    for f in _futures:
-                        yield f.result()
+        yield from apply(
+            _read, paths, self.verbose, f"Reading {obj_type.__name__}", self.num_proc
+        )
 
     def read_chain(
         self, path: Path | abc.Iterable[Path], **kwargs
@@ -255,6 +182,51 @@ class ChainIO:
         """
         return self.read(ChainStructure, path, **kwargs)
 
+    def write(
+        self,
+        objs: CT | abc.Iterable[CT],
+        base: Path,
+        non_blocking: bool = False,
+        **kwargs,
+    ) -> abc.Generator[Path | None | Future, None, None]:
+        """
+        :param objs: A single or multiple objects to write.
+            Each must have a `write` method accepting a directory.
+        :param base: A writable dir. If `objs` are many, dump into `id`
+            directories.
+        :param non_blocking: If :attr:`num_proc` is >= 1, return `Future`
+            objects instead of waiting for the result.
+        :param kwargs: Passed to the `write` method of each object.
+        :return: Whatever `write` method returns.
+        """
+        if isinstance(objs, (ChainSequence, ChainStructure, Chain)):
+            objs.write(base)
+        else:
+            _write = _write_obj(tolerate_failures=self.tolerate_failures, **kwargs)
 
-if __name__ == '__main__':
+            if self.num_proc is None:
+                if self.verbose:
+                    objs = tqdm(objs, desc="Writing objects")
+                for obj in objs:
+                    yield _write(obj, base / obj.id)
+            else:
+                with ProcessPoolExecutor(self.num_proc) as executor:
+                    futures = as_completed(
+                        [executor.submit(_write, obj, base / obj.id) for obj in objs]
+                    )
+
+                    if non_blocking:
+                        yield from futures
+
+                    _futures = (
+                        tqdm(futures, desc="Writing objects")
+                        if self.verbose
+                        else futures
+                    )
+
+                    for f in _futures:
+                        yield f.result()
+
+
+if __name__ == "__main__":
     raise RuntimeError
