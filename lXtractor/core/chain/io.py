@@ -4,21 +4,34 @@ import logging
 import typing as t
 from collections import abc
 from concurrent.futures import ProcessPoolExecutor, as_completed, Future
+from dataclasses import dataclass, asdict
+from itertools import chain
 from pathlib import Path
 
-from toolz import curry
+from toolz import curry, merge, valfilter, valmap
 from tqdm.auto import tqdm
 
+from lXtractor.core.chain import ChainList
 from lXtractor.core.chain.chain import Chain
 from lXtractor.core.chain.sequence import ChainSequence
 from lXtractor.core.chain.structure import ChainStructure
 from lXtractor.core.config import DumpNames, _DumpNames
-from lXtractor.util import get_dirs, apply
+from lXtractor.util import get_dirs, apply, path_tree
 
 CT = t.TypeVar("CT", ChainSequence, ChainStructure, Chain)
 LOGGER = logging.getLogger(__name__)
 
 _CB: t.TypeAlias = abc.Callable[[CT], CT]
+_P = t.TypeVar("_P", dict, Path)
+_ChildDict: t.TypeAlias = dict[Path, list[_P]]
+
+
+@dataclass
+class ChainIOConfig:
+    num_proc: int = 1
+    verbose: bool = False
+    tolerate_failures: bool = False
+    dump_names: _DumpNames = DumpNames
 
 
 @curry
@@ -26,14 +39,13 @@ def _read_obj(
     path: Path,
     obj_type: t.Type[CT],
     tolerate_failures: bool,
-    callbacks: abc.Iterable[_CB] | None,
+    callbacks: abc.Iterable[_CB],
     **kwargs,
 ) -> CT | None:
     try:
         obj = obj_type.read(path, **kwargs)
-        if callbacks is not None:
-            for cb in callbacks:
-                obj = cb(obj)
+        for cb in callbacks:
+            obj = cb(obj)
         return obj
     except Exception as e:
         LOGGER.warning(f"Failed to initialize {obj_type} from {path}")
@@ -54,6 +66,96 @@ def _write_obj(obj: CT, path: Path, tolerate_failures: bool, **kwargs) -> Path |
         if not tolerate_failures:
             raise e
     return None
+
+
+def _read_objs(
+    obj_type: t.Type[CT],
+    paths: list[Path],
+    cfg: ChainIOConfig,
+    callbacks: abc.Sequence[_CB],
+    kwargs: dict[str, t.Any] | None,
+):
+    io = ChainIO(**asdict(cfg))
+    if kwargs is None:
+        kwargs = {}
+
+    return dict(zip(paths, io.read(obj_type, paths, callbacks, **kwargs)))
+
+
+def read_chains(
+    paths: Path | abc.Sequence[Path],
+    children: bool,
+    seq_cfg: ChainIOConfig = ChainIOConfig(),
+    str_cfg: ChainIOConfig = ChainIOConfig(),
+    seq_callbacks: abc.Sequence[_CB] = (),
+    str_callbacks: abc.Sequence[_CB] = (),
+    seq_kwargs: dict[str, t.Any] | None = None,
+    str_kwargs: dict[str, t.Any] | None = None,
+) -> ChainList[Chain]:
+    """
+    Reads saved :class:`lXtractor.core.chain.chain.Chain` objects without
+    invoking :meth:`lXtractor.core.chain.chain.Chain.read`. Instead, it will
+    use separate :class:`ChainIO` instances to read chain sequences and
+    chain structures. The output is identical to :meth:`ChainIO.read_chain_seq`.
+
+    Consider using it for:
+
+        #. For parallel parsing of ``Chain``s with many structures per chain.
+        #. For separate treatment of chain sequences and chain structures.
+        #. For better customization of chain sequences and structures parsing.
+
+    :param paths: A path or a sequence of paths to chains.
+    :param children: Search for, parse and integrate all nested children.
+    :param seq_cfg: :class:`ChainIO` config for chain sequences parsing.
+    :param str_cfg: ... for chain structures parsing.
+    :param seq_callbacks: A (potentially empty) sequence passed to the reader.
+        Each callback must accept and return a single chain sequence.
+    :param str_callbacks: ... Same for the structures.
+    :param seq_kwargs: Passed to
+        :meth:`lXtractor.core.chain.sequence.ChainSequence.read`.
+    :param str_kwargs: Passed to
+        :meth:`lXtractor.core.chain.structure.ChainStructure.read`.
+    :return: A chain list of parsed chains.
+    """
+    if isinstance(paths, Path):
+        paths = [paths]
+
+    if children:
+        trees = list(map(path_tree, paths))
+
+        seq_paths = list(chain.from_iterable(tree.nodes for tree in trees))
+        node2data = merge(*(dict(tree.nodes.data()) for tree in trees))
+        node2data = valfilter(lambda x: "structures" in x, node2data)
+        seq2str = valmap(lambda x: x["structures"], node2data)
+    else:
+        seq_paths = paths
+        seq2str = {p: list(p.glob("structures/*")) for p in seq_paths}
+        seq2str = valfilter(bool, seq2str)
+
+    str_paths = list(chain.from_iterable(seq2str.values()))
+
+    path2seq = _read_objs(ChainSequence, seq_paths, seq_cfg, seq_callbacks, seq_kwargs)
+    path2str = _read_objs(ChainStructure, str_paths, str_cfg, str_callbacks, str_kwargs)
+
+    path2chain = valmap(Chain, path2seq)
+
+    if children:
+        for tree in trees:
+            for parent, child in tree.edges:
+                parent_chain = path2chain[parent]
+                child_chain = path2chain[child]
+
+                if not (parent_chain is None or child_chain is None):
+                    parent_chain.children.append(child_chain)
+
+    for seq_path, str_paths in seq2str.items():
+        parent_chain = path2chain[seq_path]
+        for str_path in str_paths:
+            bound_str = path2str[str_path]
+            if bound_str is not None:
+                parent_chain.structures.append(bound_str)
+
+    return ChainList(c for p, c in path2chain.items() if p in paths)
 
 
 class ChainIO:
@@ -93,7 +195,7 @@ class ChainIO:
         self,
         obj_type: t.Type[CT],
         path: Path | abc.Iterable[Path],
-        callbacks: abc.Sequence[_CB] | None = None,
+        callbacks: abc.Sequence[_CB] = (),
         **kwargs,
     ) -> abc.Generator[CT | None, None, None]:
         """
@@ -163,7 +265,7 @@ class ChainIO:
         """
         yield from self.read(ChainSequence, path, **kwargs)
 
-    def read_chain_struc(
+    def read_chain_str(
         self, path: Path | abc.Iterable[Path], **kwargs
     ) -> abc.Generator[ChainStructure | None, None, None]:
         """

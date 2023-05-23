@@ -462,7 +462,7 @@ def _is_valid_str_path(path: Path) -> bool:
 
 
 # TODO: make doctests
-def path_tree(path: Path) -> nx.Graph:
+def path_tree(path: Path) -> nx.DiGraph:
     """
     Create a tree graph from Chain*-type objects saved to the filesystem.
 
@@ -482,7 +482,7 @@ def path_tree(path: Path) -> nx.Graph:
         parent-child relationships.
     """
 
-    d = nx.Graph()
+    d = nx.DiGraph()
     d.add_node(path)
 
     for root, dirs, files in walk(path):
