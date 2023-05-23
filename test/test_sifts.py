@@ -18,7 +18,7 @@ def test_fetch(sifts):
 
 
 def test_parse(sifts):
-    df, m = sifts.parse(rm_raw=False)
+    df, m = sifts.parse(rm_raw=False, overwrite=True)
     assert isinstance(df, pd.DataFrame) and isinstance(m, abc.Mapping)
 
 
