@@ -34,6 +34,9 @@ if t.TYPE_CHECKING:
     from lXtractor.variables import Variables
 
 
+__all__ = ('ChainStructure', )
+
+
 # TODO: subset and overlap with other structures/sequences
 
 

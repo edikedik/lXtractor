@@ -27,6 +27,8 @@ from lXtractor.util.seq import read_fasta
 LOGGER = logging.getLogger(__name__)
 
 
+__all__ = ('Chain', )
+
 # TODO: support for empty chain in methods
 
 

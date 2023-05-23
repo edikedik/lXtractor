@@ -18,6 +18,9 @@ else:
 T = t.TypeVar('T')
 
 
+__all__ = ('topo_iter', 'is_chain_type', 'is_chain_type_iterable')
+
+
 def topo_iter(
     start_obj: T, iterator: abc.Callable[[T], abc.Iterable[T]]
 ) -> abc.Generator[list[T], None, None]:

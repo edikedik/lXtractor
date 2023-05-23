@@ -26,6 +26,9 @@ _P = t.TypeVar("_P", dict, Path)
 _ChildDict: t.TypeAlias = dict[Path, list[_P]]
 
 
+__all__ = ('ChainIOConfig', 'ChainIO', 'read_chains')
+
+
 @dataclass
 class ChainIOConfig:
     num_proc: int = 1

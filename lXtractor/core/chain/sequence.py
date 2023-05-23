@@ -53,6 +53,9 @@ if t.TYPE_CHECKING:
 # and may keep an existing numbering
 
 
+__all__ = ('ChainSequence', )
+
+
 class ChainSequence(lxs.Segment):
     """
     A class representing polymeric sequence of a single entity (chain).
