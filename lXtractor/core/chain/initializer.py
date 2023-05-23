@@ -18,16 +18,20 @@ from toolz import curry, compose_left
 from tqdm.auto import tqdm
 
 from lXtractor.core.alignment import Alignment
-from lXtractor.core.chain import ChainList, Chain, ChainStructure, ChainSequence
+from lXtractor.core.chain import ChainList
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import InitError, LengthMismatch
 from lXtractor.core.structure import GenericStructure
 from lXtractor.util.misc import apply
 from lXtractor.util.seq import biotite_align
 
-CT = t.TypeVar("CT", ChainStructure, ChainSequence, Chain)
-_O: t.TypeAlias = ChainSequence | ChainStructure | list[ChainStructure] | None
+
 LOGGER = logging.getLogger(__name__)
+
+if t.TYPE_CHECKING:
+    from lXtractor.core.chain import Chain, ChainStructure, ChainSequence
+    CT = t.TypeVar("CT", ChainStructure, ChainSequence, Chain)
+    _O: t.TypeAlias = ChainSequence | ChainStructure | list[ChainStructure] | None
 
 __all__ = (
     "SingletonCallback",
@@ -80,6 +84,8 @@ def _read_path(
     supported_seq_ext: abc.Container[str],
     supported_str_ext: abc.Container[str],
 ) -> ChainSequence | list[ChainStructure] | None:
+    from lXtractor.core.chain import ChainStructure, ChainSequence
+
     if x.suffix in supported_seq_ext:
         return ChainSequence.from_file(x)
     if x.suffix in supported_str_ext:
@@ -99,6 +105,8 @@ def _init(
     supported_str_ext: list[str],
     callbacks: list[SingletonCallback] | None,
 ) -> _O:
+    from lXtractor.core.chain import Chain, ChainStructure, ChainSequence
+
     res: _O
     match inp:
         case Chain() | ChainSequence() | ChainStructure():
@@ -342,6 +350,7 @@ class ChainInitializer:
         num_proc_map_numbering: int = 1,
         **kwargs,
     ) -> ChainList[Chain]:
+        from lXtractor.core.chain import Chain
         """
         Initialize :class:`Chain`'s from mapping between sequences and
         structures.
