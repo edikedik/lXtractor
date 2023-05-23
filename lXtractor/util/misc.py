@@ -90,11 +90,12 @@ def _apply_sequentially(fn, it, verbose, desc):
 
 def _apply_parallel(fn, it, verbose, desc, num_proc):
     assert num_proc > 1, "More than 1 CPU requested"
+    total = len(it) if isinstance(it, abc.Sized) else None
     with ProcessPoolExecutor(num_proc) as executor:
         if verbose:
             yield from tqdm(
                 executor.map(fn, it),
-                desc=desc,
+                desc=desc, total=total
             )
         else:
             yield from executor.map(fn, it)
