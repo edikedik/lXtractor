@@ -13,7 +13,7 @@ EMPTY_CHAIN_ID: str = 'X'
 UNK_NAME: str = 'UNK'
 
 
-@dataclass
+@dataclass(frozen=True)
 class _DumpNames:
     """
     Dataclass encapsulating names of files used for dumping data.
@@ -29,7 +29,7 @@ class _DumpNames:
     structure_base_name: str = 'structure'
 
 
-@dataclass
+@dataclass(frozen=True)
 class _SeqNames:
     """
     Container holding names used within
@@ -46,7 +46,7 @@ class _SeqNames:
     map_ref: str = 'map_ref'
 
 
-@dataclass
+@dataclass(frozen=True)
 class _MetaNames:
     id: str = 'id'
     name: str = 'name'
@@ -58,7 +58,7 @@ class _MetaNames:
     res_name: str = 'res_name'
 
 
-@dataclass
+@dataclass(frozen=True)
 class _ColNames:
     id: str = 'ObjectID'
     parent_id: str = 'ParentID'
