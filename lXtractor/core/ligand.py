@@ -6,8 +6,7 @@ from collections import abc
 import biotite.structure as bst
 import numpy as np
 
-from lXtractor.core.base import BondThresholds, DefaultBondThresholds
-from lXtractor.core.config import MetaNames
+from lXtractor.core.config import MetaNames, BondThresholds, DefaultBondThresholds
 from lXtractor.core.exceptions import FormatError
 from lXtractor.util.structure import (
     filter_ligand,
@@ -54,19 +53,19 @@ class Ligand:
     ):
         if not len(parent) == len(mask) == len(contact_mask):
             raise FormatError(
-                'The number of atoms in parent, the mask size and parent_contacts size '
-                f'must all have the same len. Got {len(parent)}, '
-                f'{len(mask)}, and {len(contact_mask)}, resp.'
+                "The number of atoms in parent, the mask size and parent_contacts size "
+                f"must all have the same len. Got {len(parent)}, "
+                f"{len(mask)}, and {len(contact_mask)}, resp."
             )
         if not len(parent_contacts) == len(ligand_idx) == len(dist):
             raise FormatError(
-                'The number of contact atoms, ligand indices and distances must match. '
-                f'Got {len(parent_contacts)}, {len(parent_contacts)}, and {len(dist)}, '
-                'resp.'
+                "The number of contact atoms, ligand indices and distances must match. "
+                f"Got {len(parent_contacts)}, {len(parent_contacts)}, and {len(dist)}, "
+                "resp."
             )
         if len(parent_contacts[parent_contacts != 0]) == 0:
             raise FormatError(
-                'Ligand must have at least one contact atom in parent structure. Got 0.'
+                "Ligand must have at least one contact atom in parent structure. Got 0."
             )
         ligand_atoms = parent.array[mask]
         ligand_chains = set(ligand_atoms.chain_id)
@@ -74,15 +73,15 @@ class Ligand:
         ligand_res_ids = set(ligand_atoms.res_id)
         if len(ligand_chains) > 1:
             raise FormatError(
-                f'Ligand atoms point to more than one chain: {ligand_chains}'
+                f"Ligand atoms point to more than one chain: {ligand_chains}"
             )
         if len(ligand_resnames) > 1:
             raise FormatError(
-                f'Ligand atoms point to more than one ligand res name {ligand_resnames}'
+                f"Ligand atoms point to more than one ligand res name {ligand_resnames}"
             )
         if len(ligand_res_ids) > 1:
             raise FormatError(
-                f'Ligand atoms point to more than one ligand res id {ligand_res_ids}'
+                f"Ligand atoms point to more than one ligand res id {ligand_res_ids}"
             )
 
         #: Parent structure.
@@ -111,7 +110,7 @@ class Ligand:
         self.meta = meta
 
     def __str__(self):
-        return f'{self.res_name}_{self.res_id}:{self.chain_id}<-({self.parent})'
+        return f"{self.res_name}_{self.res_id}:{self.chain_id}<-({self.parent})"
 
     def __repr__(self):
         return str(self)
@@ -174,7 +173,8 @@ class Ligand:
 
 
 def find_ligands(
-    structure: GenericStructure, ts: BondThresholds = DefaultBondThresholds
+    structure: GenericStructure,
+    ts: BondThresholds = DefaultBondThresholds,
 ) -> abc.Generator[Ligand, None, None]:
     """
     Find ligands within the structure. It divides all `structure` into a ligand
@@ -221,10 +221,8 @@ def find_ligands(
             MetaNames.pdb_chain: a[m_res].chain_id[0],
         }
 
-        yield Ligand(
-            structure, m_ligand, m_contacts, contacts, ligand_idx, dist, meta
-        )
+        yield Ligand(structure, m_ligand, m_contacts, contacts, ligand_idx, dist, meta)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError

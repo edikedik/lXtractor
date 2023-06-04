@@ -6,121 +6,17 @@ from __future__ import annotations
 import typing as t
 from abc import ABCMeta, abstractmethod
 from collections import abc, UserDict
-from dataclasses import dataclass
 from io import TextIOBase
 from pathlib import Path
 from typing import runtime_checkable
 
-T = t.TypeVar('T')
-_T = t.TypeVar('_T', contravariant=True)
-KT = t.TypeVar('KT', bound=abc.Hashable)
-VT = t.TypeVar('VT')
+T = t.TypeVar("T")
+_T = t.TypeVar("_T", contravariant=True)
 
 _Fetcher = t.Callable[[t.Iterable[str]], T]
 _Getter = t.Callable[[T, t.Sequence[str]], t.Sequence[str]]
 
 _MapT = t.Dict[int, t.Optional[int]]
-
-_AminoAcids = [
-    ('ALA', 'A'),
-    ('CYS', 'C'),
-    ('THR', 'T'),
-    ('GLU', 'E'),
-    ('ASP', 'D'),
-    ('PHE', 'F'),
-    ('TRP', 'W'),
-    ('ILE', 'I'),
-    ('VAL', 'V'),
-    ('LEU', 'L'),
-    ('LYS', 'K'),
-    ('MET', 'M'),
-    ('ASN', 'N'),
-    ('GLN', 'Q'),
-    ('SER', 'S'),
-    ('ARG', 'R'),
-    ('TYR', 'Y'),
-    ('HIS', 'H'),
-    ('PRO', 'P'),
-    ('GLY', 'G'),
-]
-SOLVENTS = (
-    '1PE',
-    '2HT',
-    '2PE',
-    '7PE',
-    'ACT',
-    'ACT',
-    'BEN',
-    'BME',
-    'BOG',
-    'BTB',
-    'BU3',
-    'BUD',
-    'CIT',
-    'COM',
-    'CXS',
-    'DIO',
-    'DMS',
-    'DOD',
-    'DTD',
-    'DTT',
-    'DTV',
-    'DVT',
-    'EDO',
-    'EOH',
-    'EPE',
-    'FLC',
-    'FMT',
-    'GBL',
-    'GG5',
-    'GLC',
-    'GOL',
-    'HC4',
-    'HOH',
-    'HSJ',
-    'IOD',
-    'IPA',
-    'IPH',
-    'MES',
-    'MG8',
-    'MLA',
-    'MLI',
-    'MOH',
-    'MPD',
-    'MRD',
-    'MSE',
-    'MXE',
-    'MYR',
-    'NO3',
-    'OCT',
-    'P4C',
-    'P4G',
-    'P6G',
-    'PEG',
-    'PG0',
-    'PGO',
-    'PG4',
-    'PGE',
-    'PGF',
-    'PHU',
-    'PO4',
-    'PTL',
-    'SGM',
-    'SIN',
-    'SIN',
-    'SO4',
-    'SRT',
-    'TAM',
-    'TAR',
-    'TBR',
-    'TCE',
-    'TFA',
-    'TFA',
-    'TLA',
-    'TMA',
-    'TRS',
-    'UNX',
-)
 
 
 class AminoAcidDict(UserDict):
@@ -137,7 +33,7 @@ class AminoAcidDict(UserDict):
     """
 
     def __init__(
-        self, aa1_unk: str = 'X', aa3_unk: str = 'UNK', any_unk: str | None = None
+        self, aa1_unk: str = "X", aa3_unk: str = "UNK", any_unk: str | None = None
     ):
         """
         :param aa1_unk: Unknown character when mapping 3->1
@@ -149,6 +45,8 @@ class AminoAcidDict(UserDict):
         self.any_unk = any_unk
         self.aa1_unk = aa1_unk
         self.aa3_unk = aa3_unk
+
+        from lXtractor.core.config import _AminoAcids
 
         self.three21 = dict(_AminoAcids)
         self.one23 = dict((x[1], x[0]) for x in _AminoAcids)
@@ -163,7 +61,7 @@ class AminoAcidDict(UserDict):
         if self.any_unk is not None:
             return self.any_unk
         raise KeyError(
-            f'Expected 3-sized or 1-sized item, ' f'got {len(item)}-sized {item}'
+            f"Expected 3-sized or 1-sized item, " f"got {len(item)}-sized {item}"
         )
 
 
@@ -342,21 +240,5 @@ class NamedTupleT(t.Protocol, abc.Iterable):
         ...
 
 
-Bounds = t.NamedTuple('Bounds', [('lower', float), ('upper', float)])
-
-
-@dataclass
-class BondThresholds:
-    """
-    Holds covalent and non-covalent bond length distance thresholds,
-    in angstroms.
-    """
-
-    covalent: Bounds = Bounds(1.2, 1.8)
-    non_covalent: Bounds = Bounds(1.8, 5.5)
-
-
-DefaultBondThresholds = BondThresholds()
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError

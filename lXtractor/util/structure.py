@@ -14,7 +14,7 @@ import biotite.structure.info as bstinfo
 import numpy as np
 from more_itertools import unzip
 
-from lXtractor.core.base import SOLVENTS, BondThresholds, DefaultBondThresholds
+from lXtractor.core.config import SOLVENTS, BondThresholds, DefaultBondThresholds
 from lXtractor.core.exceptions import LengthMismatch, MissingData
 from lXtractor.util.typing import is_sequence_of
 

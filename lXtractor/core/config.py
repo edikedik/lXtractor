@@ -1,76 +1,121 @@
 """
 A module encompassing various settings of lXtractor objects.
 """
+from __future__ import annotations
+
+import typing as t
 from collections import namedtuple
 from dataclasses import dataclass
 
+Bounds = t.NamedTuple("Bounds", [("lower", float), ("upper", float)])
 Separators = namedtuple(
-    'Separators', ['list', 'chain', 'dom', 'uni_pdb', 'str', 'start_end']
+    "Separators", ["list", "chain", "dom", "uni_pdb", "str", "start_end"]
 )
-Sep = Separators(',', ':', '::', '_', '--', '|')
-EMPTY_PDB_ID: str = 'XXXX'
-EMPTY_CHAIN_ID: str = 'X'
-UNK_NAME: str = 'UNK'
+Sep = Separators(",", ":", "::", "_", "--", "|")
+EMPTY_PDB_ID: str = "XXXX"
+EMPTY_CHAIN_ID: str = "X"
+UNK_NAME: str = "UNK"
 
-
-@dataclass(frozen=True)
-class _DumpNames:
-    """
-    Dataclass encapsulating names of files used for dumping data.
-    """
-
-    sequence: str = 'sequence.tsv'
-    meta: str = 'meta.tsv'
-    variables: str = 'variables.tsv'
-    pdist_base_dir: str = 'PDIST'
-    pdist_base_name: str = 'pdist'
-    segments_dir: str = 'segments'
-    structures_dir: str = 'structures'
-    structure_base_name: str = 'structure'
-
-
-@dataclass(frozen=True)
-class _SeqNames:
-    """
-    Container holding names used within
-    :attr:`lXtractor.core.Protein.ChainSequence._seqs`
-    """
-
-    seq1: str = 'seq1'
-    seq3: str = 'seq3'
-    enum: str = 'numbering'
-    map_canonical: str = 'map_canonical'
-    map_other: str = 'map_other'
-    map_aln: str = 'map_aln'
-    map_pdb: str = 'map_pdb'
-    map_ref: str = 'map_ref'
-
-
-@dataclass(frozen=True)
-class _MetaNames:
-    id: str = 'id'
-    name: str = 'name'
-    variables: str = 'variables'
-    pdb_id: str = 'pdb_id'
-    pdb_chain: str = 'pdb_chain'
-    category: str = 'category'
-    res_id: str = 'res_id'
-    res_name: str = 'res_name'
-
-
-@dataclass(frozen=True)
-class _ColNames:
-    id: str = 'ObjectID'
-    parent_id: str = 'ParentID'
-    start: str = 'Start'
-    end: str = 'End'
-
-
-DumpNames = _DumpNames()
-SeqNames = _SeqNames()
-MetaNames = _MetaNames()
-ColNames = _ColNames()
-
+_AminoAcids = [
+    ("ALA", "A"),
+    ("CYS", "C"),
+    ("THR", "T"),
+    ("GLU", "E"),
+    ("ASP", "D"),
+    ("PHE", "F"),
+    ("TRP", "W"),
+    ("ILE", "I"),
+    ("VAL", "V"),
+    ("LEU", "L"),
+    ("LYS", "K"),
+    ("MET", "M"),
+    ("ASN", "N"),
+    ("GLN", "Q"),
+    ("SER", "S"),
+    ("ARG", "R"),
+    ("TYR", "Y"),
+    ("HIS", "H"),
+    ("PRO", "P"),
+    ("GLY", "G"),
+]
+SOLVENTS = (
+    "1PE",
+    "2HT",
+    "2PE",
+    "7PE",
+    "ACT",
+    "ACT",
+    "BEN",
+    "BME",
+    "BOG",
+    "BTB",
+    "BU3",
+    "BUD",
+    "CIT",
+    "COM",
+    "CXS",
+    "DIO",
+    "DMS",
+    "DOD",
+    "DTD",
+    "DTT",
+    "DTV",
+    "DVT",
+    "EDO",
+    "EOH",
+    "EPE",
+    "FLC",
+    "FMT",
+    "GBL",
+    "GG5",
+    "GLC",
+    "GOL",
+    "HC4",
+    "HOH",
+    "HSJ",
+    "IOD",
+    "IPA",
+    "IPH",
+    "MES",
+    "MG8",
+    "MLA",
+    "MLI",
+    "MOH",
+    "MPD",
+    "MRD",
+    "MSE",
+    "MXE",
+    "MYR",
+    "NO3",
+    "OCT",
+    "P4C",
+    "P4G",
+    "P6G",
+    "PEG",
+    "PG0",
+    "PGO",
+    "PG4",
+    "PGE",
+    "PGF",
+    "PHU",
+    "PO4",
+    "PTL",
+    "SGM",
+    "SIN",
+    "SIN",
+    "SO4",
+    "SRT",
+    "TAM",
+    "TAR",
+    "TBR",
+    "TCE",
+    "TFA",
+    "TFA",
+    "TLA",
+    "TMA",
+    "TRS",
+    "UNX",
+)
 MetaColumns = (
     # Taken from https://bioservices.readthedocs.io/en/main/_modules/bioservices/uniprot.html#UniProt
     # Names & Taxonomy ================================================
@@ -108,35 +153,35 @@ MetaColumns = (
     "ft_unsure",
     "sequence_version",
     # Family and Domains ========================================
-    'ft_coiled',
-    'ft_compbias',
-    'cc_domain',
-    'ft_domain',
-    'ft_motif',
-    'protein_families',
-    'ft_region',
-    'ft_repeat',
-    'ft_zn_fing',
+    "ft_coiled",
+    "ft_compbias",
+    "cc_domain",
+    "ft_domain",
+    "ft_motif",
+    "protein_families",
+    "ft_region",
+    "ft_repeat",
+    "ft_zn_fing",
     # Function ===================================================
-    'absorption',
-    'ft_act_site',
-    'cc_activity_regulation',
-    'ft_binding',
-    'ft_ca_bind',
-    'cc_catalytic_activity',
-    'cc_cofactor',
-    'ft_dna_bind',
-    'ec',
-    'cc_function',
-    'kinetics',
-    'ft_metal',
-    'ft_np_bind',
-    'cc_pathway',
-    'ph_dependence',
-    'redox_potential',
+    "absorption",
+    "ft_act_site",
+    "cc_activity_regulation",
+    "ft_binding",
+    "ft_ca_bind",
+    "cc_catalytic_activity",
+    "cc_cofactor",
+    "ft_dna_bind",
+    "ec",
+    "cc_function",
+    "kinetics",
+    "ft_metal",
+    "ft_np_bind",
+    "cc_pathway",
+    "ph_dependence",
+    "redox_potential",
     # 'rhea_id',
-    'ft_site',
-    'temp_dependence',
+    "ft_site",
+    "temp_dependence",
     # Gene Ontology ==================================
     "go",
     "go_p",
@@ -181,29 +226,100 @@ MetaColumns = (
     "reviewed",
     "uniparc_id",
     # Pathology
-    'cc_allergen',
-    'cc_biotechnology',
-    'cc_disruption_phenotype',
-    'cc_disease',
-    'ft_mutagen',
-    'cc_pharmaceutical',
-    'cc_toxic_dose',
+    "cc_allergen",
+    "cc_biotechnology",
+    "cc_disruption_phenotype",
+    "cc_disease",
+    "ft_mutagen",
+    "cc_pharmaceutical",
+    "cc_toxic_dose",
     # PTM / Processsing
-    'ft_chain',
-    'ft_crosslnk',
-    'ft_disulfid',
-    'ft_carbohyd',
-    'ft_init_met',
-    'ft_lipid',
-    'ft_mod_res',
-    'ft_peptide',
-    'cc_ptm',
-    'ft_propep',
-    'ft_signal',
-    'ft_transit',
+    "ft_chain",
+    "ft_crosslnk",
+    "ft_disulfid",
+    "ft_carbohyd",
+    "ft_init_met",
+    "ft_lipid",
+    "ft_mod_res",
+    "ft_peptide",
+    "cc_ptm",
+    "ft_propep",
+    "ft_signal",
+    "ft_transit",
     # not documented
-    'xref_pdb',
+    "xref_pdb",
 )
 
-if __name__ == '__main__':
+
+@dataclass(frozen=True)
+class _DumpNames:
+    """
+    Dataclass encapsulating names of files used for dumping data.
+    """
+
+    sequence: str = "sequence.tsv"
+    meta: str = "meta.tsv"
+    variables: str = "variables.tsv"
+    pdist_base_dir: str = "PDIST"
+    pdist_base_name: str = "pdist"
+    segments_dir: str = "segments"
+    structures_dir: str = "structures"
+    structure_base_name: str = "structure"
+
+
+@dataclass(frozen=True)
+class _SeqNames:
+    """
+    Container holding names used within
+    :attr:`lXtractor.core.Protein.ChainSequence._seqs`
+    """
+
+    seq1: str = "seq1"
+    seq3: str = "seq3"
+    enum: str = "numbering"
+    map_canonical: str = "map_canonical"
+    map_other: str = "map_other"
+    map_aln: str = "map_aln"
+    map_pdb: str = "map_pdb"
+    map_ref: str = "map_ref"
+
+
+@dataclass(frozen=True)
+class _MetaNames:
+    id: str = "id"
+    name: str = "name"
+    variables: str = "variables"
+    pdb_id: str = "pdb_id"
+    pdb_chain: str = "pdb_chain"
+    category: str = "category"
+    res_id: str = "res_id"
+    res_name: str = "res_name"
+
+
+@dataclass(frozen=True)
+class _ColNames:
+    id: str = "ObjectID"
+    parent_id: str = "ParentID"
+    start: str = "Start"
+    end: str = "End"
+
+
+@dataclass(frozen=True)
+class BondThresholds:
+    """
+    Holds covalent and non-covalent bond length distance thresholds,
+    in angstroms.
+    """
+
+    covalent: Bounds = Bounds(1.2, 1.8)
+    non_covalent: Bounds = Bounds(1.8, 5.5)
+
+
+DefaultBondThresholds = BondThresholds()
+DumpNames = _DumpNames()
+SeqNames = _SeqNames()
+MetaNames = _MetaNames()
+ColNames = _ColNames()
+
+if __name__ == "__main__":
     raise RuntimeError
