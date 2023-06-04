@@ -6,7 +6,7 @@ from collections import abc
 import biotite.structure as bst
 import numpy as np
 
-from lXtractor.core.config import MetaNames, BondThresholds, DefaultBondThresholds
+from lXtractor.core.config import MetaNames, LigandConfig
 from lXtractor.core.exceptions import FormatError
 from lXtractor.util.structure import (
     filter_ligand,
@@ -174,7 +174,7 @@ class Ligand:
 
 def find_ligands(
     structure: GenericStructure,
-    ts: BondThresholds = DefaultBondThresholds,
+    cfg: LigandConfig = LigandConfig(),
 ) -> abc.Generator[Ligand, None, None]:
     """
     Find ligands within the structure. It divides all `structure` into a ligand
@@ -191,7 +191,7 @@ def find_ligands(
         :func:`lXtractor.util.structure.find_contacts`
 
     :param structure: Arbitrary (generic) structure.
-    :param ts: Bond threshold values.
+    :param cfg: Ligand detection config.
     :return: A generator of :class:`Ligand` objects.
     """
     a = structure.array
@@ -204,14 +204,14 @@ def find_ligands(
     for m_res in iter_residue_masks(a):
         m_ligand = is_ligand & m_res
 
-        if not np.any(m_ligand):
+        if np.sum(m_ligand) < cfg.min_atoms:
             continue
 
-        contacts, dist, ligand_idx = find_contacts(a, m_ligand, ts)
+        contacts, dist, ligand_idx = find_contacts(a, m_ligand, cfg.bond_thresholds)
         contacts[is_ligand | is_solvent] = 0
         m_contacts = contacts != 0
 
-        if not np.any(m_contacts):
+        if np.sum(contacts > 0) < cfg.min_connections:
             continue
 
         name = a[m_res].res_name[0]

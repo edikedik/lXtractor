@@ -315,7 +315,21 @@ class BondThresholds:
     non_covalent: Bounds = Bounds(1.8, 5.5)
 
 
-DefaultBondThresholds = BondThresholds()
+@dataclass(frozen=True)
+class LigandConfig:
+    """
+    Config with parameters for ligand detection.
+    """
+
+    #: The distance thresholds for various bond types.
+    bond_thresholds = BondThresholds()
+    #: The min number of a ligand's atoms.
+    min_atoms: int = 5
+    #: The min number of a structure's atoms forming at least non-covalent bonds
+    #: with a ligand.
+    min_connections: int = 5
+
+
 DumpNames = _DumpNames()
 SeqNames = _SeqNames()
 MetaNames = _MetaNames()

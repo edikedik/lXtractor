@@ -4,7 +4,6 @@ from pathlib import Path
 import pytest
 from toolz import valmap
 
-from lXtractor.core.ligand import find_ligands
 from lXtractor.core.structure import GenericStructure
 
 DATA = Path(__file__).parent / 'data'

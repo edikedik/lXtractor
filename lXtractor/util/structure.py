@@ -14,7 +14,7 @@ import biotite.structure.info as bstinfo
 import numpy as np
 from more_itertools import unzip
 
-from lXtractor.core.config import SOLVENTS, BondThresholds, DefaultBondThresholds
+from lXtractor.core.config import SOLVENTS, BondThresholds
 from lXtractor.core.exceptions import LengthMismatch, MissingData
 from lXtractor.util.typing import is_sequence_of
 
@@ -270,7 +270,7 @@ def filter_ligand(a: bst.AtomArray) -> np.ndarray:
 
 
 def find_contacts(
-    a: bst.AtomArray, mask: np.ndarray, ts: BondThresholds = DefaultBondThresholds
+    a: bst.AtomArray, mask: np.ndarray, ts: BondThresholds = BondThresholds()
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Find contacts between a subset of atoms within the structure and the rest
@@ -285,7 +285,7 @@ def find_contacts(
         #. Distances.
         #. Index of an atom within ``a[mask]`` closest the structure's atom.
 
-        In contacts' array, ``0`` indicate the lack of contact, ``1`` indicate
+        In the first array, ``0`` indicate the lack of contact, ``1`` indicate
         a non-covalent contact, and ``2`` indicate a covalent contact.
 
         For ``i``-th atom in `a`, ``contacts[i]``, ``distances[i]``,
