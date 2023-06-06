@@ -4,42 +4,61 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from lXtractor.ext.pdb_ import PDB
+from lXtractor.util import get_files
 
-PDB_IDS = [('2src', 'xxxx')]
+PDB_IDS = [("2src", "xxxx")]
 
 
-def test_fetch():
-    with TemporaryDirectory() as tmpdir:
+@pytest.mark.parametrize("ids", PDB_IDS)
+@pytest.mark.parametrize("fmt", ["cif"])
+@pytest.mark.parametrize("dir_", [True, False])
+@pytest.mark.parametrize("num_threads", [1, 2])
+def test_fetch(ids, fmt, dir_, num_threads):
+    pdb = PDB(num_threads=num_threads)
+    if dir:
+        with TemporaryDirectory() as dir_:
+            dir_ = Path(dir_)
+
+            fetched, missed = pdb.fetch_structures(ids, dir_=dir_, fmt=fmt)
+
+            # existing => skip
+            _fetched, _missed = pdb.fetch_structures(ids, dir_=dir_, fmt=fmt)
+            assert len(_fetched) == 0
+            assert len(_missed) == 1
+    else:
+        fetched, missed = pdb.fetch_structures(ids, dir_=None, fmt=fmt)
+
+    assert len(fetched) == len(missed) == 1
+
+    inp, res = fetched.pop()
+
+    if dir:
+        assert isinstance(res, Path)
+    else:
+        assert isinstance(res, str)
+
+
+@pytest.mark.parametrize("ids", [(PDB_IDS[0][0],)])
+@pytest.mark.parametrize("fmt", ["pdb", "cif", "mmtf", "pdb.gz"])
+def test_fetch_fmts(ids, fmt):
+    with TemporaryDirectory() as dir_:
+        dir_ = Path(dir_)
         pdb = PDB()
-        ids = ['2oiq', '3i6x']
+        fetched, missed = pdb.fetch_structures(ids, dir_=dir_, fmt=fmt)
+        assert len(fetched) == 1
+        assert len(missed) == 0
 
-        # Not fetched => save to dir
-        fetched, missed = pdb.fetch_structures(ids, dir_=Path(tmpdir))
+        files = get_files(dir_)
 
-        assert len(fetched) == 2 and len(missed) == 0
-
-        # Already fetched => skip
-        fetched, missed = pdb.fetch_structures(ids, dir_=Path(tmpdir), overwrite=False)
-        assert len(fetched) == len(missed) == 0
-
-        # No dir => results are strings
-        ids.append('xxxx')
-        fetched, missed = pdb.fetch_structures(ids, dir_=None)
-        assert len(missed) == 1 and len(fetched) == 2
-        (args1, res1), (args2, res2) = fetched
-        assert {args1, args2} == {('2oiq', 'cif'), ('3i6x', 'cif')}
-        assert isinstance(res1, str) and isinstance(res2, str)
-        assert missed.pop() == ('xxxx', 'cif')
-
-        # Fetch in parallel
-        pdb = PDB(num_threads=3)
-        fetched, missed = pdb.fetch_structures(ids, dir_=None)
-        assert len(missed) == 1 and len(fetched) == 2
+        for inp_id in ids:
+            if fmt == "mmtf":
+                fmt += ".gz"
+            assert f"{inp_id}.{fmt}" in files
 
 
-@pytest.mark.parametrize('ids', PDB_IDS)
-@pytest.mark.parametrize('use_dir', [True, False])
-@pytest.mark.parametrize('service', ['entry', 'pubmed'])
+@pytest.mark.parametrize("ids", PDB_IDS)
+@pytest.mark.parametrize("use_dir", [True, False])
+@pytest.mark.parametrize("service", ["entry", "pubmed"])
 def test_fetch_info(ids, use_dir, service):
     pdb = PDB()
     if use_dir:
@@ -52,7 +71,7 @@ def test_fetch_info(ids, use_dir, service):
 
     assert len(fetched) == len(missed) == 1
     assert isinstance(fetched[0][1], item_type)
-    assert missed[0] == 'xxxx'
+    assert missed[0] == "xxxx"
 
 
 def test_fetch_obsolete():
