@@ -138,8 +138,12 @@ def _agg_dist(r1: bst.AtomArray, r2: bst.AtomArray, agg_fn: AggFn) -> float:
     Calculate the aggregated distance between two residues
     """
     res = agg_fn(np.linalg.norm(r1.coord[:, np.newaxis] - r2.coord, axis=2))
-    if not isinstance(res, float):
-        raise TypeError("Expected float-type return when aggregating distances")
+    if not isinstance(res, (float, np.floating)):
+        raise TypeError(
+            f"Expected float-type return when aggregating distances; "
+            f"Got res {res} of type {type(res)}"
+        )
+
     return res
 
 
