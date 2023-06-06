@@ -1,21 +1,33 @@
+from pathlib import Path
+
 import biotite.structure as bst
 import biotite.structure.info as bstinfo
 import numpy as np
 import pytest
 
-from lXtractor.util.structure import filter_to_common_atoms, get_missing_atoms, get_observed_atoms_frac
+from lXtractor.util.structure import (
+    filter_to_common_atoms,
+    get_missing_atoms,
+    get_observed_atoms_frac,
+    load_structure,
+)
+
+DATA = Path(__file__).parent / "data"
 
 
 @pytest.fixture()
-def ala() -> bst.AtomArray: return bstinfo.residue('ALA')
+def ala() -> bst.AtomArray:
+    return bstinfo.residue("ALA")
 
 
 @pytest.fixture()
-def gly() -> bst.AtomArray: return bstinfo.residue('GLY')
+def gly() -> bst.AtomArray:
+    return bstinfo.residue("GLY")
 
 
 @pytest.fixture()
-def phe() -> bst.AtomArray: return bstinfo.residue('PHE')
+def phe() -> bst.AtomArray:
+    return bstinfo.residue("PHE")
 
 
 def test_common_atoms_filter(ala, gly, phe, abl_str, src_str):
@@ -29,25 +41,27 @@ def test_common_atoms_filter(ala, gly, phe, abl_str, src_str):
     assert m1.sum() == 5
 
     m1, m2 = filter_to_common_atoms(ala, phe, allow_residue_mismatch=True)
-    assert set(ala[m1].atom_name) == set(phe[m2].atom_name) == {'N', 'C', 'CA', 'CB'}
+    assert set(ala[m1].atom_name) == set(phe[m2].atom_name) == {"N", "C", "CA", "CB"}
 
     m1, m2 = filter_to_common_atoms(ala, gly, allow_residue_mismatch=True)
-    assert set(ala[m1].atom_name) == set(gly[m2].atom_name) == {'N', 'C', 'CA'}
+    assert set(ala[m1].atom_name) == set(gly[m2].atom_name) == {"N", "C", "CA"}
 
     m1, m2 = filter_to_common_atoms(
         bst.array([*gly, *ala]), bst.array([*ala, *gly]), allow_residue_mismatch=True
     )
     assert m1.sum() == m2.sum() == 6
 
-    abl_hrd = abl_str.spawn_child(136, 140, 'LHRDL')
-    src_hrd = src_str.spawn_child(128, 132, 'VHRDL')
+    abl_hrd = abl_str.spawn_child(136, 140, "LHRDL")
+    src_hrd = src_str.spawn_child(128, 132, "VHRDL")
 
     assert len(abl_hrd.seq) == len(src_hrd.seq) == 5
 
     with pytest.raises(ValueError):
         filter_to_common_atoms(abl_hrd.array, src_hrd.array)
 
-    m1, m2 = filter_to_common_atoms(abl_hrd.array, src_hrd.array, allow_residue_mismatch=True)
+    m1, m2 = filter_to_common_atoms(
+        abl_hrd.array, src_hrd.array, allow_residue_mismatch=True
+    )
 
     a1, a2 = abl_hrd.array[m1], src_hrd.array[m2]
     rs1, rs2 = map(lambda x: list(bst.residue_iter(x)), [a1, a2])
@@ -69,13 +83,13 @@ def test_missing_atoms_getter(gly, ala):
     res = res.pop()
     assert len(res) == 0
 
-    gly = gly[gly.atom_name != 'CA']
+    gly = gly[gly.atom_name != "CA"]
     res = list(get_missing_atoms(bst.array([*gly, *ala])))
     assert len(res) == 2
     assert len(res[0]) == 1 and len(res[1]) == 0
-    assert res[0][0] == 'CA'
+    assert res[0][0] == "CA"
 
-    gly.res_name = np.array(['?'] * len(gly))
+    gly.res_name = np.array(["?"] * len(gly))
     res = list(get_missing_atoms(gly))
     assert len(res) == 1 and res[0] is None
 
@@ -85,8 +99,33 @@ def test_observed_atoms_fraction(gly, ala):
     assert len(res) == 1
     assert res.pop() == 1.0
 
-    gly_size = len(gly[(gly.element != 'H') & (gly.atom_name != 'OXT')])
-    gly = gly[gly.atom_name != 'CA']
+    gly_size = len(gly[(gly.element != "H") & (gly.atom_name != "OXT")])
+    gly = gly[gly.atom_name != "CA"]
     expected_frac = (gly_size - 1) / gly_size
     res = next(get_observed_atoms_frac(gly))
     assert res == expected_frac
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        DATA / "1aki.pdb",
+        DATA / "2oiq.cif",
+        DATA / "2oiq.cif.gz",
+        DATA / "4hhb.mmtf",
+        DATA / "4hhb.mmtf.gz",
+    ],
+)
+def test_load_structure(path):
+    suffix = path.suffix if not path.suffix == ".gz" else path.suffixes[-2]
+    fmt = suffix.removeprefix(".")
+    gz = path.suffix == ".gz"
+    mode = "rb" if gz or fmt == "mmtf" else "r"
+
+    assert isinstance(load_structure(path), bst.AtomArray)
+
+    with path.open(mode) as f:
+        content = f.read()
+        f.seek(0)
+        assert isinstance(load_structure(f, fmt, gz=gz), bst.AtomArray)
+        assert isinstance(load_structure(content, fmt, gz=gz), bst.AtomArray)

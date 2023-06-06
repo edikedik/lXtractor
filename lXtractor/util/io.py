@@ -23,6 +23,7 @@ from tqdm.auto import tqdm
 
 from lXtractor.core.base import UrlGetter
 from lXtractor.core.config import DumpNames
+from lXtractor.core.exceptions import FormatError
 
 T = t.TypeVar("T")
 V = t.TypeVar("V")
@@ -40,6 +41,7 @@ __all__ = (
     "get_dirs",
     "run_sp",
     "path_tree",
+    "parse_suffix",
 )
 
 
@@ -521,6 +523,28 @@ def path_tree(path: Path) -> nx.DiGraph:
                 if structures:
                     d.nodes[root_path.parent]["structures"] = structures
     return d
+
+
+def parse_suffix(path: Path) -> str:
+    """
+    Parse a file suffix.
+
+        #. If there are no suffixes: raise an error.
+        #. If there is one suffix, return it.
+        #. If there are more than one suffixes, join the last two and return.
+
+    :param path: Input path.
+    :return: Parsed suffix.
+    :raise FormatError: If not suffix is present.
+    """
+    suffixes = path.suffixes
+    if len(suffixes) == 0:
+        raise FormatError(f"No suffixes to infer file type in path {path}")
+    elif len(suffixes) == 1:
+        suffix = suffixes.pop()
+    else:
+        suffix = ".".join(suffixes[-2:])
+    return suffix
 
 
 # =================================== Parsing ==========================================

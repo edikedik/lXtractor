@@ -8,6 +8,7 @@ import operator as op
 import typing as t
 from collections import abc
 from functools import reduce
+from io import IOBase
 from os import PathLike
 from pathlib import Path
 
@@ -18,10 +19,13 @@ from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
 from lXtractor.core.base import AminoAcidDict
-from lXtractor.core.config import EMPTY_PDB_ID
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
 from lXtractor.core.ligand import find_ligands, Ligand
-from lXtractor.util.structure import filter_selection, filter_any_polymer
+from lXtractor.util.structure import (
+    filter_selection,
+    filter_any_polymer,
+    load_structure,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -35,7 +39,7 @@ class GenericStructure:
     ``{pdb_id}:{polymer_chain_ids};{ligand_chain_ids}``.
     """
 
-    __slots__ = ('_array', 'pdb_id', '_ligands')
+    __slots__ = ("_array", "pdb_id", "_ligands")
 
     def __init__(
         self,
@@ -80,9 +84,9 @@ class GenericStructure:
         return hash(self.pdb_id) + hash(atoms)
 
     def __str__(self) -> str:
-        chains_pol = ','.join(sorted(self.chain_ids_polymer))
-        chains_lig = ','.join(sorted(self.chain_ids_ligand))
-        return f'{self.pdb_id}:{chains_pol};{chains_lig}'
+        chains_pol = ",".join(sorted(self.chain_ids_polymer))
+        chains_lig = ",".join(sorted(self.chain_ids_ligand))
+        return f"{self.pdb_id}:{chains_pol};{chains_lig}"
 
     def __repr__(self) -> str:
         return str(self)
@@ -171,26 +175,31 @@ class GenericStructure:
     @classmethod
     def read(
         cls,
-        path: Path,
+        inp: IOBase | Path | str | bytes,
         path2id: abc.Callable[[Path], str] = lambda p: p.stem,
         ligands: bool = True,
+        **kwargs,
     ) -> Self:
         """
-        :param path: Path to a structure in supported format.
+        Parse the atom array from the provided input and wrap it into the
+        :class:`GenericStructure` object.
+
+        .. seealso::
+            `lXtractor.util.structure.load_structure`
+
+        :param inp: Path to a structure in supported format.
         :param path2id: A callable obtaining a PDB ID from the file path.
             By default, it's a ``Path.stem``.
         :param ligands: Search for ligands.
+        :param kwargs: Passed to ``load_structure``.
         :return: Parsed structure.
         """
-        array = strio.load_structure(str(path))
-        pdb_id = path2id(path)
-        # if not len(pdb_id) == 4:
-        #     pdb_id = EMPTY_PDB_ID
-            # LOGGER.warning(f'Did not obtain a valid PDB ID {pdb_id} from {path}')
+        array = load_structure(inp, **kwargs)
+        pdb_id = path2id(inp)
         if isinstance(array, bst.AtomArrayStack):
             raise InitError(
-                f'{path} is likely an NMR structure. '
-                f'NMR structures are not supported.'
+                f"{inp} is likely an NMR structure. "
+                f"NMR structures are not supported."
             )
         return cls(array, pdb_id, ligands)
 
@@ -227,7 +236,7 @@ class GenericStructure:
             try:
                 one_letter_code = mapping.three21[atom.res_name]
             except KeyError:
-                one_letter_code = 'X'
+                one_letter_code = "X"
             yield one_letter_code, atom.res_name, atom.res_id
 
     def subset_with_ligands(self, mask: np.ndarray, min_connections: int = 1) -> Self:
@@ -298,7 +307,7 @@ class GenericStructure:
         :return: A new Generic structure with residues in ``[start, end]``.
         """
         if self.is_empty:
-            raise NoOverlap('Attempting to sub an empty structure')
+            raise NoOverlap("Attempting to sub an empty structure")
 
         self_start, self_end = self.array.res_id.min(), self.array.res_id.max()
 
@@ -311,8 +320,8 @@ class GenericStructure:
         seg_sub = lxs.Segment(start + offset, end + offset)
         if not seg_self.bounds(seg_sub):
             raise NoOverlap(
-                f'Provided positions {start, end} lie outside '
-                f'of the structure positions {self_start, self_end}'
+                f"Provided positions {start, end} lie outside "
+                f"of the structure positions {self_start, self_end}"
             )
         mask = (self.array.res_id >= start) & (self.array.res_id <= end)
         if ligands:
@@ -401,7 +410,7 @@ class GenericStructure:
             return m
 
         if self.is_empty or other.is_empty:
-            raise MissingData('Superposing empty structures is not supported')
+            raise MissingData("Superposing empty structures is not supported")
 
         if mask_self is None:
             mask_self = _get_mask(self.array, res_id_self, atom_names_self)
@@ -411,12 +420,12 @@ class GenericStructure:
         num_self, num_other = mask_self.sum(), mask_other.sum()
         if num_self != num_other:
             raise LengthMismatch(
-                f'To superpose, the number of atoms must match. '
-                f'Got {num_self} in self and {num_other} in other.'
+                f"To superpose, the number of atoms must match. "
+                f"Got {num_self} in self and {num_other} in other."
             )
 
         if num_self == num_other == 0:
-            raise MissingData('No atoms selected')
+            raise MissingData("No atoms selected")
 
         superposed, transformation = bst.superimpose(
             self.array[mask_self], other.array[mask_other]
@@ -432,5 +441,5 @@ class GenericStructure:
         )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError

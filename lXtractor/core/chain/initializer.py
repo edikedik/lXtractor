@@ -22,6 +22,7 @@ from lXtractor.core.chain import ChainList
 from lXtractor.core.config import SeqNames, STRUCTURE_EXT
 from lXtractor.core.exceptions import InitError, LengthMismatch
 from lXtractor.core.structure import GenericStructure
+from lXtractor.util.io import parse_suffix
 from lXtractor.util.misc import apply
 from lXtractor.util.seq import biotite_align
 
@@ -86,13 +87,7 @@ def _read_path(
 ) -> ChainSequence | list[ChainStructure] | None:
     from lXtractor.core.chain import ChainStructure, ChainSequence
 
-    suffixes = path.suffixes
-    if len(suffixes) == 0:
-        raise InitError(f"No suffixes to infer file type in path {path}")
-    elif len(suffixes) == 1:
-        suffix = suffixes.pop()
-    else:
-        suffix = ".".join(suffixes[-2:])
+    suffix = parse_suffix(path)
 
     if suffix in supported_seq_ext:
         return ChainSequence.from_file(path)

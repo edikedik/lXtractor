@@ -3,11 +3,14 @@ Low-level utilities to work with structures.
 """
 from __future__ import annotations
 
+import gzip
 import logging
 import operator as op
 from collections import abc
 from functools import reduce, partial
+from io import IOBase, StringIO, BytesIO, BufferedReader
 from itertools import repeat, starmap
+from pathlib import Path
 
 import biotite.structure as bst
 import biotite.structure.info as bstinfo
@@ -16,26 +19,27 @@ from more_itertools import unzip
 
 from lXtractor.core.config import SOLVENTS, BondThresholds
 from lXtractor.core.exceptions import LengthMismatch, MissingData
+from lXtractor.util.io import parse_suffix
 from lXtractor.util.typing import is_sequence_of
 
 __all__ = (
-    'calculate_dihedral',
-    'filter_selection',
-    'filter_ligand',
-    'filter_polymer',
-    'filter_any_polymer',
-    'filter_solvent_extended',
-    'filter_to_common_atoms',
-    'find_contacts',
-    'iter_canonical',
-    'iter_residue_masks',
-    'get_missing_atoms',
-    'get_observed_atoms_frac',
+    "calculate_dihedral",
+    "filter_selection",
+    "filter_ligand",
+    "filter_polymer",
+    "filter_any_polymer",
+    "filter_solvent_extended",
+    "filter_to_common_atoms",
+    "find_contacts",
+    "iter_canonical",
+    "iter_residue_masks",
+    "get_missing_atoms",
+    "get_observed_atoms_frac",
 )
 
 LOGGER = logging.getLogger(__name__)
 
-_BASIC_COMPARISON_ATOMS = {'N', 'CA', 'C', 'CB'}
+_BASIC_COMPARISON_ATOMS = {"N", "CA", "C", "CB"}
 
 
 def calculate_dihedral(
@@ -150,17 +154,17 @@ def filter_to_common_atoms(
         if r1_name != r2_name:
             if not allow_residue_mismatch:
                 raise ValueError(
-                    f'Residue names must match. Got {r1_name} from the first array '
-                    f'and {r2_name} from the second one. Use `allow_residue_mismatch` '
-                    'to allow residue name mismatches.'
+                    f"Residue names must match. Got {r1_name} from the first array "
+                    f"and {r2_name} from the second one. Use `allow_residue_mismatch` "
+                    "to allow residue name mismatches."
                 )
             atom_names &= _BASIC_COMPARISON_ATOMS
 
         m1, m2 = map(lambda r: np.isin(r.atom_name, list(atom_names)), [r1, r2])
         if m1.sum() != m2.sum():
             raise ValueError(
-                f'Obtained different sets of atoms {atom_names}. '
-                f'Residue 1: {r1[m1]}. Residue 2: {r2[m2]}'
+                f"Obtained different sets of atoms {atom_names}. "
+                f"Residue 1: {r1[m1]}. Residue 2: {r2[m2]}"
             )
 
         return m1, m2
@@ -169,8 +173,8 @@ def filter_to_common_atoms(
 
     if a1_l != a2_l:
         raise LengthMismatch(
-            'The number of residues must match between structures. '
-            f'Got {a1_l} for `a1` and {a2_l} for `a2`.'
+            "The number of residues must match between structures. "
+            f"Got {a1_l} for `a1` and {a2_l} for `a2`."
         )
 
     mask1, mask2 = map(
@@ -183,20 +187,20 @@ def filter_to_common_atoms(
 
 
 def _is_polymer(array, min_size, pol_type):
-    if pol_type.startswith('p'):
+    if pol_type.startswith("p"):
         filt_fn = bst.filter_amino_acids
-    elif pol_type.startswith('n'):
+    elif pol_type.startswith("n"):
         filt_fn = bst.filter_nucleotides
-    elif pol_type.startswith('c'):
+    elif pol_type.startswith("c"):
         filt_fn = bst.filter_carbohydrates
     else:
-        raise ValueError(f'Unsupported polymer type {pol_type}')
+        raise ValueError(f"Unsupported polymer type {pol_type}")
 
     mask = filt_fn(array)
     return bst.get_residue_count(array[mask]) >= min_size
 
 
-def filter_polymer(a, min_size=2, pol_type='peptide'):
+def filter_polymer(a, min_size=2, pol_type="peptide"):
     # TODO: make a PR
     """
     Filter for atoms that are a part of a consecutive standard macromolecular
@@ -238,7 +242,7 @@ def filter_any_polymer(a: bst.AtomArray, min_size: int = 2) -> np.ndarray:
     :return: A boolean mask ``True`` for polymers' atoms.
     """
     return reduce(
-        op.or_, (filter_polymer(a, min_size, pol_type) for pol_type in ['p', 'n', 'c'])
+        op.or_, (filter_polymer(a, min_size, pol_type) for pol_type in ["p", "n", "c"])
     )
 
 
@@ -345,8 +349,8 @@ def _exclude(a, names, elements):
 
 def get_missing_atoms(
     a: bst.AtomArray,
-    excluding_names: abc.Sequence[str] | None = ('OXT',),
-    excluding_elements: abc.Sequence[str] | None = ('H',),
+    excluding_names: abc.Sequence[str] | None = ("OXT",),
+    excluding_elements: abc.Sequence[str] | None = ("H",),
 ) -> abc.Generator[list[str | None] | None, None, None]:
     """
     For each residue, compare with the one stored in CCD, and find missing
@@ -361,7 +365,7 @@ def get_missing_atoms(
         per residue in `a` or ``None`` if not such residue was found in CCD.
     """
     if len(a) == 0:
-        raise MissingData('Array is empty')
+        raise MissingData("Array is empty")
     for r_can, r_obs in zip(iter_canonical(a), bst.residue_iter(a)):
         if r_can is None:
             yield None
@@ -373,8 +377,8 @@ def get_missing_atoms(
 
 def get_observed_atoms_frac(
     a: bst.AtomArray,
-    excluding_names: abc.Sequence[str] | None = ('OXT',),
-    excluding_elements: abc.Sequence[str] | None = ('H',),
+    excluding_names: abc.Sequence[str] | None = ("OXT",),
+    excluding_elements: abc.Sequence[str] | None = ("H",),
 ) -> abc.Generator[list[str | None] | None, None, None]:
     """
     Find fractions of observed atoms compared to canonical residue versions
@@ -389,7 +393,7 @@ def get_observed_atoms_frac(
         `a` or ``None`` if a residue was not found in CCD.
     """
     if len(a) == 0:
-        raise MissingData('Array is empty')
+        raise MissingData("Array is empty")
     for r_can, r_obs in zip(iter_canonical(a), bst.residue_iter(a)):
         if r_can is None:
             yield None
@@ -399,5 +403,88 @@ def get_observed_atoms_frac(
             yield m_obs.sum() / len(r_can)
 
 
-if __name__ == '__main__':
+def load_structure(
+    inp: IOBase | Path | str | bytes, fmt: str = "", *, gz: bool = False, **kwargs
+) -> bst.AtomArray:
+    """
+    This is a simplified version of a ``biotite.io.general.load_structure``
+    extending the supported input types. Namely, it allows using paths,
+    strings, bytes or gzipped files.
+
+    :param inp: Input to load from. It can be a path to a file, an opened file
+        handle, a string or bytes of file contents. Gzipped bytes and files are
+        supported.
+    :param fmt: If ``inp`` is a ``Path``-like object, it must be of the form
+        "name.fmt" or "name.fmt.gz". In this case, ``fmt`` is ignored.
+        Otherwise, it is used to determine the parser type and must be provided.
+    :param gz: If ``inp`` is gzipped ``bytes``, this flag must be ``True``.
+    :param kwargs: Passed to ``get_structure``: either a method or a separate
+        function used by ``biotite`` to convert the input into an ``AtomArray``.
+    :return:
+    """
+    if isinstance(inp, Path):
+        suffix = parse_suffix(inp)
+        if suffix.endswith(".gz"):
+            fmt = inp.suffixes[-2]
+        else:
+            fmt = suffix
+        fmt = fmt.removeprefix(".")
+
+    if not fmt:
+        raise ValueError(
+            "The format must be specified explicitly when not using a Path-like input"
+        )
+
+    io_type = BytesIO if fmt == "mmtf" else StringIO
+    read_mode = "rb" if fmt == "mmtf" else "r"
+
+    if isinstance(inp, Path):
+        if inp.name.endswith(".gz"):
+            with gzip.open(inp) as f:
+                content = f.read()
+                if io_type is StringIO:
+                    content = content.decode('utf-8')
+                handle = io_type(content)
+        else:
+            handle = inp.open(read_mode)
+    elif isinstance(inp, str):
+        handle = StringIO(inp)
+    elif isinstance(inp, bytes):
+        content = gzip.decompress(inp) if gz else inp
+        if io_type is StringIO:
+            content = content.decode('utf-8')
+        handle = io_type(content)
+    elif isinstance(inp, BufferedReader) and gz:
+        return load_structure(inp.read(), fmt, gz=gz)
+    else:
+        handle = inp
+
+    if fmt == "pdb":
+        from biotite.structure.io.pdb import PDBFile
+
+        file = PDBFile.read(handle)
+        array = file.get_structure(**kwargs)
+    elif fmt in ["cif", "pdbx"]:
+        from biotite.structure.io.pdbx import PDBxFile, get_structure
+
+        file = PDBxFile.read(handle)
+        array = get_structure(file, **kwargs)
+    elif fmt == "mmtf":
+        from biotite.structure.io.mmtf import MMTFFile, get_structure
+
+        file = MMTFFile.read(handle)
+        array = get_structure(file, **kwargs)
+    else:
+        raise ValueError(f"Unrecognized format {fmt}")
+
+    handle.close()
+
+    if isinstance(array, bst.AtomArrayStack) and array.stack_depth() == 1:
+        # Stack containing only one model -> return as atom array
+        array = array[0]
+
+    return array
+
+
+if __name__ == "__main__":
     raise RuntimeError
