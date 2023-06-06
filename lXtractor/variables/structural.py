@@ -12,7 +12,6 @@ from itertools import starmap
 import biotite.structure as bst
 import numpy as np
 from more_itertools import unique_justseen
-from numpy import floating
 from toolz import curry, pipe
 
 from lXtractor.core.exceptions import FailedCalculation, InitError
@@ -29,19 +28,19 @@ if t.TYPE_CHECKING:
     from lXtractor.core.structure import GenericStructure
 
 __all__ = (
-    'Dist',
-    'AggDist',
-    'Dihedral',
-    'PseudoDihedral',
-    'Phi',
-    'Psi',
-    'Omega',
-    'Chi1',
-    'Chi2',
-    'SASA',
-    'LigandContactsCount',
-    'LigandNames',
-    'LigandDist',
+    "Dist",
+    "AggDist",
+    "Dihedral",
+    "PseudoDihedral",
+    "Phi",
+    "Psi",
+    "Omega",
+    "Chi1",
+    "Chi2",
+    "SASA",
+    "LigandContactsCount",
+    "LigandNames",
+    "LigandDist",
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -63,12 +62,12 @@ def residue_mask(pos: int, a: bst.AtomArray, m: MappingT | None = None) -> np.nd
 
     residue_atoms = a[mask]
     if residue_atoms.array_length() == 0:
-        raise FailedCalculation(f'Missing position {pos}')
+        raise FailedCalculation(f"Missing position {pos}")
 
     num_starts = bst.get_residue_starts(residue_atoms)
     if len(num_starts) > 1:
         raise FailedCalculation(
-            f'Position {pos} points to {len(num_starts)}>1 residues'
+            f"Position {pos} points to {len(num_starts)}>1 residues"
         )
 
     return mask
@@ -90,11 +89,11 @@ def atom_mask(
     a_mask = r_mask & (a.atom_name == atom_name)
     if a[a_mask].array_length() == 0:
         raise FailedCalculation(
-            f'Missing atom {atom_name} at position {pos} (unmapped)'
+            f"Missing atom {atom_name} at position {pos} (unmapped)"
         )
     if a[a_mask].array_length() > 1:
         raise FailedCalculation(
-            f'More than one atom {atom_name} at position {pos} (unmapped)'
+            f"More than one atom {atom_name} at position {pos} (unmapped)"
         )
     return a_mask
 
@@ -114,17 +113,17 @@ def _get_atom(array: bst.AtomArray, name: str) -> bst.Atom:
     size = atom.array_length()
 
     if not size:
-        raise FailedCalculation(f'Missing atom {name}')
+        raise FailedCalculation(f"Missing atom {name}")
 
     if size > 1:
-        raise FailedCalculation(f'Non-unique atom with name {name}')
+        raise FailedCalculation(f"Non-unique atom with name {name}")
 
     return atom[0]
 
 
 @curry
 def _get_coord(
-    residue: bst.AtomArray, atom_name: str | None, agg_fn: AggFn = AggFns['mean']
+    residue: bst.AtomArray, atom_name: str | None, agg_fn: AggFn = AggFns["mean"]
 ) -> np.ndarray:
     if atom_name is None:
         coord = agg_fn(residue.coord, axis=0)
@@ -139,10 +138,8 @@ def _agg_dist(r1: bst.AtomArray, r2: bst.AtomArray, agg_fn: AggFn) -> float:
     Calculate the aggregated distance between two residues
     """
     res = agg_fn(np.linalg.norm(r1.coord[:, np.newaxis] - r2.coord, axis=2))
-    assert (
-        isinstance(res, float) and res >= 0,
-        f"Result {type(res)} = float and {res} >=0",
-    )
+    if not isinstance(res, float):
+        raise TypeError("Expected float-type return when aggregating distances")
     return res
 
 
@@ -158,8 +155,8 @@ def _verify_consecutive(positions: abc.Iterable[int]) -> None:
         current, previous = positions[i], positions[i - 1]
         if current != previous + 1:
             raise FailedCalculation(
-                f'Positions {previous} and {current} are not consecutive '
-                f'in a given list {positions}'
+                f"Positions {previous} and {current} are not consecutive "
+                f"in a given list {positions}"
             )
 
 
@@ -168,7 +165,7 @@ class Dist(StructureVariable):
     A distance between two atoms.
     """
 
-    __slots__ = ('p1', 'p2', 'a1', 'a2', 'com')
+    __slots__ = ("p1", "p2", "a1", "a2", "com")
 
     def __init__(
         self,
@@ -192,7 +189,7 @@ class Dist(StructureVariable):
         if any((not com and a1 is None, not com and a2 is None)):
             raise ValueError(
                 'No atom name specified and "center of mass" flag is down. '
-                'Therefore, not possible to calculate distance.'
+                "Therefore, not possible to calculate distance."
             )
 
     @property
@@ -201,7 +198,7 @@ class Dist(StructureVariable):
 
     def calculate(
         self, obj: GenericStructure, mapping: MappingT | None = None
-    ) -> floating:
+    ) -> float:
         def get_coord(p: int, a: str | None) -> np.ndarray:
             return _get_coord(_get_residue(p, obj.array, mapping), a)  # type: ignore
 
@@ -218,9 +215,9 @@ class AggDist(StructureVariable):
     all pairwise distances between atoms of `p1` and `p2`.
     """
 
-    __slots__ = ('p1', 'p2', 'key')
+    __slots__ = ("p1", "p2", "key")
 
-    def __init__(self, p1: int, p2: int, key: str = 'min'):
+    def __init__(self, p1: int, p2: int, key: str = "min"):
         """
         :param p1: Position 1.
         :param p2:  Position 2.
@@ -234,7 +231,7 @@ class AggDist(StructureVariable):
         """
         if key not in AggFns:
             raise InitError(
-                f'Wrong key {key}. ' f'Available aggregators: {list(AggFns)}'
+                f"Wrong key {key}. " f"Available aggregators: {list(AggFns)}"
             )
         #: Agg function name.
         self.key = key
@@ -303,7 +300,7 @@ class Dihedral(StructureVariable):
     Dihedral angle involving four different atoms.
     """
 
-    __slots__ = ('p1', 'p2', 'p3', 'p4', 'a1', 'a2', 'a3', 'a4', 'name')
+    __slots__ = ("p1", "p2", "p3", "p4", "a1", "a2", "a3", "a4", "name")
 
     def __init__(
         self,
@@ -315,7 +312,7 @@ class Dihedral(StructureVariable):
         a2: str,
         a3: str,
         a4: str,
-        name: str = 'GenericDihedral',
+        name: str = "GenericDihedral",
     ):
         #: Used to designate special kinds of dihedrals.
         self.name: str = name
@@ -367,7 +364,7 @@ class PseudoDihedral(Dihedral):
     __slots__ = ()
 
     def __init__(self, p1: int, p2: int, p3: int, p4: int):
-        super().__init__(p1, p2, p3, p4, 'CA', 'CA', 'CA', 'CA', name='PseudoDihedral')
+        super().__init__(p1, p2, p3, p4, "CA", "CA", "CA", "CA", name="PseudoDihedral")
 
 
 class Phi(Dihedral):
@@ -375,11 +372,11 @@ class Phi(Dihedral):
     Phi dihedral angle.
     """
 
-    __slots__ = ('p',)
+    __slots__ = ("p",)
 
     def __init__(self, p: int):
         self.p = p
-        super().__init__(p - 1, p, p, p, 'C', 'N', 'CA', 'C', name='Phi')
+        super().__init__(p - 1, p, p, p, "C", "N", "CA", "C", name="Phi")
 
 
 class Psi(Dihedral):
@@ -387,11 +384,11 @@ class Psi(Dihedral):
     Psi dihedral angle.
     """
 
-    __slots__ = ('p',)
+    __slots__ = ("p",)
 
     def __init__(self, p: int):
         self.p = p
-        super().__init__(p, p, p, p + 1, 'N', 'CA', 'C', 'N', name='Psi')
+        super().__init__(p, p, p, p + 1, "N", "CA", "C", "N", name="Psi")
 
 
 class Omega(Dihedral):
@@ -399,11 +396,11 @@ class Omega(Dihedral):
     Omega dihedral angle.
     """
 
-    __slots__ = ('p',)
+    __slots__ = ("p",)
 
     def __init__(self, p: int):
         self.p = p
-        super().__init__(p, p, p + 1, p + 1, 'CA', 'C', 'N', 'CA', name='Omega')
+        super().__init__(p, p, p + 1, p + 1, "CA", "C", "N", "CA", name="Omega")
 
 
 class CompositeDihedral(StructureVariable):
@@ -412,7 +409,7 @@ class CompositeDihedral(StructureVariable):
     a single residue but the atom names may vary depending on the residue type.
     """
 
-    __slots__ = ('p',)
+    __slots__ = ("p",)
 
     def __init__(self, p: int):
         #: Position
@@ -435,7 +432,7 @@ class CompositeDihedral(StructureVariable):
             calculations were successful, will raise :class:`FailedCalculation`
             error.
         """
-        raise NotImplementedError('Must be implemented by the subclass')
+        raise NotImplementedError("Must be implemented by the subclass")
 
     def calculate(
         self, obj: GenericStructure, mapping: MappingT | None = None
@@ -465,11 +462,11 @@ class Chi1(CompositeDihedral):
     @staticmethod
     def get_dihedrals(pos) -> list[Dihedral]:
         return [
-            Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'CG', 'Chi1_CG'),
-            Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'CG1', 'Chi1_CG1'),
-            Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'OG', 'Chi1_OG'),
-            Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'OG1', 'Chi1_OG1'),
-            Dihedral(pos, pos, pos, pos, 'N', 'CA', 'CB', 'SG', 'Chi1_SG'),
+            Dihedral(pos, pos, pos, pos, "N", "CA", "CB", "CG", "Chi1_CG"),
+            Dihedral(pos, pos, pos, pos, "N", "CA", "CB", "CG1", "Chi1_CG1"),
+            Dihedral(pos, pos, pos, pos, "N", "CA", "CB", "OG", "Chi1_OG"),
+            Dihedral(pos, pos, pos, pos, "N", "CA", "CB", "OG1", "Chi1_OG1"),
+            Dihedral(pos, pos, pos, pos, "N", "CA", "CB", "SG", "Chi1_SG"),
         ]
 
 
@@ -483,12 +480,12 @@ class Chi2(CompositeDihedral):
     @staticmethod
     def get_dihedrals(pos) -> list[Dihedral]:
         return [
-            Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG', 'CD', 'Chi2_CG-CD'),
-            Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG', 'OD1', 'Chi2_CG-OD1'),
-            Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG', 'ND1', 'Chi2_CG-ND1'),
-            Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG1', 'CD', 'Chi2_CG1-CD'),
-            Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG', 'CD1', 'Chi2_CG-CD1'),
-            Dihedral(pos, pos, pos, pos, 'CA', 'CB', 'CG', 'SD', 'Chi2_CG-SD'),
+            Dihedral(pos, pos, pos, pos, "CA", "CB", "CG", "CD", "Chi2_CG-CD"),
+            Dihedral(pos, pos, pos, pos, "CA", "CB", "CG", "OD1", "Chi2_CG-OD1"),
+            Dihedral(pos, pos, pos, pos, "CA", "CB", "CG", "ND1", "Chi2_CG-ND1"),
+            Dihedral(pos, pos, pos, pos, "CA", "CB", "CG1", "CD", "Chi2_CG1-CD"),
+            Dihedral(pos, pos, pos, pos, "CA", "CB", "CG", "CD1", "Chi2_CG-CD1"),
+            Dihedral(pos, pos, pos, pos, "CA", "CB", "CG", "SD", "Chi2_CG-SD"),
         ]
 
 
@@ -500,7 +497,7 @@ class SASA(StructureVariable):
     atoms of a residue (so atoms are taken into account for calculation).
     """
 
-    __slots__ = ('p', 'a')
+    __slots__ = ("p", "a")
 
     def __init__(self, p: int, a: str | None = None):
         self.p = p
@@ -519,11 +516,11 @@ class SASA(StructureVariable):
             m &= obj.array.atom_name == self.a
 
         if m.sum() == 0:
-            raise FailedCalculation('Empty selection')
+            raise FailedCalculation("Empty selection")
         try:
             sasa = bst.sasa(obj.array, atom_filter=m)
         except Exception as e:
-            raise FailedCalculation(f'Failed to calculate {self} on {obj}') from e
+            raise FailedCalculation(f"Failed to calculate {self} on {obj}") from e
         return float(np.sum(sasa[~np.isnan(sasa)]))
 
 
@@ -532,7 +529,7 @@ class LigandContactsCount(StructureVariable):
     The number of atoms involved in contacting ligands.
     """
 
-    __slots__ = ('p', 'a')
+    __slots__ = ("p", "a")
 
     def __init__(self, p: int, a: str | None = None):
         #: Residue position.
@@ -559,8 +556,8 @@ class LigandContactsCount(StructureVariable):
                 lig_contacts = lig.parent_contacts[mask]
             except IndexError as e:
                 raise FailedCalculation(
-                    f'Failed to apply obtained position mask derived from {obj.pdb_id} '
-                    f'to a ligand {lig.res_name} ({lig.parent.pdb_id}) parent contacts'
+                    f"Failed to apply obtained position mask derived from {obj.pdb_id} "
+                    f"to a ligand {lig.res_name} ({lig.parent.pdb_id}) parent contacts"
                 ) from e
             n_contacts += np.sum(lig_contacts != 0)
         return n_contacts
@@ -571,7 +568,7 @@ class LigandNames(StructureVariable):
     ``","``-separated contacting ligand (residue) names.
     """
 
-    __slots__ = ('p', 'a')
+    __slots__ = ("p", "a")
 
     def __init__(self, p: int, a: str | None = None):
         #: Residue position.
@@ -597,10 +594,10 @@ class LigandNames(StructureVariable):
                     names.append(lig.res_name)
             except IndexError as e:
                 raise FailedCalculation(
-                    f'Failed to apply obtained position mask derived from {obj.pdb_id} '
-                    f'to a ligand {lig.res_name} ({lig.parent.pdb_id}) parent contacts'
+                    f"Failed to apply obtained position mask derived from {obj.pdb_id} "
+                    f"to a ligand {lig.res_name} ({lig.parent.pdb_id}) parent contacts"
                 ) from e
-        return ','.join(names)
+        return ",".join(names)
 
 
 class LigandDist(StructureVariable):
@@ -625,18 +622,18 @@ class LigandDist(StructureVariable):
         to the closest ligand atom.
     """
 
-    __slots__ = ('p', 'a', 'agg_lig', 'agg_res')
+    __slots__ = ("p", "a", "agg_lig", "agg_res")
 
     def __init__(
-        self, p: int, a: str | None = None, agg_lig: str = 'min', agg_res: str = 'min'
+        self, p: int, a: str | None = None, agg_lig: str = "min", agg_res: str = "min"
     ):
         if agg_lig not in AggFns:
             raise InitError(
-                f'Wrong agg_lig {agg_lig}. ' f'Available aggregators: {list(AggFns)}'
+                f"Wrong agg_lig {agg_lig}. " f"Available aggregators: {list(AggFns)}"
             )
         if agg_res not in AggFns:
             raise InitError(
-                f'Wrong agg_lig {agg_res}. ' f'Available aggregators: {list(AggFns)}'
+                f"Wrong agg_lig {agg_res}. " f"Available aggregators: {list(AggFns)}"
             )
 
         #: Residue position
@@ -673,8 +670,8 @@ class LigandDist(StructureVariable):
                 dists.append(lig.dist[mask])
             except IndexError as e:
                 raise FailedCalculation(
-                    f'Failed to apply obtained position mask derived from {obj.pdb_id} '
-                    f'to a ligand {lig.res_name} ({lig.parent.pdb_id}) parent contacts'
+                    f"Failed to apply obtained position mask derived from {obj.pdb_id} "
+                    f"to a ligand {lig.res_name} ({lig.parent.pdb_id}) parent contacts"
                 ) from e
         d = np.vstack(dists)
         d = AggFns[self.agg_lig](d, axis=0)
@@ -682,5 +679,5 @@ class LigandDist(StructureVariable):
         return d
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError
