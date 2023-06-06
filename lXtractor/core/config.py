@@ -15,6 +15,7 @@ Sep = Separators(",", ":", "::", "_", "--", "|")
 EMPTY_PDB_ID: str = "XXXX"
 EMPTY_CHAIN_ID: str = "X"
 UNK_NAME: str = "UNK"
+STRUCTURE_EXT = (".cif", ".pdb", ".pdbx", ".mmtf", ".npz")
 
 _AminoAcids = [
     ("ALA", "A"),

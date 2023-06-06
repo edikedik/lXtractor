@@ -19,17 +19,17 @@ from tqdm.auto import tqdm
 
 from lXtractor.core.alignment import Alignment
 from lXtractor.core.chain import ChainList
-from lXtractor.core.config import SeqNames
+from lXtractor.core.config import SeqNames, STRUCTURE_EXT
 from lXtractor.core.exceptions import InitError, LengthMismatch
 from lXtractor.core.structure import GenericStructure
 from lXtractor.util.misc import apply
 from lXtractor.util.seq import biotite_align
 
-
 LOGGER = logging.getLogger(__name__)
 
 if t.TYPE_CHECKING:
     from lXtractor.core.chain import Chain, ChainStructure, ChainSequence
+
     CT = t.TypeVar("CT", ChainStructure, ChainSequence, Chain)
     _O: t.TypeAlias = ChainSequence | ChainStructure | list[ChainStructure] | None
 
@@ -79,23 +79,31 @@ class ItemCallback(t.Protocol):
 
 
 def _read_path(
-    x: Path,
+    path: Path,
     tolerate_failures: bool,
     supported_seq_ext: abc.Container[str],
     supported_str_ext: abc.Container[str],
 ) -> ChainSequence | list[ChainStructure] | None:
     from lXtractor.core.chain import ChainStructure, ChainSequence
 
-    if x.suffix in supported_seq_ext:
-        return ChainSequence.from_file(x)
-    if x.suffix in supported_str_ext:
+    suffixes = path.suffixes
+    if len(suffixes) == 0:
+        raise InitError(f"No suffixes to infer file type in path {path}")
+    elif len(suffixes) == 1:
+        suffix = suffixes.pop()
+    else:
+        suffix = ".".join(suffixes[-2:])
+
+    if suffix in supported_seq_ext:
+        return ChainSequence.from_file(path)
+    if suffix in supported_str_ext:
         return [
             ChainStructure.from_structure(c)
-            for c in GenericStructure.read(x).split_chains(polymer=True)
+            for c in GenericStructure.read(path).split_chains(polymer=True)
         ]
     if tolerate_failures:
         return None
-    raise InitError(f"Suffix {x.suffix} of the path {x} is not supported")
+    raise InitError(f"Suffix {suffix} of the path {path} is not supported")
 
 
 def _init(
@@ -280,7 +288,7 @@ class ChainInitializer:
         """
         :return: Supported structure file extensions.
         """
-        return [".cif", ".pdb", ".pdbx", ".mmtf", ".npz"]
+        return [*STRUCTURE_EXT, *(e + ".gz" for e in STRUCTURE_EXT)]
 
     def from_iterable(
         self,
@@ -351,6 +359,7 @@ class ChainInitializer:
         **kwargs,
     ) -> ChainList[Chain]:
         from lXtractor.core.chain import Chain
+
         """
         Initialize :class:`Chain`'s from mapping between sequences and
         structures.
