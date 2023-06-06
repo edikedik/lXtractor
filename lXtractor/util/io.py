@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from itertools import filterfalse, starmap, chain, repeat
 from os import PathLike, walk
 from pathlib import Path
+from shutil import copyfileobj
 
 import networkx as nx
 import pandas as pd
@@ -45,21 +46,27 @@ __all__ = (
 # =================================== Fetching =========================================
 
 
-def fetch_text(url: str, decode: bool = True, **kwargs) -> str | bytes:
+def fetch_text(
+    url: str, decode: bool = False, chunk_size: int = 1024 * 8, **kwargs
+) -> str | bytes:
     """
-    :param url: Link.
-    :param decode: Decode text to utf-8 (while receiving bytes).
+    Fetch the content as a single string.
+    This will use the ``requests.get`` with ``stream=True`` by default to split
+    the download into chunks and thus avoid taking too much memory at once.
+
+    :param url: Link to fetch from.
+    :param decode: Decode the received bytes to utf-8.
+    :param chunk_size: The number of bytes to use when splitting the fetched
+        result into chunks.
     :param kwargs: Passed to :func:requests.get`.
     :return: Fetched text as a single string.
     """
-    r = requests.get(url, stream=True, **kwargs)
-    chunk_size = 1024 * 8
-    if r.ok:
-        decoded = (
-            chunk.decode("utf-8") if decode else chunk
-            for chunk in r.iter_content(chunk_size=chunk_size)
-        )
-        return "".join(decoded) if decode else b"".join(decoded)
+    with requests.get(url, stream=True, **kwargs) as r:
+        if r.ok:
+            res = b"".join(r.iter_content(chunk_size))
+            if decode:
+                res = res.decode("utf-8")
+            return res
     raise RuntimeError(
         f"Downloading url {url} failed with status code "
         f"{r.status_code} and output {r.text}"
@@ -68,11 +75,10 @@ def fetch_text(url: str, decode: bool = True, **kwargs) -> str | bytes:
 
 def fetch_to_file(
     url: str,
-    fpath: t.Optional[Path] = None,
-    fname: t.Optional[str] = None,
-    root_dir: t.Optional[Path] = None,
-    text: bool = True,
-    **kwargs,
+    fpath: Path | None = None,
+    fname: str | None = None,
+    root_dir: Path | None = None,
+    gz: bool = False,
 ) -> Path:
     """
     :param url: Link to a file.
@@ -81,10 +87,7 @@ def fetch_to_file(
         link for the file name and save into the current dir.
     :param fname: Name of the file to save.
     :param root_dir: Dir where to save the file.
-    :param text: File is expected to contain text. If ``True``, will use
-        :func:`download_text` to fetch text and save it to the file.
-    :param kwargs: Passed to :func:`urllib.request.urlretrieve`
-        if ``text=False`` else to :func:`download_text`.
+    :param gz: If ``True``, try decoding the raw request's content.
     :return: Local path to the file.
     """
     if fpath is None:
@@ -93,12 +96,21 @@ def fetch_to_file(
         fpath = root_dir / fname
     if not fpath.parent.exists():
         raise ValueError(f"Directory {fpath.parent} must exist")
-    if not text or url.startswith("ftp"):
-        urllib.request.urlretrieve(url, fpath, **kwargs)
+
+    if url.startswith("ftp"):
+        urllib.request.urlretrieve(url, fpath)
     else:
-        res = fetch_text(url, decode=True, **kwargs)
-        with fpath.open("w") as f:
-            print(res, file=f)
+        with requests.get(url, stream=True) as r:
+            if not r.ok:
+                raise RuntimeError(
+                    f"Downloading url {url} failed with status code "
+                    f"{r.status_code} and output {r.text}"
+                )
+            if gz:
+                r.raw.decode_content = True
+            with fpath.open("wb") as f:
+                copyfileobj(r.raw, f)
+
     return fpath
 
 
@@ -284,9 +296,8 @@ def fetch_files(
     def fetch_one(args: _U) -> str | Path | T:
         url = url_getter(args) if isinstance(args, str) else url_getter(*args)
         if dir_ is None:
-            text = fetch_text(url)
-            assert isinstance(text, str), "Text is decoded"
-            return callback(text) if callback else text
+            res = fetch_text(url)
+            return callback(res) if callback else res
         fname_base: str = args if isinstance(args, str) else args[fname_idx]
         return fetch_to_file(url, fname=f"{fname_base}.{fmt}", root_dir=dir_)
 
