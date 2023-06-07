@@ -80,7 +80,7 @@ def fetch_to_file(
     fpath: Path | None = None,
     fname: str | None = None,
     root_dir: Path | None = None,
-    gz: bool = False,
+    decode: bool = False,
 ) -> Path:
     """
     :param url: Link to a file.
@@ -89,7 +89,7 @@ def fetch_to_file(
         link for the file name and save into the current dir.
     :param fname: Name of the file to save.
     :param root_dir: Dir where to save the file.
-    :param gz: If ``True``, try decoding the raw request's content.
+    :param decode: If ``True``, try decoding the raw request's content.
     :return: Local path to the file.
     """
     if fpath is None:
@@ -108,7 +108,7 @@ def fetch_to_file(
                     f"Downloading url {url} failed with status code "
                     f"{r.status_code} and output {r.text}"
                 )
-            if gz:
+            if decode:
                 r.raw.decode_content = True
             with fpath.open("wb") as f:
                 copyfileobj(r.raw, f)
@@ -262,6 +262,7 @@ def fetch_files(
     fname_idx: int = 0,
     callback: abc.Callable[[str | bytes], T] | None = None,
     overwrite: bool = False,
+    decode: bool = False,
     max_trials: int = 1,
     num_threads: int | None = None,
     verbose: bool = False,
@@ -282,6 +283,8 @@ def fetch_files(
     :param callback: A callable to parse content right after fetching, e.g.,
         ``json.loads``. It's only used if `dir_` is not provided.
     :param overwrite: Overwrite existing files if `dir_` is provided.
+    :param decode: Decode the fetched content (bytes to utf-8). Should be
+        ``True`` if expecting text content.
     :param max_trials: Max number of fetching attempts for a given id.
     :param num_threads: The number of threads to use for parallel requests.
         If ``None``, will send requests sequentially.
@@ -298,10 +301,12 @@ def fetch_files(
     def fetch_one(args: _U) -> str | Path | T:
         url = url_getter(args) if isinstance(args, str) else url_getter(*args)
         if dir_ is None:
-            res = fetch_text(url)
+            res = fetch_text(url, decode=decode)
             return callback(res) if callback else res
         fname_base: str = args if isinstance(args, str) else args[fname_idx]
-        return fetch_to_file(url, fname=f"{fname_base}.{fmt}", root_dir=dir_)
+        return fetch_to_file(
+            url, fname=f"{fname_base}.{fmt}", root_dir=dir_, decode=decode
+        )
 
     def fetcher(
         chunk: abc.Iterable[_U],

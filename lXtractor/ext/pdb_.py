@@ -204,6 +204,7 @@ class PDB(ApiBase):
             dir_,
             callback=json.loads,
             overwrite=overwrite,
+            decode=True,
             max_trials=self.max_trials,
             num_threads=self.num_threads,
             verbose=self.verbose,

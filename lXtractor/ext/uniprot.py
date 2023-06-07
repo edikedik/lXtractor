@@ -392,7 +392,7 @@ def fetch_uniprot(
         }
         if fmt == 'tsv' and fields is not None:
             params['fields'] = fields
-        return fetch_text(url, params=urlencode(params).encode('utf-8'))
+        return fetch_text(url, decode=True, params=urlencode(params).encode('utf-8'))
 
     results = fetch_chunks(acc, fetch_chunk, chunk_size, **kwargs)
 
