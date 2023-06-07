@@ -35,6 +35,7 @@ __all__ = (
     "iter_residue_masks",
     "get_missing_atoms",
     "get_observed_atoms_frac",
+    "load_structure",
 )
 
 LOGGER = logging.getLogger(__name__)
