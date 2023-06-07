@@ -28,7 +28,8 @@ from lXtractor.util.structure import (
 )
 
 LOGGER = logging.getLogger(__name__)
-EMPTY = 'Unk'
+EMPTY = "Unk"
+EMPTY_ALTLOC = ("", " ", ".")
 
 
 class GenericStructure:
@@ -37,7 +38,8 @@ class GenericStructure:
     a single :class:`biotite.structure.AtomArray` instance.
 
     Methods ``__repr__`` and ``__str__`` output a string in the format:
-    ``{pdb_id}:{polymer_chain_ids};{ligand_chain_ids}``.
+    ``{pdb_id}:{polymer_chain_ids};{ligand_chain_ids}|{altloc_ids}``
+    where ``*ids`` are ","-separated.
     """
 
     __slots__ = ("_array", "pdb_id", "_ligands")
@@ -87,7 +89,8 @@ class GenericStructure:
     def __str__(self) -> str:
         chains_pol = ",".join(sorted(self.chain_ids_polymer))
         chains_lig = ",".join(sorted(self.chain_ids_ligand))
-        return f"{self.pdb_id}:{chains_pol};{chains_lig}"
+        altloc_ids = ",".join(filter(lambda x: x not in EMPTY_ALTLOC, self.altloc_ids))
+        return f"{self.pdb_id}:{chains_pol};{chains_lig}|{altloc_ids}"
 
     def __repr__(self) -> str:
         return str(self)
@@ -118,6 +121,15 @@ class GenericStructure:
         :return: An atom array comprising all ligand atoms.
         """
         return self.array[self.ligand_mask]
+
+    @property
+    def altloc_ids(self) -> list[str]:
+        """
+        :return: A sorted list of altloc IDs. If none found, will output ``[""]``.
+        """
+        if hasattr(self.array, "altloc_id"):
+            return sorted(set(self.array.altloc_id))
+        return [""]
 
     @property
     def chain_ids(self) -> set[str]:
@@ -204,6 +216,8 @@ class GenericStructure:
         :return: Parsed structure.
         """
         array = load_structure(inp, **kwargs)
+        if hasattr(array, 'altloc_id'):
+            array.altloc_id[np.isin(array.altloc_id, EMPTY_ALTLOC)] = ''
         if isinstance(inp, Path) and structure_id == EMPTY:
             structure_id = path2id(inp)
         if isinstance(array, bst.AtomArrayStack):
@@ -293,6 +307,8 @@ class GenericStructure:
             the ligand.
         :return: An iterable over chains found in :attr:`array`.
         """
+        # TODO: the chains are subsetted from copy and are not copies themselves
+
         a = self.array.copy() if copy else self.array
         chain_ids = self.chain_ids_polymer if polymer else self.chain_ids
         for chain_id in sorted(chain_ids):
@@ -301,6 +317,32 @@ class GenericStructure:
                 yield self.subset_with_ligands(mask, min_connections)
             else:
                 yield self.__class__(a[mask], self.pdb_id)
+
+    def split_altloc(self, *, copy: bool = True) -> abc.Iterator[Self]:
+        """
+        Split into substructures based on altloc IDs. Atoms missing altloc
+        annotations are distributed into every substructure. Thus, even if
+        the structure contains a single atom having altlocs (say, A and B),
+        this method will produce two substructed identical except for this
+        atom.
+
+        If :meth:`array` does not specify any altloc ID, yields the same
+        structure.
+
+        :param copy: Copy ``AtomArray``s of substructures.
+        :return: An iterator over objects of the same type initialized by
+            atoms having altloc annotations.
+        """
+        ids = self.altloc_ids
+        if len(ids) == 1:
+            return self
+
+        no_alt_mask = np.isin(self.array.altloc_id, EMPTY_ALTLOC)
+        for altloc in ids[1:]:
+            a = self.array[no_alt_mask | (self.array.altloc_id == altloc)]
+            if copy:
+                a = a.copy()
+            yield self.__class__(a, self.pdb_id, ligands=bool(self.ligands))
 
     def extract_segment(
         self, start: int, end: int, ligands: bool = True, min_connections: int = 1

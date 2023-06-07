@@ -112,8 +112,8 @@ def test_observed_atoms_fraction(gly, ala):
         DATA / "1aki.pdb",
         DATA / "2oiq.cif",
         DATA / "2oiq.cif.gz",
-        DATA / "4hhb.mmtf",
-        DATA / "4hhb.mmtf.gz",
+        DATA / "1rdq.mmtf",
+        DATA / "1rdq.mmtf.gz",
     ],
 )
 def test_load_structure(path):

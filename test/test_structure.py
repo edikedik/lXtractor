@@ -1,4 +1,5 @@
 from copy import deepcopy
+from pathlib import Path
 
 import biotite.structure as bst
 import pytest
@@ -6,6 +7,8 @@ import pytest
 from lXtractor.core.exceptions import LengthMismatch, MissingData, NoOverlap
 from lXtractor.core.structure import GenericStructure
 from test.conftest import EPS
+
+DATA = Path(__file__).parent / "data"
 
 
 def test_init(simple_structure_path):
@@ -32,12 +35,21 @@ def test_degenerate(simple_structure):
         _ = s.superpose(s)
 
 
-def test_split(simple_structure):
+def test_split_chains(simple_structure):
     s = simple_structure
     chains = list(s.split_chains())
     assert len(chains) == 1
     assert len(chains[0]) == len(s)
     assert isinstance(chains.pop(), GenericStructure)
+
+
+@pytest.mark.parametrize(
+    "inp", [(DATA / "1aki.pdb", [""]), (DATA / "1rdq.mmtf", ["", "A", "B"])]
+)
+def test_split_altloc(inp):
+    path, expected_ids = inp
+    s = GenericStructure.read(path, altloc="all")
+    assert s.altloc_ids == expected_ids
 
 
 def test_sequence(simple_structure):
@@ -59,7 +71,7 @@ def test_write(simple_structure):
 
 def test_superpose(chicken_src_str):
     a = chicken_src_str
-    bb_atoms = ['N', 'CA', 'C']
+    bb_atoms = ["N", "CA", "C"]
 
     _, rmsd, _ = a.superpose(a)
     assert rmsd <= EPS
