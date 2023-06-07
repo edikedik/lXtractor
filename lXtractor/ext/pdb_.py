@@ -108,7 +108,7 @@ class PDB(StructureApiBase):
         """
         :return: A list of formats supported by :meth:`fetch_structures`.
         """
-        return ["pdb", "cif", "mmtf"]
+        return ["pdb", "cif", "mmtf", "pdb.gz", "cif.gz", "mmtf.gz"]
 
     @staticmethod
     def fetch_obsolete() -> dict[str, str]:
