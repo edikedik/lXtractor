@@ -1,15 +1,17 @@
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import biotite.structure as bst
 import biotite.structure.info as bstinfo
 import numpy as np
 import pytest
 
+from lXtractor.core.config import STRUCTURE_FMT
 from lXtractor.util.structure import (
     filter_to_common_atoms,
     get_missing_atoms,
     get_observed_atoms_frac,
-    load_structure,
+    load_structure, save_structure,
 )
 
 DATA = Path(__file__).parent / "data"
@@ -129,3 +131,13 @@ def test_load_structure(path):
         f.seek(0)
         assert isinstance(load_structure(f, fmt, gz=gz), bst.AtomArray)
         assert isinstance(load_structure(content, fmt, gz=gz), bst.AtomArray)
+
+
+@pytest.mark.parametrize('fmt', [*STRUCTURE_FMT, *(x + '.gz' for x in STRUCTURE_FMT)])
+def test_save_structure(simple_structure, fmt):
+    s = simple_structure
+    with TemporaryDirectory() as tmp:
+        path = Path(tmp) / f'structure.{fmt}'
+        save_structure(s.array, path)
+        sl = load_structure(path)
+        assert isinstance(sl, bst.AtomArray)

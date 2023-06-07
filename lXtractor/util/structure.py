@@ -14,11 +14,12 @@ from pathlib import Path
 
 import biotite.structure as bst
 import biotite.structure.info as bstinfo
+import biotite.structure.io as bstio
 import numpy as np
 from more_itertools import unzip
 
-from lXtractor.core.config import SOLVENTS, BondThresholds
-from lXtractor.core.exceptions import LengthMismatch, MissingData
+from lXtractor.core.config import SOLVENTS, BondThresholds, STRUCTURE_FMT
+from lXtractor.core.exceptions import LengthMismatch, MissingData, FormatError
 from lXtractor.util.io import parse_suffix
 from lXtractor.util.typing import is_sequence_of
 
@@ -37,7 +38,6 @@ __all__ = (
     "get_observed_atoms_frac",
     "load_structure",
 )
-
 LOGGER = logging.getLogger(__name__)
 
 _BASIC_COMPARISON_ATOMS = {"N", "CA", "C", "CB"}
@@ -404,13 +404,26 @@ def get_observed_atoms_frac(
             yield m_obs.sum() / len(r_can)
 
 
+def _check_fmt(fmt: str):
+    if not fmt:
+        raise FormatError(
+            "The format must be specified explicitly when not using a Path-like input."
+        )
+    if fmt not in STRUCTURE_FMT:
+        raise FormatError(
+            f"Unsupported structure format {fmt}. "
+            f"Supported formats are: {STRUCTURE_FMT}."
+        )
+
+
 def load_structure(
     inp: IOBase | Path | str | bytes, fmt: str = "", *, gz: bool = False, **kwargs
 ) -> bst.AtomArray:
     """
     This is a simplified version of a ``biotite.io.general.load_structure``
     extending the supported input types. Namely, it allows using paths,
-    strings, bytes or gzipped files.
+    strings, bytes or gzipped files. On the other hand, there are less supported
+    formats: pdb, cif, and mmtf.
 
     :param inp: Input to load from. It can be a path to a file, an opened file
         handle, a string or bytes of file contents. Gzipped bytes and files are
@@ -431,10 +444,7 @@ def load_structure(
             fmt = suffix
         fmt = fmt.removeprefix(".")
 
-    if not fmt:
-        raise ValueError(
-            "The format must be specified explicitly when not using a Path-like input"
-        )
+    _check_fmt(fmt)
 
     io_type = BytesIO if fmt == "mmtf" else StringIO
     read_mode = "rb" if fmt == "mmtf" else "r"
@@ -444,7 +454,7 @@ def load_structure(
             with gzip.open(inp) as f:
                 content = f.read()
                 if io_type is StringIO:
-                    content = content.decode('utf-8')
+                    content = content.decode("utf-8")
                 handle = io_type(content)
         else:
             handle = inp.open(read_mode)
@@ -453,7 +463,7 @@ def load_structure(
     elif isinstance(inp, bytes):
         content = gzip.decompress(inp) if gz else inp
         if io_type is StringIO:
-            content = content.decode('utf-8')
+            content = content.decode("utf-8")
         handle = io_type(content)
     elif isinstance(inp, BufferedReader) and gz:
         return load_structure(inp.read(), fmt, gz=gz)
@@ -476,7 +486,7 @@ def load_structure(
         file = MMTFFile.read(handle)
         array = get_structure(file, **kwargs)
     else:
-        raise ValueError(f"Unrecognized format {fmt}")
+        raise FormatError(f"Unsupported format {fmt}.")
 
     handle.close()
 
@@ -485,6 +495,71 @@ def load_structure(
         array = array[0]
 
     return array
+
+
+def save_structure(array: bst.AtomArray, path: Path, **kwargs):
+    """
+    This is a simplified version of a ``biotite.io.general.save_structure``.
+    On the one hand, it can conveniently compress the data using ``gzip``.
+    On the other hand, the number of supported formats is fewer: pdb, cif, and
+    mmtf.
+
+    :param array: An ``AtomArray`` to write.
+    :param path: A path with correct extension, e.g.,
+        ``Path("data/structure.pdb")``, or ``Path("data/structure.pdb.gz")``.
+    :param kwargs: If compressing is not required, the original ``save_structure``
+        from biotite is used with these ``kwargs``. Otherwise, ``kwargs`` are
+        ignored.
+    :return: If the file was successfully written, returns the original `path`.
+    """
+    suffix = parse_suffix(path)
+    if suffix.endswith(".gz"):
+        fmt = path.suffixes[-2]
+        gz = True
+    else:
+        fmt = suffix
+        gz = False
+
+    if not gz:
+        bstio.save_structure(path, array, **kwargs)
+        return path
+
+    fmt = fmt.removeprefix(".")
+    _check_fmt(fmt)
+
+    if fmt == "mmtf":
+        from biotite.structure.io.mmtf import MMTFFile, set_structure
+
+        io, file = BytesIO(), MMTFFile()
+        set_structure(file, array)
+        file.write(io)
+    elif fmt == "pdb":
+        from biotite.structure.io.pdb import PDBFile
+
+        io, file = StringIO(), PDBFile()
+        file.set_structure(array)
+        file.write(io)
+    elif fmt == "cif":
+        from biotite.structure.io.pdbx import PDBxFile, set_structure
+
+        io, file = StringIO(), PDBxFile()
+        set_structure(file, array, data_block="STRUCTURE")
+        file.write(io)
+    else:
+        raise FormatError(f"Unsupported format {fmt}.")
+
+    io.seek(0)
+
+    content = io.read()
+    if fmt != "mmtf":
+        content = str.encode(content)
+
+    with gzip.open(path, "wb") as f:
+        f.write(content)
+
+    io.close()
+
+    return path
 
 
 if __name__ == "__main__":

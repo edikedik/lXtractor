@@ -14,8 +14,9 @@ Separators = namedtuple(
 Sep = Separators(",", ":", "::", "_", "--", "|")
 EMPTY_PDB_ID: str = "XXXX"
 EMPTY_CHAIN_ID: str = "X"
-UNK_NAME: str = "UNK"
-STRUCTURE_EXT = (".cif", ".pdb", ".pdbx", ".mmtf", ".npz")
+UNK_NAME: str = "Unk"
+STRUCTURE_EXT = (".cif", ".pdb", ".mmtf")
+STRUCTURE_FMT = tuple(x.removeprefix('.') for x in STRUCTURE_EXT)
 
 _AminoAcids = [
     ("ALA", "A"),
