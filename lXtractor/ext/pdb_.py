@@ -2,25 +2,20 @@
 Utilities to interact with the RCSB PDB database.
 """
 import json
-import typing as t
 from collections import abc
-from itertools import repeat
 from pathlib import Path
 
 from toolz import valfilter
 
-from lXtractor.core import GenericStructure
 from lXtractor.core.base import UrlGetter
 from lXtractor.core.exceptions import FormatError
-from lXtractor.ext.base import ApiBase
+from lXtractor.ext.base import StructureApiBase
 from lXtractor.protocols import LOGGER
-from lXtractor.util.io import fetch_files, fetch_text
+from lXtractor.util.io import fetch_text
 
-# ArgT: t.TypeAlias = tuple[str, ...] | str
-ArgT = t.TypeVar("ArgT", tuple[str, ...], str)
 OBSOLETE_LINK = "https://files.wwpdb.org/pub/pdb/data/status/obsolete.dat"
 SERVICES = (
-    # Single argument group
+    # Single-argument group
     ("chem_comp", "comp_id"),
     ("drugbank", "comp_id"),
     ("entry", "entry_id"),
@@ -28,7 +23,7 @@ SERVICES = (
     ("entry_groups", "group_id"),
     ("polymer_entity_groups", "group_id"),
     ("group_provenance", "group_provenance_id"),
-    # Two arguments group
+    # Two-argument group
     ("assembly", "entry_id", "assembly_id"),
     ("branched_entity", "entry_id", "entity_id"),
     ("nonpolymer_entity", "entry_id", "entity_id"),
@@ -37,11 +32,9 @@ SERVICES = (
     ("nonpolymer_entity_instance", "entry_id", "asym_id"),
     ("polymer_entity_instance", "entry_id", "asym_id"),
     ("uniprot", "entry_id", "entity_id"),
-    # Three argument group
+    # Three-argument group
     ("interface", "entry_id", "assembly_id", "interface_id"),
 )
-_RT = t.TypeVar("_RT", str, bytes)
-_T = t.TypeVar("_T")
 
 
 def url_getters() -> dict[str, UrlGetter]:
@@ -57,7 +50,7 @@ def url_getters() -> dict[str, UrlGetter]:
         fn = f'lambda {args_fn}: f"{base}/{name}/{args_url}"'
         return eval(fn)  # pylint: disable=eval-used
 
-    def files_url(entry_id, fmt):
+    def structures_url(entry_id, fmt):
         if fmt in ["pdb", "cif", "pdb.gz", "cif.gz"]:
             base = "https://files.rcsb.org/download/"
         elif fmt in ["mmtf", "mmtf.gz"]:
@@ -69,39 +62,40 @@ def url_getters() -> dict[str, UrlGetter]:
         return url
 
     result = {x[0]: url_getter_factory(*x) for x in SERVICES}
-    result["files"] = files_url
+    result["structures"] = structures_url
 
     return result
 
 
-def parse_callback(inp: tuple[str, str], res: str | bytes) -> GenericStructure:
-    """
-    Parse the fetched structure.
-
-    :param inp: A pair of (id, fmt).
-    :param res: The fetching result. By default, if ``fmt in ["cif", "pdb"]``,
-        the result is ``str``, while ``fmt="mmtf"`` will produce ``bytes``.
-    :return: Parse generic structure.
-    """
-    return GenericStructure.read(
-        res, structure_id=inp[0], fmt=inp[1].removesuffix(".gz")
-    )
-
-
-class PDB(ApiBase):
+class PDB(StructureApiBase):
     """
     Basic RCSB PDB interface to fetch structures and information.
 
-    Fetch structure files from RCSB PDB.
+    Example of fetching structures:
 
     >>> pdb = PDB()
-    >>> fetched, failed = pdb.fetch_structures(['2src', '2oiq'],)
+    >>> fetched, failed = pdb.fetch_structures(['2src', '2oiq'], dir_=None)
     >>> len(fetched) == 2 and len(failed) == 0
     True
-    >>> (id1, res1), (id2, res2) = fetched
-    >>> assert {id1, id2} == {'2src', '2oiq'}
+    >>> (args1, res1), (args2, res2) = fetched
+    >>> assert {args1, args2} == {('2src', 'cif'), ('2oiq', 'cif')}
     >>> isinstance(res1, str) and isinstance(res2, str)
     True
+
+    Example of fetching information:
+
+    >>> pdb = PDB()
+    >>> fetched, failed = pdb.fetch_info(
+    ...     'entry', [('2SRC', ), ('2OIQ', )], dir_=None)
+    >>> len(failed) == 0 and len(fetched) == 2
+    True
+    >>> (args1, res1), (args2, res2) = fetched
+    >>> assert {args1, args2} == {('2SRC', ), ('2OIQ', )}
+    >>> assert isinstance(res1, dict) and isinstance(res2, dict)
+
+    .. hint::
+        Check :meth:`list_services` to list available info services.
+
     """
 
     def __init__(
@@ -114,133 +108,7 @@ class PDB(ApiBase):
         """
         :return: A list of formats supported by :meth:`fetch_structures`.
         """
-        return [".pdb", ".cif", ".mmtf"]
-
-    def fetch_structures(
-        self,
-        ids: abc.Iterable[str],
-        dir_: Path | None,
-        fmt: str = "cif",
-        *,
-        overwrite: bool = False,
-        parse: bool = False,
-        callback: abc.Callable[[tuple[str, str], _RT], _T] | None = None,
-    ) -> tuple[list[tuple[tuple[str, str], Path | _RT | _T]], list[tuple[str, str]]]:
-        """
-        Fetch structure files from the PDB resources.
-
-        >>> pdb = PDB()
-        >>> fetched, failed = pdb.fetch_structures(['2src', '2oiq'], dir_=None)
-        >>> len(fetched) == 2 and len(failed) == 0
-        True
-        >>> (args1, res1), (args2, res2) = fetched
-        >>> assert {args1, args2} == {('2src', 'cif'), ('2oiq', 'cif')}
-        >>> isinstance(res1, str) and isinstance(res2, str)
-        True
-
-        .. seealso::
-            :func:`lXtractor.util.io.fetch_files`.
-
-        .. hint::
-            Callbacks will apply in parallel if :attr:`num_threads` is above 1.
-
-        .. note::
-            If the provided callback fails, it is equivalent to the fetching
-            failure and will be presented as such. Initializing in verbose
-            mode will output the stacktrace though.
-
-        Reading structures and parsing immediately requires using ``callback``.
-        Such callback may be partially evaluated
-        :meth:`lXtractor.core.structure.GenericStructure.read` encapsulating
-        the correct format.
-
-        :param ids: An iterable over PDB IDs.
-        :param dir_: Dir to save files to. If ``None``, will keep downloaded
-            files as strings.
-        :param fmt: Structure format. See :meth:`supported_str_formats`.
-            Adding `.gz` will fetch gzipped files.
-        :param overwrite: Overwrite existing files if `dir_` is provided.
-        :param parse: If ``dir_ is None``, use :func:`parse_callback(fmt=fmt)`
-            to parse fetched structures right away. This will overrride any
-            existing `callback`.
-        :param callback: If `dir_` is ommited, fetching will result in a
-            ``bytes`` or a ``str``. Callback is a single-argument callable
-            accepting the fetched content and returning anything.
-        :return: A tuple with fetched results and the remaining IDs.
-            The former is a list of tuples, where the first element
-            is the original ID, and the second element is either the path to
-            a downloaded file or downloaded data as string. The order
-            may differ. The latter is a list of IDs that failed to fetch.
-        """
-        if fmt == "mmtf":
-            decode = False
-            fmt += ".gz"
-        else:
-            decode = True
-
-        if parse and callback is None:
-            callback = parse_callback
-
-        return fetch_files(
-            self.url_getters["files"],
-            zip(ids, repeat(fmt)),
-            fmt,
-            dir_,
-            callback=callback,
-            overwrite=overwrite,
-            decode=decode,
-            max_trials=self.max_trials,
-            num_threads=self.num_threads,
-            verbose=self.verbose,
-        )
-
-    def fetch_info(
-        self,
-        service_name: str,
-        url_args: abc.Iterable[ArgT],
-        dir_: Path | None,
-        *,
-        overwrite: bool = False,
-    ) -> tuple[list[tuple[ArgT, dict | Path]], list[ArgT]]:
-        """
-
-        >>> pdb = PDB()
-        >>> fetched, failed = pdb.fetch_info(
-        ...     'entry', [('2SRC', ), ('2OIQ', )], dir_=None)
-        >>> len(failed) == 0 and len(fetched) == 2
-        True
-        >>> (args1, res1), (args2, res2) = fetched
-        >>> assert {args1, args2} == {('2SRC', ), ('2OIQ', )}
-        >>> assert isinstance(res1, dict) and isinstance(res2, dict)
-
-        .. seealso:
-            :meth:`list_services` for a list of services and url args.
-
-        :param service_name: The name of the service to use.
-        :param dir_: Dir to save files to. If ``None``, will keep downloaded
-            files as strings.
-        :param url_args: Arguments to a `url_getter`. Check :meth:`list_services`
-            to see which getters require which arguments. Each element of this
-            iterable is a tuple of string arguments that should produce a valid
-            url for the API.
-        :param overwrite: Overwrite existing files if `dir_` is provided.
-        :return: A tuple with fetched and remaining inputs.
-            Fetched inputs are tuples, where the first element is the original
-            arguments and the second argument is the dictionary with downloaded
-            data. Remaining inputs are arguments that failed to fetch.
-        """
-        return fetch_files(
-            self.url_getters[service_name],
-            url_args,
-            "json",
-            dir_,
-            callback=json.loads,
-            overwrite=overwrite,
-            decode=True,
-            max_trials=self.max_trials,
-            num_threads=self.num_threads,
-            verbose=self.verbose,
-        )
+        return ["pdb", "cif", "mmtf"]
 
     @staticmethod
     def fetch_obsolete() -> dict[str, str]:
@@ -254,15 +122,15 @@ class PDB(ApiBase):
             bool, {x[2]: (x[3] if len(x) == 4 else "") for x in lines if len(x) >= 3}
         )
 
-    @staticmethod
-    def list_services() -> list[tuple[str, ...]]:
-        """
-        :return: List of services to be used with :meth:`fetch_info`. Each entry
-            is a tuple where the first element is the service name and the rest
-            are the argument names required to provide when using a service
-            (``url_getters``).
-        """
-        return list(SERVICES)
+    # @staticmethod
+    # def list_services() -> list[tuple[str, ...]]:
+    #     """
+    #     :return: List of services to be used with :meth:`fetch_info`. Each entry
+    #         is a tuple where the first element is the service name and the rest
+    #         are the argument names required when using a service
+    #         (``url_getters``).
+    #     """
+    #     return list(SERVICES)
 
 
 def filter_by_method(

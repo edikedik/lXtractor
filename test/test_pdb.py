@@ -28,9 +28,7 @@ def test_fetch(ids, fmt, dir_, num_threads, parse):
             assert len(_fetched) == 0
             assert len(_missed) == 1
     else:
-        fetched, missed = pdb.fetch_structures(
-            ids, dir_=None, fmt=fmt, parse=parse
-        )
+        fetched, missed = pdb.fetch_structures(ids, dir_=None, fmt=fmt, parse=parse)
 
     assert len(fetched) == len(missed) == 1
 
@@ -89,3 +87,11 @@ def test_fetch_obsolete():
     obsolete = pdb.fetch_obsolete()
     assert isinstance(obsolete, dict)
     assert all(len(k) == 4 for k in obsolete)
+
+
+def test_url_getters():
+    pdb = PDB()
+    assert isinstance(pdb.url_names, list)
+    for s_name, s_args in pdb.url_args:
+        assert isinstance(s_name, str)
+        assert isinstance(s_args, list)
