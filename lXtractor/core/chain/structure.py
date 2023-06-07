@@ -212,9 +212,10 @@ class ChainStructure:
     @property
     def id(self) -> str:
         """
-        :return: Unique identifier of a structure.
+        :return: ChainStructure identifier derived from its :attr:`seq` ID.
         """
-        return f"{self.__class__.__name__}({self.seq})"
+        parent = f'<-({self.parent.id})' if self.parent else ''
+        return f'ChainStructure({self.seq.id}){parent}'
 
     @property
     def array(self) -> bst.AtomArray:

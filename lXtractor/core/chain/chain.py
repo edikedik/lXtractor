@@ -98,9 +98,10 @@ class Chain:
     @property
     def id(self) -> str:
         """
-        :return: Unique identifier: same as :attr:`seq`'s id.
+        :return: Chain identifier derived from its :attr:`seq` ID.
         """
-        return self.seq.id
+        parent = f'<-({self.parent.id})' if self.parent else ''
+        return f'Chain({self.seq.id}){parent}'
 
     @property
     def meta(self) -> dict[str, str]:
@@ -146,17 +147,6 @@ class Chain:
 
     def __str__(self) -> str:
         return self.id
-
-    # def __getitem__(self, key: str | int) -> Chain:
-    #     if isinstance(key, str):
-    #         return self.children[key]
-    #     if isinstance(key, int):
-    #         return list(self.children.values())[key]
-    #     else:
-    #         raise TypeError('Wrong key type')
-
-    # def __contains__(self, item: Chain) -> bool:
-    #     return item in self.children
 
     def iter_children(self) -> abc.Generator[list[Chain], None, None]:
         """
