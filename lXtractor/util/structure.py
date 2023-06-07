@@ -261,7 +261,7 @@ def filter_solvent_extended(a: bst.AtomArray) -> np.ndarray:
 
 def filter_ligand(a: bst.AtomArray) -> np.ndarray:
     """
-    Filter for ligand atoms -- non-polymer and non-solvent atoms.
+    Filter for ligand atoms -- non-polymer and non-solvent hetero atoms.
 
     ..note ::
         No contact-based verification is performed here.
@@ -271,7 +271,7 @@ def filter_ligand(a: bst.AtomArray) -> np.ndarray:
     """
     is_polymer = filter_any_polymer(a)
     is_solvent = filter_solvent_extended(a) | (np.vectorize(len)(a.res_name) != 3)
-    return ~(is_polymer | is_solvent)
+    return ~(is_polymer | is_solvent) & a.hetero
 
 
 def find_contacts(
