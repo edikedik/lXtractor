@@ -260,7 +260,7 @@ def fetch_files(
     dir_: Path | None,
     *,
     fname_idx: int = 0,
-    callback: abc.Callable[[str | bytes], T] | None = None,
+    callback: abc.Callable[[_U, str | bytes], T] | None = None,
     overwrite: bool = False,
     decode: bool = False,
     max_trials: int = 1,
@@ -302,7 +302,7 @@ def fetch_files(
         url = url_getter(args) if isinstance(args, str) else url_getter(*args)
         if dir_ is None:
             res = fetch_text(url, decode=decode)
-            return callback(res) if callback else res
+            return callback(args, res) if callback else res
         fname_base: str = args if isinstance(args, str) else args[fname_idx]
         return fetch_to_file(
             url, fname=f"{fname_base}.{fmt}", root_dir=dir_, decode=decode

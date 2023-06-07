@@ -14,10 +14,10 @@ PDB_IDS = [("2src", "xxxx")]
 @pytest.mark.parametrize("fmt", ["cif"])
 @pytest.mark.parametrize("dir_", [True, False])
 @pytest.mark.parametrize("num_threads", [1, 2])
-@pytest.mark.parametrize("callback", [GenericStructure.read, None])
-def test_fetch(ids, fmt, dir_, num_threads, callback):
+@pytest.mark.parametrize("parse", [True, False])
+def test_fetch(ids, fmt, dir_, num_threads, parse):
     pdb = PDB(num_threads=num_threads)
-    if dir:
+    if dir_:
         with TemporaryDirectory() as dir_:
             dir_ = Path(dir_)
 
@@ -29,17 +29,17 @@ def test_fetch(ids, fmt, dir_, num_threads, callback):
             assert len(_missed) == 1
     else:
         fetched, missed = pdb.fetch_structures(
-            ids, dir_=None, fmt=fmt, callback=callback
+            ids, dir_=None, fmt=fmt, parse=parse
         )
 
     assert len(fetched) == len(missed) == 1
 
     inp, res = fetched.pop()
 
-    if dir:
+    if dir_:
         assert isinstance(res, Path)
     else:
-        if callback is not None:
+        if parse:
             assert isinstance(res, GenericStructure)
         else:
             assert isinstance(res, str)

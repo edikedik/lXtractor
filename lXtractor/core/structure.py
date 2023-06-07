@@ -28,6 +28,7 @@ from lXtractor.util.structure import (
 )
 
 LOGGER = logging.getLogger(__name__)
+EMPTY = 'Unk'
 
 
 class GenericStructure:
@@ -177,6 +178,7 @@ class GenericStructure:
         cls,
         inp: IOBase | Path | str | bytes,
         path2id: abc.Callable[[Path], str] = lambda p: p.stem,
+        structure_id: str = EMPTY,
         ligands: bool = True,
         **kwargs,
     ) -> Self:
@@ -185,23 +187,31 @@ class GenericStructure:
         :class:`GenericStructure` object.
 
         .. seealso::
-            `lXtractor.util.structure.load_structure`
+            :func:`lXtractor.util.structure.load_structure`
+
+        .. note::
+            If `inp` is not a ``Path``, ``kwargs`` must contain the correct
+            ``fmt`` (e.g., ``fmt=cif``).
 
         :param inp: Path to a structure in supported format.
         :param path2id: A callable obtaining a PDB ID from the file path.
             By default, it's a ``Path.stem``.
+        :param structure_id: A structure unique identifier (e.g., PDB ID). If
+            not provided and the input is ``Path``, will use ``path2id`` to
+            infer the ID. Otherwise, will use a constant placeholder.
         :param ligands: Search for ligands.
         :param kwargs: Passed to ``load_structure``.
         :return: Parsed structure.
         """
         array = load_structure(inp, **kwargs)
-        pdb_id = path2id(inp)
+        if isinstance(inp, Path) and structure_id == EMPTY:
+            structure_id = path2id(inp)
         if isinstance(array, bst.AtomArrayStack):
             raise InitError(
                 f"{inp} is likely an NMR structure. "
                 f"NMR structures are not supported."
             )
-        return cls(array, pdb_id, ligands)
+        return cls(array, structure_id, ligands)
 
     @classmethod
     def make_empty(cls, pdb_id: str | None = None) -> Self:

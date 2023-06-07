@@ -9,6 +9,7 @@ from pathlib import Path
 
 from toolz import valfilter
 
+from lXtractor.core import GenericStructure
 from lXtractor.core.base import UrlGetter
 from lXtractor.core.exceptions import FormatError
 from lXtractor.ext.base import ApiBase
@@ -73,6 +74,20 @@ def url_getters() -> dict[str, UrlGetter]:
     return result
 
 
+def parse_callback(
+    inp: tuple[str, str], res: str | bytes
+) -> GenericStructure:
+    """
+    Parse the fetched structure.
+
+    :param inp: A pair of (id, fmt).
+    :param res: The fetching result. By default, if ``fmt in ["cif", "pdb"]``,
+        the result is ``str``, while ``fmt="mmtf"`` will produce ``bytes``.
+    :return: Parse generic structure.
+    """
+    return GenericStructure.read(res, structure_id=inp[0], fmt=inp[1])
+
+
 class PDB(ApiBase):
     """
     Basic RCSB PDB interface to fetch structures and information.
@@ -108,7 +123,8 @@ class PDB(ApiBase):
         fmt: str = "cif",
         *,
         overwrite: bool = False,
-        callback: abc.Callable[[_RT], _T] | None = None,
+        parse: bool = False,
+        callback: abc.Callable[[tuple[str, str], _RT], _T] | None = None,
     ) -> tuple[list[tuple[tuple[str, str], Path | _RT | _T]], list[tuple[str, str]]]:
         """
         Fetch structure files from the PDB resources.
@@ -123,14 +139,20 @@ class PDB(ApiBase):
         True
 
         .. seealso::
-            :func:`fetch_files lXtractor.ext.base.fetch_files`.
-
-        .. hint::
-            Use :meth:`lXtractor.core.structure.GenericStructure.read` as
-            callback to parse fetched structures right away.
+            :func:`lXtractor.util.io.fetch_files`.
 
         .. hint::
             Callbacks will apply in parallel if :attr:`num_threads` is above 1.
+
+        .. note::
+            If the provided callback fails, it is equivalent to the fetching
+            failure and will be presented as such. Initializing in verbose
+            mode will output the stacktrace though.
+
+        Reading structures and parsing immediately requires using ``callback``.
+        Such callback may be partially evaluated
+        :meth:`lXtractor.core.structure.GenericStructure.read` encapsulating
+        the correct format.
 
         :param ids: An iterable over PDB IDs.
         :param dir_: Dir to save files to. If ``None``, will keep downloaded
@@ -138,6 +160,9 @@ class PDB(ApiBase):
         :param fmt: Structure format. See :meth:`supported_str_formats`.
             Adding `.gz` will fetch gzipped files.
         :param overwrite: Overwrite existing files if `dir_` is provided.
+        :param parse: If ``dir_ is None``, use :func:`parse_callback(fmt=fmt)`
+            to parse fetched structures right away. This will overrride any
+            existing `callback`.
         :param callback: If `dir_` is ommited, fetching will result in a
             ``bytes`` or a ``str``. Callback is a single-argument callable
             accepting the fetched content and returning anything.
@@ -148,7 +173,13 @@ class PDB(ApiBase):
             may differ. The latter is a list of IDs that failed to fetch.
         """
         if fmt == "mmtf":
+            decode = False
             fmt += ".gz"
+        else:
+            decode = True
+
+        if parse and callback is None:
+            callback = parse_callback
 
         return fetch_files(
             self.url_getters["files"],
@@ -157,6 +188,7 @@ class PDB(ApiBase):
             dir_,
             callback=callback,
             overwrite=overwrite,
+            decode=decode,
             max_trials=self.max_trials,
             num_threads=self.num_threads,
             verbose=self.verbose,
