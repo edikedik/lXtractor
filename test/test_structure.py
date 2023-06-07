@@ -48,7 +48,7 @@ def test_split_chains(simple_structure):
 )
 def test_split_altloc(inp):
     path, expected_ids = inp
-    s = GenericStructure.read(path, altloc="all")
+    s = GenericStructure.read(path, altloc=True)
     assert s.altloc_ids == expected_ids
 
 

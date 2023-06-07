@@ -192,6 +192,7 @@ class GenericStructure:
         path2id: abc.Callable[[Path], str] = lambda p: p.stem,
         structure_id: str = EMPTY,
         ligands: bool = True,
+        altloc: bool = False,
         **kwargs,
     ) -> Self:
         """
@@ -212,12 +213,16 @@ class GenericStructure:
             not provided and the input is ``Path``, will use ``path2id`` to
             infer the ID. Otherwise, will use a constant placeholder.
         :param ligands: Search for ligands.
+        :param altloc: Parse alternative locations and populate
+            ``array.altloc_id`` attribute.
         :param kwargs: Passed to ``load_structure``.
         :return: Parsed structure.
         """
+        if altloc:
+            kwargs["altloc"] = "all"
         array = load_structure(inp, **kwargs)
-        if hasattr(array, 'altloc_id'):
-            array.altloc_id[np.isin(array.altloc_id, EMPTY_ALTLOC)] = ''
+        if hasattr(array, "altloc_id"):
+            array.altloc_id[np.isin(array.altloc_id, EMPTY_ALTLOC)] = ""
         if isinstance(inp, Path) and structure_id == EMPTY:
             structure_id = path2id(inp)
         if isinstance(array, bst.AtomArrayStack):
