@@ -11,7 +11,7 @@ PDB_IDS = [("2src", "xxxx")]
 
 
 @pytest.mark.parametrize("ids", PDB_IDS)
-@pytest.mark.parametrize("fmt", ["cif"])
+@pytest.mark.parametrize("fmt", ["cif", "mmtf"])
 @pytest.mark.parametrize("dir_", [True, False])
 @pytest.mark.parametrize("num_threads", [1, 2])
 @pytest.mark.parametrize("parse", [True, False])
@@ -42,7 +42,10 @@ def test_fetch(ids, fmt, dir_, num_threads, parse):
         if parse:
             assert isinstance(res, GenericStructure)
         else:
-            assert isinstance(res, str)
+            if fmt == "mmtf":
+                assert isinstance(res, bytes)
+            else:
+                assert isinstance(res, str)
 
 
 @pytest.mark.parametrize("ids", [(PDB_IDS[0][0],)])

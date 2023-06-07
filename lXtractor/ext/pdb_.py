@@ -74,9 +74,7 @@ def url_getters() -> dict[str, UrlGetter]:
     return result
 
 
-def parse_callback(
-    inp: tuple[str, str], res: str | bytes
-) -> GenericStructure:
+def parse_callback(inp: tuple[str, str], res: str | bytes) -> GenericStructure:
     """
     Parse the fetched structure.
 
@@ -85,7 +83,9 @@ def parse_callback(
         the result is ``str``, while ``fmt="mmtf"`` will produce ``bytes``.
     :return: Parse generic structure.
     """
-    return GenericStructure.read(res, structure_id=inp[0], fmt=inp[1])
+    return GenericStructure.read(
+        res, structure_id=inp[0], fmt=inp[1].removesuffix(".gz")
+    )
 
 
 class PDB(ApiBase):
