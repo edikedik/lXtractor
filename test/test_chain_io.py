@@ -77,7 +77,7 @@ def test_chainio(simple_structure, simple_chain_seq):
         segm_paths = list(dirs[DumpNames.segments_dir].glob("*"))
         assert len(segm_paths) == 1
         segm_dir = segm_paths.pop()
-        assert segm_dir.name == seq_child.id
+        assert segm_dir.name == f'Chain({seq_child.id})'
 
         c_r = list(io.read_chain(tmp, search_children=True))
         assert len(c_r) == 1

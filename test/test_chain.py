@@ -9,7 +9,7 @@ from test.common import sample_chain, mark_meta
 def test_basic(four_chain_structure_seq_path, four_chain_structure):
     p = Chain.from_seq(four_chain_structure_seq_path)[0]
     assert len(p.seq) == 1657
-    assert p.id == p.seq.id
+    assert p.id == f'Chain({p.seq.id})'
     chains = list(four_chain_structure.split_chains())
     chain_a = ChainStructure.from_structure(chains[0], pdb_id='3i6x')
     p.add_structure(chain_a)
