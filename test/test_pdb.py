@@ -3,6 +3,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
+from lXtractor.core import GenericStructure
 from lXtractor.ext.pdb_ import PDB
 from lXtractor.util import get_files
 
@@ -13,7 +14,8 @@ PDB_IDS = [("2src", "xxxx")]
 @pytest.mark.parametrize("fmt", ["cif"])
 @pytest.mark.parametrize("dir_", [True, False])
 @pytest.mark.parametrize("num_threads", [1, 2])
-def test_fetch(ids, fmt, dir_, num_threads):
+@pytest.mark.parametrize("callback", [GenericStructure.read, None])
+def test_fetch(ids, fmt, dir_, num_threads, callback):
     pdb = PDB(num_threads=num_threads)
     if dir:
         with TemporaryDirectory() as dir_:
@@ -26,7 +28,9 @@ def test_fetch(ids, fmt, dir_, num_threads):
             assert len(_fetched) == 0
             assert len(_missed) == 1
     else:
-        fetched, missed = pdb.fetch_structures(ids, dir_=None, fmt=fmt)
+        fetched, missed = pdb.fetch_structures(
+            ids, dir_=None, fmt=fmt, callback=callback
+        )
 
     assert len(fetched) == len(missed) == 1
 
@@ -35,7 +39,10 @@ def test_fetch(ids, fmt, dir_, num_threads):
     if dir:
         assert isinstance(res, Path)
     else:
-        assert isinstance(res, str)
+        if callback is not None:
+            assert isinstance(res, GenericStructure)
+        else:
+            assert isinstance(res, str)
 
 
 @pytest.mark.parametrize("ids", [(PDB_IDS[0][0],)])

@@ -39,6 +39,8 @@ SERVICES = (
     # Three argument group
     ("interface", "entry_id", "assembly_id", "interface_id"),
 )
+_RT = t.TypeVar("_RT", str, bytes)
+_T = t.TypeVar("_T")
 
 
 def url_getters() -> dict[str, UrlGetter]:
@@ -55,18 +57,18 @@ def url_getters() -> dict[str, UrlGetter]:
         return eval(fn)  # pylint: disable=eval-used
 
     def files_url(entry_id, fmt):
-        if fmt in ['pdb', 'cif', 'pdb.gz', 'cif.gz']:
+        if fmt in ["pdb", "cif", "pdb.gz", "cif.gz"]:
             base = "https://files.rcsb.org/download/"
-        elif fmt in ['mmtf', 'mmtf.gz']:
-            fmt = 'mmtf.gz'
+        elif fmt in ["mmtf", "mmtf.gz"]:
+            fmt = "mmtf.gz"
             base = "https://mmtf.rcsb.org/v1.0/full"
         else:
-            raise FormatError(f'Unrecognized file format {fmt} for entry {entry_id}')
-        url = f'{base}/{entry_id}.{fmt}'
+            raise FormatError(f"Unrecognized file format {fmt} for entry {entry_id}")
+        url = f"{base}/{entry_id}.{fmt}"
         return url
 
     result = {x[0]: url_getter_factory(*x) for x in SERVICES}
-    result['files'] = files_url
+    result["files"] = files_url
 
     return result
 
@@ -97,7 +99,7 @@ class PDB(ApiBase):
         """
         :return: A list of formats supported by :meth:`fetch_structures`.
         """
-        return ['.pdb', '.cif', '.mmtf']
+        return [".pdb", ".cif", ".mmtf"]
 
     def fetch_structures(
         self,
@@ -106,7 +108,8 @@ class PDB(ApiBase):
         fmt: str = "cif",
         *,
         overwrite: bool = False,
-    ) -> tuple[list[tuple[tuple[str, str], Path | str]], list[tuple[str, str]]]:
+        callback: abc.Callable[[_RT], _T] | None = None,
+    ) -> tuple[list[tuple[tuple[str, str], Path | _RT | _T]], list[tuple[str, str]]]:
         """
         Fetch structure files from the PDB resources.
 
@@ -122,26 +125,37 @@ class PDB(ApiBase):
         .. seealso::
             :func:`fetch_files lXtractor.ext.base.fetch_files`.
 
+        .. hint::
+            Use :meth:`lXtractor.core.structure.GenericStructure.read` as
+            callback to parse fetched structures right away.
+
+        .. hint::
+            Callbacks will apply in parallel if :attr:`num_threads` is above 1.
+
         :param ids: An iterable over PDB IDs.
         :param dir_: Dir to save files to. If ``None``, will keep downloaded
             files as strings.
         :param fmt: Structure format. See :meth:`supported_str_formats`.
             Adding `.gz` will fetch gzipped files.
         :param overwrite: Overwrite existing files if `dir_` is provided.
+        :param callback: If `dir_` is ommited, fetching will result in a
+            ``bytes`` or a ``str``. Callback is a single-argument callable
+            accepting the fetched content and returning anything.
         :return: A tuple with fetched results and the remaining IDs.
             The former is a list of tuples, where the first element
             is the original ID, and the second element is either the path to
             a downloaded file or downloaded data as string. The order
             may differ. The latter is a list of IDs that failed to fetch.
         """
-        if fmt == 'mmtf':
-            fmt += '.gz'
+        if fmt == "mmtf":
+            fmt += ".gz"
 
         return fetch_files(
-            self.url_getters['files'],
+            self.url_getters["files"],
             zip(ids, repeat(fmt)),
             fmt,
             dir_,
+            callback=callback,
             overwrite=overwrite,
             max_trials=self.max_trials,
             num_threads=self.num_threads,

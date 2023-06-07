@@ -260,12 +260,12 @@ def fetch_files(
     dir_: Path | None,
     *,
     fname_idx: int = 0,
-    callback: abc.Callable[[str], T] | None = None,
+    callback: abc.Callable[[str | bytes], T] | None = None,
     overwrite: bool = False,
     max_trials: int = 1,
     num_threads: int | None = None,
     verbose: bool = False,
-) -> tuple[list[tuple[_U, _F]], list[_U]]:
+) -> tuple[list[tuple[_U, _F] | tuple[_U, T]], list[_U]]:
     """
     :param url_getter: A callable accepting two or more strings and returning
         a valid url to fetch. The last argument is reserved for `fmt`.
@@ -279,8 +279,8 @@ def fetch_files(
     :param fname_idx: If an element in `url_getter_args` is a tuple, this
         argument is used to index this tuple to construct a file name that is
         used to save file / check if such file exists.
-    :param callback: A callable to parse the text right after fetching, e.g.,
-        ``json.loads``. It's only used if the `dir_` is ``None``.
+    :param callback: A callable to parse content right after fetching, e.g.,
+        ``json.loads``. It's only used if `dir_` is not provided.
     :param overwrite: Overwrite existing files if `dir_` is provided.
     :param max_trials: Max number of fetching attempts for a given id.
     :param num_threads: The number of threads to use for parallel requests.
