@@ -24,7 +24,7 @@ from lXtractor.core.ligand import find_ligands, Ligand
 from lXtractor.util.structure import (
     filter_selection,
     filter_any_polymer,
-    load_structure,
+    load_structure, save_structure,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -240,14 +240,14 @@ class GenericStructure:
         """
         return cls(bst.AtomArray(0), pdb_id, False)
 
-    def write(self, path: Path | PathLike | str):
+    def write(self, path: Path) -> Path:
         """
-        A one-line wrapper around :func:`biotite.structure.io.save_structure`.
+        A one-line wrapper around :func:`lXtractor.util.structure.save_structure`.
 
         :param path: A path or a path-like object compatible with :func:`open`.
-        :return: Nothing
+        :return: Path if writing was successful.
         """
-        strio.save_structure(path, self.array)
+        return save_structure(self.array, path)
 
     def get_sequence(self) -> abc.Generator[tuple[str, str, int]]:
         """

@@ -580,6 +580,7 @@ class ChainStructure:
         *,
         dump_names: _DumpNames = DumpNames,
         search_children: bool = False,
+        **kwargs
     ) -> Self:
         """
         Read the chain structure from a file disk dump.
@@ -590,6 +591,8 @@ class ChainStructure:
         :param dump_names: File names container.
         :param search_children: Recursively search for sub-segments and
             populate :attr:`children`.
+        :param kwargs: Passed to
+            :meth:`lXtractor.core.structure.GenericStructure.read`.
         :return: An initialized chain structure.
         """
 
@@ -604,7 +607,7 @@ class ChainStructure:
                 f"{base_dir} must contain {bname}.fmt "
                 f'where "fmt" is supported structure format'
             )
-        structure = GenericStructure.read(base_dir / stems[bname])
+        structure = GenericStructure.read(base_dir / stems[bname], **kwargs)
 
         seq = ChainSequence.read(base_dir, dump_names=dump_names, search_children=False)
         pdb_id = seq.meta.get(MetaNames.pdb_id, EMPTY_PDB_ID)

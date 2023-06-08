@@ -37,6 +37,7 @@ __all__ = (
     "get_missing_atoms",
     "get_observed_atoms_frac",
     "load_structure",
+    "save_structure"
 )
 LOGGER = logging.getLogger(__name__)
 
