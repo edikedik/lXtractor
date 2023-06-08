@@ -340,7 +340,8 @@ class GenericStructure:
         """
         ids = self.altloc_ids
         if len(ids) == 1:
-            return self
+            yield self
+            return
 
         no_alt_mask = np.isin(self.array.altloc_id, EMPTY_ALTLOC)
         for altloc in ids[1:]:

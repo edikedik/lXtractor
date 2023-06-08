@@ -46,10 +46,23 @@ def test_split_chains(simple_structure):
 @pytest.mark.parametrize(
     "inp", [(DATA / "1aki.pdb", [""]), (DATA / "1rdq.mmtf", ["", "A", "B"])]
 )
-def test_split_altloc(inp):
+def test_read_altloc(inp):
     path, expected_ids = inp
     s = GenericStructure.read(path, altloc=True)
     assert s.altloc_ids == expected_ids
+
+
+@pytest.mark.parametrize(
+    "inp", [(DATA / "1aki.pdb", 1), (DATA / "1rdq.mmtf", 2)]
+)
+def test_split_altloc(inp):
+    path, n_chains = inp
+    s = GenericStructure.read(path, altloc=True)
+    chains = list(s.split_altloc())
+    assert len(chains) == n_chains
+    s = GenericStructure.read(path, altloc=False)
+    chains = list(s.split_altloc())
+    assert len(chains) == 1
 
 
 def test_sequence(simple_structure):
