@@ -29,8 +29,6 @@ DATA = Path(__file__).parent / "data"
         (DATA / "4hvd.mmtf.gz", {("933", ("A",)), ("PHU", ("A",))}),
     ],
 )
-
-
 def test_find_ligands(path, expected):
     s = GenericStructure.read(path)
     ligands = s.ligands
