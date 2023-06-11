@@ -269,28 +269,28 @@ class GenericStructure:
             yield one_letter_code, atom.res_name, atom.res_id
 
     def subset_with_ligands(self, mask: np.ndarray, cfg=LigandConfig()) -> Self:
-    """
-    Create a sub-structure preserving connected :attr:`ligands`.
+        """
+        Create a sub-structure preserving connected :attr:`ligands`.
 
-    :param mask: Boolean mask, ``True`` for atoms in :meth:`array`, used
-        to create a sub-structure.
-    :param cfg: Settings defining when a ligand is treated as "connected"
-        to a subset of atoms defined by `mask`.
-    :return: A new instance with atoms defined by `mask` and connected
-        ligands.
-    """
-    ligands = list(
-        filter(
-            lambda lig: lig.is_locally_connected(mask, cfg),
-            self.ligands,
+        :param mask: Boolean mask, ``True`` for atoms in :meth:`array`, used
+            to create a sub-structure.
+        :param cfg: Settings defining when a ligand is treated as "connected"
+            to a subset of atoms defined by `mask`.
+        :return: A new instance with atoms defined by `mask` and connected
+            ligands.
+        """
+        ligands = list(
+            filter(
+                lambda lig: lig.is_locally_connected(mask, cfg),
+                self.ligands,
+            )
         )
-    )
-    ligands_mask = reduce(
-        op.or_,
-        (lig.mask for lig in ligands),
-        np.zeros_like(self.array.res_id, dtype=bool),
-    )
-    return self.__class__(self.array[mask | ligands_mask], self.pdb_id, True)
+        ligands_mask = reduce(
+            op.or_,
+            (lig.mask for lig in ligands),
+            np.zeros_like(self.array.res_id, dtype=bool),
+        )
+        return self.__class__(self.array[mask | ligands_mask], self.pdb_id, True)
 
     def split_chains(
             self,
