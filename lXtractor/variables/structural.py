@@ -14,6 +14,7 @@ import numpy as np
 from more_itertools import unique_justseen
 from toolz import curry, pipe
 
+from lXtractor.core.config import LigandConfig
 from lXtractor.core.exceptions import FailedCalculation, InitError
 from lXtractor.util.structure import calculate_dihedral
 from lXtractor.variables.base import (
@@ -591,10 +592,11 @@ class LigandNames(StructureVariable):
             if self.a is not None
             else residue_mask(self.p, obj.array, mapping)
         )
+        cfg = LigandConfig(min_atom_connections=1, min_res_connections=0)
         names = []
         for lig in obj.ligands:
             try:
-                if lig.is_locally_connected(mask):
+                if lig.is_locally_connected(mask, cfg):
                     names.append(lig.res_name)
             except IndexError as e:
                 raise FailedCalculation(

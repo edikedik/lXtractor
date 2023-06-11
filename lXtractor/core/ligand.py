@@ -158,21 +158,20 @@ class Ligand:
         return self.array.res_id[0]
 
     def is_locally_connected(self, mask: np.ndarray, cfg=LigandConfig()) -> bool:
-    """
-    Check whether this ligand is connected to a subset of parent atoms.
+        """
+        Check whether this ligand is connected to a subset of parent atoms.
 
-    :param mask: A boolean mask to filter parent atoms.
-    :param cfg: Settings defining when a ligand is treated as "connected"
-        to a subset of atoms defined by `mask`.
-    :return: ``True`` if the ligand has at least `min_atom_connections` to
-        :attr:`parent` substructure imposed by the provided `mask`.
-    """
-
-    contact_atoms = self.parent.array[mask & self.contact_mask]
-    return (
-        len(contact_atoms) >= cfg.min_atom_connections
-        and bst.get_residue_count(contact_atoms) >= cfg.min_res_connections
-    )
+        :param mask: A boolean mask to filter parent atoms.
+        :param cfg: Settings defining when a ligand is treated as "connected"
+            to a subset of atoms defined by `mask`.
+        :return: ``True`` if the ligand has at least `min_atom_connections` to
+            :attr:`parent` substructure imposed by the provided `mask`.
+        """
+        contact_atoms = self.parent.array[mask & self.contact_mask]
+        return (
+            len(contact_atoms) >= cfg.min_atom_connections
+            and bst.get_residue_count(contact_atoms) >= cfg.min_res_connections
+        )
 
 
 def find_ligands(
