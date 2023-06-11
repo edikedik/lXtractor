@@ -358,8 +358,6 @@ class ChainInitializer:
         num_proc_map_numbering: int = 1,
         **kwargs,
     ) -> ChainList[Chain]:
-        from lXtractor.core.chain import Chain
-
         """
         Initialize :class:`Chain`'s from mapping between sequences and
         structures.
@@ -425,6 +423,9 @@ class ChainInitializer:
         :param kwargs: Passed to :meth:`Chain.add_structure`.
         :return: A list of initialized chains.
         """
+
+        from lXtractor.core.chain import Chain
+
         # Process keys and values
         keys = self.from_iterable(
             m,
