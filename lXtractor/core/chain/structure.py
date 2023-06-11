@@ -603,7 +603,7 @@ class ChainStructure:
         variables = None
 
         bname = dump_names.structure_base_name
-        stems = {p.stem: p.name for p in files.values()}
+        stems = {p.name.split('.')[0]: p.name for p in files.values()}
         if bname not in stems:
             raise InitError(
                 f"{base_dir} must contain {bname}.fmt "
@@ -636,17 +636,24 @@ class ChainStructure:
     def write(
         self,
         base_dir: Path,
-        fmt: str = "cif",
+        fmt: str = "mmtf.gz",
         *,
         dump_names: _DumpNames = DumpNames,
         write_children: bool = False,
     ):
         """
-        Dump chain structure to disk.
+        Write this object into a directory. It will create the following files:
+
+        #. meta.tsv
+        #. sequence.tsv
+        #. structure.fmt
+
+        Existing files will be overwritten.
 
         :param base_dir: A writable dir to save files to.
-        :param fmt: The format of the structure to use
-            -- any format supported by `biotite`.
+        :param fmt: Structure format to use. Supported formats are "pdb", "cif",
+            and "mmtf". Adding ".gz" (eg, "mmtf.gz") will lead to gzip
+            compression.
         :param dump_names: File names container.
         :param write_children: Recursively write :attr:`children`.
         :return: Nothing.

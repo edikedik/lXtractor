@@ -105,23 +105,24 @@ def test_iterchildren(simple_chain_structure):
     assert levels == [[child1], [child2]]
 
 
-def test_io(simple_chain_structure):
+@pytest.mark.parametrize('fmt', ['cif', 'cif.gz', 'mmtf.gz'])
+def test_io(simple_chain_structure, fmt):
     s = simple_chain_structure
     child1 = s.spawn_child(1, 10)
 
     with TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        s.write(tmp_path, write_children=True)
+        tmp = Path(tmp)
+        s.write(tmp, fmt=fmt, write_children=True)
 
-        files = get_files(tmp_path)
-        dirs = get_dirs(tmp_path)
+        files = get_files(tmp)
+        dirs = get_dirs(tmp)
 
-        assert f'{DumpNames.structure_base_name}.cif' in files
+        assert f'{DumpNames.structure_base_name}.{fmt}' in files
         assert DumpNames.sequence in files
         assert DumpNames.meta in files
         assert DumpNames.segments_dir in dirs
 
-        s_r = ChainStructure.read(tmp_path, search_children=True)
+        s_r = ChainStructure.read(tmp, search_children=True)
         assert s_r.seq is not None
         assert s_r.pdb.structure is not None
         assert s_r.pdb.id == s.pdb.id

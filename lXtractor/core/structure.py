@@ -193,7 +193,7 @@ class GenericStructure:
     def read(
         cls,
         inp: IOBase | Path | str | bytes,
-        path2id: abc.Callable[[Path], str] = lambda p: p.stem,
+        path2id: abc.Callable[[Path], str] = lambda p: p.name.split('.')[0],
         structure_id: str = EMPTY,
         ligands: bool = True,
         altloc: bool = True,
