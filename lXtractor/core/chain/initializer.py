@@ -92,10 +92,15 @@ def _read_path(
     if suffix in supported_seq_ext:
         return ChainSequence.from_file(path)
     if suffix in supported_str_ext:
-        return [
-            ChainStructure.from_structure(c)
-            for c in GenericStructure.read(path).split_chains(polymer=True)
-        ]
+        return list(
+            map(
+                ChainStructure.from_structure,
+                chain.from_iterable(
+                    c.split_altloc()
+                    for c in GenericStructure.read(path).split_chains(polymer=True)
+                ),
+            )
+        )
     if tolerate_failures:
         return None
     raise InitError(f"Suffix {suffix} of the path {path} is not supported")
