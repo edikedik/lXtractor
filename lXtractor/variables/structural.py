@@ -14,7 +14,6 @@ import numpy as np
 from more_itertools import unique_justseen
 from toolz import curry, pipe
 
-from lXtractor.core.config import LigandConfig
 from lXtractor.core.exceptions import FailedCalculation, InitError
 from lXtractor.util.structure import calculate_dihedral
 from lXtractor.variables.base import (
@@ -587,7 +586,6 @@ class LigandNames(StructureVariable):
         return str
 
     def calculate(self, obj: GenericStructure, mapping: MappingT | None = None) -> str:
-        cfg = LigandConfig(min_atom_connections=1, min_res_connections=0)
         mask = (
             atom_mask(self.p, self.a, obj.array, mapping)
             if self.a is not None
@@ -596,8 +594,8 @@ class LigandNames(StructureVariable):
         names = []
         for lig in obj.ligands:
             try:
-                if lig.is_locally_connected(mask, cfg):
-    names.append(lig.res_name)
+                if lig.is_locally_connected(mask):
+                    names.append(lig.res_name)
             except IndexError as e:
                 raise FailedCalculation(
                     f"Failed to apply obtained position mask derived from {obj.pdb_id} "

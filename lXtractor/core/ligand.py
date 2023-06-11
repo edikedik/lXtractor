@@ -167,6 +167,7 @@ class Ligand:
     :return: ``True`` if the ligand has at least `min_atom_connections` to
         :attr:`parent` substructure imposed by the provided `mask`.
     """
+
     contact_atoms = self.parent.array[mask & self.contact_mask]
     return (
         len(contact_atoms) >= cfg.min_atom_connections
