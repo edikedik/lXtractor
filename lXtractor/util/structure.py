@@ -37,7 +37,7 @@ __all__ = (
     "get_missing_atoms",
     "get_observed_atoms_frac",
     "load_structure",
-    "save_structure"
+    "save_structure",
 )
 LOGGER = logging.getLogger(__name__)
 
@@ -271,7 +271,7 @@ def filter_ligand(a: bst.AtomArray) -> np.ndarray:
     :return: A boolean mask ``True`` for ligand atoms.
     """
     is_polymer = filter_any_polymer(a)
-    is_solvent = filter_solvent_extended(a) | (np.vectorize(len)(a.res_name) != 3)
+    is_solvent = filter_solvent_extended(a) | (np.vectorize(len)(a.res_name) == 2)
     return ~(is_polymer | is_solvent) & a.hetero
 
 

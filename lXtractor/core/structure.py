@@ -9,22 +9,22 @@ import typing as t
 from collections import abc
 from functools import reduce
 from io import IOBase
-from os import PathLike
 from pathlib import Path
 
 import biotite.structure as bst
-import biotite.structure.io as strio
 import numpy as np
 from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
 from lXtractor.core.base import AminoAcidDict
+from lXtractor.core.config import LigandConfig
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
 from lXtractor.core.ligand import find_ligands, Ligand
 from lXtractor.util.structure import (
     filter_selection,
     filter_any_polymer,
-    load_structure, save_structure,
+    load_structure,
+    save_structure,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -268,34 +268,37 @@ class GenericStructure:
                 one_letter_code = "X"
             yield one_letter_code, atom.res_name, atom.res_id
 
-    def subset_with_ligands(self, mask: np.ndarray, min_connections: int = 1) -> Self:
-        """
-        Create a sub-structure preserving connected :attr:`ligands`.
+    def subset_with_ligands(self, mask: np.ndarray, cfg=LigandConfig()) -> Self:
+    """
+    Create a sub-structure preserving connected :attr:`ligands`.
 
-        :param mask: Boolean mask ``True`` for atoms in :meth:`array` to create
-            a sub-structure from.
-        :param min_connections: Minimum number of connections required to keep
-            the ligand.
-        :return: A new instance with atoms defined by `mask` and connected
-            ligands.
-        """
-        ligands = filter(
-            lambda lig: lig.is_locally_connected(mask, min_connections), self.ligands
+    :param mask: Boolean mask, ``True`` for atoms in :meth:`array`, used
+        to create a sub-structure.
+    :param cfg: Settings defining when a ligand is treated as "connected"
+        to a subset of atoms defined by `mask`.
+    :return: A new instance with atoms defined by `mask` and connected
+        ligands.
+    """
+    ligands = list(
+        filter(
+            lambda lig: lig.is_locally_connected(mask, cfg),
+            self.ligands,
         )
-        ligands_mask = reduce(
-            op.or_,
-            (lig.mask for lig in ligands),
-            np.zeros_like(self.array.res_id, dtype=bool),
-        )
-        return self.__class__(self.array[mask | ligands_mask], self.pdb_id, True)
+    )
+    ligands_mask = reduce(
+        op.or_,
+        (lig.mask for lig in ligands),
+        np.zeros_like(self.array.res_id, dtype=bool),
+    )
+    return self.__class__(self.array[mask | ligands_mask], self.pdb_id, True)
 
     def split_chains(
-        self,
-        *,
-        copy: bool = False,
-        polymer: bool = False,
-        ligands: bool = True,
-        min_connections: int = 1,
+            self,
+            *,
+            copy: bool = False,
+            polymer: bool = False,
+            ligands: bool = True,
+            ligand_cfg: LigandConfig = LigandConfig(),
     ) -> abc.Iterator[Self]:
         """
         Split into separate chains. Splitting is done using
@@ -308,8 +311,8 @@ class GenericStructure:
             chain annotation.
         :param polymer: Use only polymer chains for splitting.
         :param ligands: A flag indicating whether to preserve connected ligands.
-        :param min_connections: Minimum number of connections required to keep
-            the ligand.
+        :param ligand_cfg: Settings defining when a ligand is treated as "connected"
+            to a subset of chain atoms.
         :return: An iterable over chains found in :attr:`array`.
         """
         # TODO: the chains are subsetted from copy and are not copies themselves
@@ -319,7 +322,7 @@ class GenericStructure:
         for chain_id in sorted(chain_ids):
             mask = a.chain_id == chain_id
             if ligands:
-                yield self.subset_with_ligands(mask, min_connections)
+                yield self.subset_with_ligands(mask, ligand_cfg)
             else:
                 yield self.__class__(a[mask], self.pdb_id)
 
@@ -351,7 +354,11 @@ class GenericStructure:
             yield self.__class__(a, self.pdb_id, ligands=bool(self.ligands))
 
     def extract_segment(
-        self, start: int, end: int, ligands: bool = True, min_connections: int = 1
+            self,
+            start: int,
+            end: int,
+            ligands: bool = True,
+            ligand_cfg: LigandConfig = LigandConfig(),
     ) -> Self:
         """
         Create a sub-structure encompassing some continuous segment bounded by
@@ -360,8 +367,8 @@ class GenericStructure:
         :param start: Residue number to start from (inclusive).
         :param end: Residue number to stop at (inclusive).
         :param ligands: A flag indicating whether to preserve connected ligands.
-        :param min_connections: Minimum number of connections required to keep
-            the ligand.
+        :param ligand_cfg: Settings defining when a ligand is treated as "connected"
+            to a subset of chain atoms.
         :return: A new Generic structure with residues in ``[start, end]``.
         """
         if self.is_empty:
@@ -383,7 +390,7 @@ class GenericStructure:
             )
         mask = (self.array.res_id >= start) & (self.array.res_id <= end)
         if ligands:
-            return self.subset_with_ligands(mask, min_connections)
+            return self.subset_with_ligands(mask, ligand_cfg)
         return self.__class__(self.array[mask], self.pdb_id)
 
     def extract_positions(
@@ -391,7 +398,7 @@ class GenericStructure:
         pos: abc.Sequence[int],
         chain_ids: abc.Sequence[str] | str | None = None,
         ligands: bool = True,
-        min_connections: int = 1,
+            ligand_cfg: LigandConfig = LigandConfig()
     ) -> Self:
         """
         Extract specific positions from this structure.
@@ -399,8 +406,8 @@ class GenericStructure:
         :param pos: A sequence of positions (res_id) to extract.
         :param chain_ids: Optionally, a single chain ID or a sequence of such.
         :param ligands: A flag indicating whether to preserve connected ligands.
-        :param min_connections: Minimum number of connections required to keep
-            the ligand.
+        :param ligand_cfg: Settings defining when a ligand is treated as "connected"
+            to a subset of chain atoms.
         :return: A new instance with extracted residues.
         """
 
@@ -415,7 +422,7 @@ class GenericStructure:
                 chain_ids = [chain_ids]
             mask &= np.isin(a.chain_id, chain_ids)
         if ligands:
-            return self.subset_with_ligands(mask, min_connections)
+            return self.subset_with_ligands(mask, ligand_cfg)
         return self.__class__(a[mask], self.pdb_id)
 
     def superpose(

@@ -157,19 +157,22 @@ class Ligand:
         """
         return self.array.res_id[0]
 
-    def is_locally_connected(self, mask: np.ndarray, min_connections: int = 1) -> bool:
-        """
-        Check whether this ligand is connected to a subset of parent atoms.
+    def is_locally_connected(self, mask: np.ndarray, cfg=LigandConfig()) -> bool:
+    """
+    Check whether this ligand is connected to a subset of parent atoms.
 
-        :param mask: A boolean mask to filter parent atoms.
-        :param min_connections: A minimum number of connections.
-        :return: ``True`` if the ligand has at least `min_connections` to
-            :attr:`parent` substructure imposed by the provided `mask`.
-        """
-        counts = np.bincount(self.parent_contacts[mask])
-        if len(counts) == 1:
-            return False
-        return counts[1:].sum() >= min_connections
+    :param mask: A boolean mask to filter parent atoms.
+    :param cfg: Settings defining when a ligand is treated as "connected"
+        to a subset of atoms defined by `mask`.
+    :return: ``True`` if the ligand has at least `min_atom_connections` to
+        :attr:`parent` substructure imposed by the provided `mask`.
+    """
+
+    contact_atoms = self.parent.array[mask & self.contact_mask]
+    return (
+        len(contact_atoms) >= cfg.min_atom_connections
+        and bst.get_residue_count(contact_atoms) >= cfg.min_res_connections
+    )
 
 
 def find_ligands(
@@ -181,14 +184,22 @@ def find_ligands(
     part and non-ligand part. Namely, the ligand part comprises all non-solvent
     residues, while residues of any macromolecular polymeric entity make up for
     a non-ligand part. Then, for each residue within the "ligand part", it
-    calculates the distance to the atoms of the "non-ligand part." Finally,
-    finding contacts depends on the threshold values specified by `ts`.
+    calculates the distance to the atoms of the "non-ligand part."
+
+    Finally, a discovered ligand is retained if it has:
+
+    #. Enough atoms.
+    #. Enough connected structure atoms.
+    #. Enough connected structure residues.
+
+    What "enough" means is defined by the supplied `cfg`.
 
     .. seealso::
         :func:`lXtractor.util.structure.filter_ligand`
         :func:`lXtractor.util.structure.filter_solvent_extended`
         :func:`lXtractor.util.structure.filter_any_polymer`
         :func:`lXtractor.util.structure.find_contacts`
+        :class:`lXtractor.core.config.LigandConfig`
 
     :param structure: Arbitrary (generic) structure.
     :param cfg: Ligand detection config.
@@ -201,9 +212,12 @@ def find_ligands(
     if is_ligand.sum() == 0:
         return
 
+    # Iter over all residues in a structure
     for m_res in iter_residue_masks(a):
+        # A mask that is a single ligand residue
         m_ligand = is_ligand & m_res
 
+        # Check whether ligand has enough atoms
         if np.sum(m_ligand) < cfg.min_atoms:
             continue
 
@@ -211,7 +225,13 @@ def find_ligands(
         contacts[is_ligand | is_solvent] = 0
         m_contacts = contacts != 0
 
-        if np.sum(contacts > 0) < cfg.min_connections:
+        # The number of residues connected to a ligand
+        num_residues = bst.get_residue_count(a[m_contacts])
+
+        if (
+            np.sum(m_contacts) < cfg.min_atom_connections
+            or num_residues < cfg.min_res_connections
+        ):
             continue
 
         name = a[m_res].res_name[0]

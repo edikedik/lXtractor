@@ -47,7 +47,6 @@ SOLVENTS = (
     "7PE",
     "ACT",
     "ACT",
-    "BEN",
     "BME",
     "BOG",
     "BTB",
@@ -72,7 +71,6 @@ SOLVENTS = (
     "GG5",
     "GLC",
     "GOL",
-    "HC4",
     "HOH",
     "HSJ",
     "IOD",
@@ -88,6 +86,7 @@ SOLVENTS = (
     "MSE",
     "MXE",
     "MYR",
+    "HN4",
     "NO3",
     "OCT",
     "P4C",
@@ -99,7 +98,6 @@ SOLVENTS = (
     "PG4",
     "PGE",
     "PGF",
-    "PHU",
     "PO4",
     "PTL",
     "SGM",
@@ -327,9 +325,11 @@ class LigandConfig:
     bond_thresholds = BondThresholds()
     #: The min number of a ligand's atoms.
     min_atoms: int = 5
-    #: The min number of a structure's atoms forming at least non-covalent bonds
+    #: The min number of a structure's atoms forming at least bonds
     #: with a ligand.
-    min_connections: int = 5
+    min_atom_connections: int = 5
+    #: The min number of a structure's residues forming contact with a ligand.
+    min_res_connections: int = 3
 
 
 DumpNames = _DumpNames()
