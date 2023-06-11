@@ -122,16 +122,6 @@ class PDB(StructureApiBase):
             bool, {x[2]: (x[3] if len(x) == 4 else "") for x in lines if len(x) >= 3}
         )
 
-    # @staticmethod
-    # def list_services() -> list[tuple[str, ...]]:
-    #     """
-    #     :return: List of services to be used with :meth:`fetch_info`. Each entry
-    #         is a tuple where the first element is the service name and the rest
-    #         are the argument names required when using a service
-    #         (``url_getters``).
-    #     """
-    #     return list(SERVICES)
-
 
 def filter_by_method(
     pdb_ids: abc.Iterable[str],
