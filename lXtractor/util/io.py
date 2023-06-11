@@ -548,7 +548,7 @@ def parse_suffix(path: Path) -> str:
     elif len(suffixes) == 1:
         suffix = suffixes.pop()
     else:
-        suffix = ".".join(suffixes[-2:])
+        suffix = "".join(suffixes[-2:])
     return suffix
 
 

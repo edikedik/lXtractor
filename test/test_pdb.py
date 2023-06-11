@@ -47,7 +47,7 @@ def test_fetch(ids, fmt, dir_, num_threads, parse):
 
 
 @pytest.mark.parametrize("ids", [(PDB_IDS[0][0],)])
-@pytest.mark.parametrize("fmt", ["pdb", "cif", "mmtf", "pdb.gz"])
+@pytest.mark.parametrize("fmt", ["pdb", "cif", "mmtf", "mmtf.gz", "pdb.gz"])
 def test_fetch_fmts(ids, fmt):
     with TemporaryDirectory() as dir_:
         dir_ = Path(dir_)
@@ -61,7 +61,9 @@ def test_fetch_fmts(ids, fmt):
         for inp_id in ids:
             if fmt == "mmtf":
                 fmt += ".gz"
-            assert f"{inp_id}.{fmt}" in files
+            fname = f"{inp_id}.{fmt}"
+            assert fname in files
+            assert isinstance(GenericStructure.read(files[fname]), GenericStructure)
 
 
 @pytest.mark.parametrize("ids", PDB_IDS)

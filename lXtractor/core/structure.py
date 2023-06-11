@@ -196,7 +196,7 @@ class GenericStructure:
         path2id: abc.Callable[[Path], str] = lambda p: p.stem,
         structure_id: str = EMPTY,
         ligands: bool = True,
-        altloc: bool = False,
+        altloc: bool = True,
         **kwargs,
     ) -> Self:
         """

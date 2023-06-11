@@ -189,6 +189,8 @@ class StructureApiBase(ApiBase):
         if fmt == "mmtf":
             decode = False
             fmt += ".gz"
+        elif fmt == "mmtf.gz":
+            decode = False
         else:
             decode = True
 
