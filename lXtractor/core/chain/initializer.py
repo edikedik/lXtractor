@@ -484,7 +484,7 @@ class ChainInitializer:
                 kwargs["map_to_seq"] = False
             for c, ss in items:
                 for s in ss:
-                    c.add_structure(s, **kwargs)
+                    c.add_structure(s, align_method=biotite_align, **kwargs)
         else:
             map_name = kwargs.get("map_name") or SeqNames.map_canonical
 

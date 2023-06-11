@@ -415,11 +415,6 @@ class Chain:
             structure.seq.map_numbering(self.seq, name=map_name, **kwargs)
         self.structures.append(structure)
         if add_to_children and len(self.children) > 0:
-            # if not map_to_seq:
-            #     raise ValueError(
-            #         'Propagating a structure into a child tree requires '
-            #         '`map_to_seq==True`'
-            #     )
             for c in self.children:
                 sub = structure.spawn_child(
                     c.seq.start, c.seq.end, c.name, map_from=map_name, keep=False
