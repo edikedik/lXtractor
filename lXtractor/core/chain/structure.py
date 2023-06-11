@@ -212,10 +212,12 @@ class ChainStructure:
     @property
     def id(self) -> str:
         """
-        :return: ChainStructure identifier derived from its :attr:`seq` ID.
+        :return: ChainStructure identifier in the format
+            "ChainStructure({seq.id}|{alt_locs})<-(parent.id)".
         """
+        alt_locs = self.pdb.structure.id.split('|')[-1]
         parent = f'<-({self.parent.id})' if self.parent else ''
-        return f'ChainStructure({self.seq.id}){parent}'
+        return f'ChainStructure({self.seq.id}|{alt_locs}){parent}'
 
     @property
     def array(self) -> bst.AtomArray:

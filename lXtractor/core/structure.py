@@ -87,13 +87,17 @@ class GenericStructure:
         return hash(self.pdb_id) + hash(atoms)
 
     def __str__(self) -> str:
+        return self.id
+
+    def __repr__(self) -> str:
+        return self.id
+
+    @property
+    def id(self) -> str:
         chains_pol = ",".join(sorted(self.chain_ids_polymer))
         chains_lig = ",".join(sorted(self.chain_ids_ligand))
         altloc_ids = ",".join(filter(lambda x: x not in EMPTY_ALTLOC, self.altloc_ids))
         return f"{self.pdb_id}:{chains_pol};{chains_lig}|{altloc_ids}"
-
-    def __repr__(self) -> str:
-        return str(self)
 
     @property
     def array(self) -> bst.AtomArray:
