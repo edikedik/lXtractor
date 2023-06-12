@@ -73,6 +73,12 @@ def _validate_chain(pdb: PDB_Chain):
             f"Invalid chain {pdb}. Actual chain {chain_id} does not match "
             f"chain attribute {pdb.chain}"
         )
+    alt_loc = pdb.structure.altloc_ids
+    if len(alt_loc) > 1:
+        raise InitError(
+            f"Invalid chain {pdb}: the structure must contain a single alt loc; "
+            f"found {len(alt_loc)} {alt_loc}"
+        )
 
 
 class ChainStructure:
@@ -138,6 +144,8 @@ class ChainStructure:
             chain structure from a peculiar subset of atoms.
         :raise InitError: If invalid (e.g., multi-chain structure) is provided.
         """
+        from lXtractor.variables import Variables
+
         #: A container with PDB ID, PDB Chain, and parsed structure.
         if pdb_structure is None:
             pdb_structure = GenericStructure.make_empty(pdb_id)
@@ -153,8 +161,6 @@ class ChainStructure:
 
         #: Variables assigned to this structure. Each should be of a
         #: :class:`lXtractor.variables.base.StructureVariable`.
-        from lXtractor.variables import Variables
-
         self.variables: Variables = variables or Variables()
 
         #: Any sub-structures descended from this one,
@@ -183,6 +189,7 @@ class ChainStructure:
 
         self.seq.meta[MetaNames.pdb_id] = pdb_id
         self.seq.meta[MetaNames.pdb_chain] = pdb_chain
+        self.seq.meta[MetaNames.altloc] = self.altloc
 
     def __str__(self) -> str:
         return self.id
@@ -274,7 +281,17 @@ class ChainStructure:
 
     @property
     def ligands(self) -> list[Ligand]:
+        """
+        :return: A list of connected ligands.
+        """
         return self.pdb.structure.ligands
+
+    @property
+    def altloc(self) -> str:
+        """
+        :return: An altloc ID.
+        """
+        return self.pdb.structure.altloc_ids[0]
 
     @classmethod
     def from_structure(
