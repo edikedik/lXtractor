@@ -201,7 +201,7 @@ class GenericStructure:
     def read(
         cls,
         inp: IOBase | Path | str | bytes,
-        path2id: abc.Callable[[Path], str] = lambda p: p.name.split('.')[0],
+        path2id: abc.Callable[[Path], str] = lambda p: p.name.split(".")[0],
         structure_id: str = EMPTY,
         ligands: bool = True,
         altloc: bool = False,
@@ -305,12 +305,12 @@ class GenericStructure:
         return self.__class__(self.array[mask | ligands_mask], self.pdb_id, True)
 
     def split_chains(
-            self,
-            *,
-            copy: bool = False,
-            polymer: bool = False,
-            ligands: bool = True,
-            ligand_cfg: LigandConfig = LigandConfig(),
+        self,
+        *,
+        copy: bool = False,
+        polymer: bool = False,
+        ligands: bool = True,
+        ligand_cfg: LigandConfig = LigandConfig(),
     ) -> abc.Iterator[Self]:
         """
         Split into separate chains. Splitting is done using
@@ -366,11 +366,11 @@ class GenericStructure:
             yield self.__class__(a, self.pdb_id, ligands=bool(self.ligands))
 
     def extract_segment(
-            self,
-            start: int,
-            end: int,
-            ligands: bool = True,
-            ligand_cfg: LigandConfig = LigandConfig(),
+        self,
+        start: int,
+        end: int,
+        ligands: bool = True,
+        ligand_cfg: LigandConfig = LigandConfig(),
     ) -> Self:
         """
         Create a sub-structure encompassing some continuous segment bounded by
@@ -393,8 +393,21 @@ class GenericStructure:
         offset_self = abs(self_start) + 1 if self_start <= 0 else 0
         offset_start = abs(start) + 1 if start <= 0 else 0
         offset = max(offset_start, offset_self)
-        seg_self = lxs.Segment(self_start + offset, self_end + offset)
-        seg_sub = lxs.Segment(start + offset, end + offset)
+        self_start_, self_end_, start_, end_ = map(
+            lambda x: x + offset, [self_start, self_end, start, end]
+        )
+        if self_start_ > self_end_:
+            raise NoOverlap(
+                f"Invalid boundaries ({self_start}+{offset}, {self_end}+{offset}) "
+                f"derived for sequence being subsetted"
+            )
+        if start_ > end_:
+            raise NoOverlap(
+                f"Invalid boundaries ({start}+{offset}, {end}+{offset}) "
+                f"derived for subsetting"
+            )
+        seg_self = lxs.Segment(self_start_, self_end_)
+        seg_sub = lxs.Segment(start_, end_)
         if not seg_self.bounds(seg_sub):
             raise NoOverlap(
                 f"Provided positions {start, end} lie outside "
@@ -410,7 +423,7 @@ class GenericStructure:
         pos: abc.Sequence[int],
         chain_ids: abc.Sequence[str] | str | None = None,
         ligands: bool = True,
-            ligand_cfg: LigandConfig = LigandConfig()
+        ligand_cfg: LigandConfig = LigandConfig(),
     ) -> Self:
         """
         Extract specific positions from this structure.
