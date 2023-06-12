@@ -1,6 +1,7 @@
 from collections import defaultdict
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from toolz import valmap
 
@@ -76,3 +77,19 @@ def test_split_chains(path, expected):
         for lig in c.ligands:
             outputs.append((structure_chain_id, lig.res_name, lig.chain_id))
     assert set(outputs) == expected
+
+
+@pytest.mark.parametrize("inp", [DATA / "3unk.cif"])
+@pytest.mark.parametrize("meta", [True, False])
+def test_summary(inp, meta):
+    s = GenericStructure.read(inp, ligands=True)
+    assert len(s.ligands) == 1
+    lig = s.ligands[0]
+    s = lig.summary(meta=meta)
+    assert isinstance(s, pd.Series)
+    assert "ObjectID" in s.index and "ParentID" in s.index
+    meta_keys = list(lig.meta)
+    if meta:
+        assert set(meta_keys).issubset(set(s.index))
+    else:
+        assert len(set(meta_keys) & set(s.index)) == 0

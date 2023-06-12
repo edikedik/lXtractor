@@ -5,6 +5,7 @@ from collections import abc
 
 import biotite.structure as bst
 import numpy as np
+import pandas as pd
 
 from lXtractor.core.config import MetaNames, LigandConfig
 from lXtractor.core.exceptions import FormatError
@@ -110,10 +111,13 @@ class Ligand:
         self.meta = meta
 
     def __str__(self):
-        return f"{self.res_name}_{self.res_id}:{self.chain_id}<-({self.parent})"
+        return self.id
 
     def __repr__(self):
-        return str(self)
+        return self.id
+
+    def id(self) -> str:
+        return f"{self.res_name}_{self.res_id}:{self.chain_id}<-({self.parent})"
 
     @property
     def array(self) -> bst.AtomArray:
@@ -172,6 +176,12 @@ class Ligand:
             len(contact_atoms) >= cfg.min_atom_connections
             and bst.get_residue_count(contact_atoms) >= cfg.min_res_connections
         )
+
+    def summary(self, meta: bool = True) -> pd.Series:
+        d = self.meta if meta else {}
+        d["ObjectID"] = self.id
+        d["ParentID"] = self.parent.id
+        return pd.Series(d.values(), index=d.keys())
 
 
 def find_ligands(

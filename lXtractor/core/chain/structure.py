@@ -10,6 +10,7 @@ import pandas as pd
 from biotite import structure as bst
 from typing_extensions import Self
 
+from lXtractor.core import Ligand
 from lXtractor.core.base import ApplyT, FilterT
 from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.list import _wrap_children, ChainList
@@ -33,8 +34,7 @@ from lXtractor.util.structure import filter_selection, filter_solvent_extended
 if t.TYPE_CHECKING:
     from lXtractor.variables import Variables
 
-
-__all__ = ('ChainStructure', )
+__all__ = ("ChainStructure",)
 
 
 # TODO: subset and overlap with other structures/sequences
@@ -57,8 +57,8 @@ def _validate_chain(pdb: PDB_Chain):
     chains = pdb.structure.chain_ids_polymer
     if len(chains) > 1:
         raise InitError(
-            f'Invalid chain {pdb}: the structure must contain a single '
-            f'polymeric chain. Got {len(chains)}: {chains}'
+            f"Invalid chain {pdb}: the structure must contain a single "
+            f"polymeric chain. Got {len(chains)}: {chains}"
         )
     try:
         chain_id = (
@@ -67,11 +67,11 @@ def _validate_chain(pdb: PDB_Chain):
             else pdb.structure.chain_ids.pop()
         )
     except KeyError as e:
-        raise InitError(f'No chains for {pdb}') from e
+        raise InitError(f"No chains for {pdb}") from e
     if chain_id != pdb.chain:
         raise InitError(
-            f'Invalid chain {pdb}. Actual chain {chain_id} does not match '
-            f'chain attribute {pdb.chain}'
+            f"Invalid chain {pdb}. Actual chain {chain_id} does not match "
+            f"chain attribute {pdb.chain}"
         )
 
 
@@ -87,7 +87,6 @@ class ChainStructure:
         GenericStructure.split_chains>`.
     #. Initialize :class:`ChainStructure` from each chain via
         :meth:`from_structure`.
-
 
     .. code-block:: python
 
@@ -215,9 +214,9 @@ class ChainStructure:
         :return: ChainStructure identifier in the format
             "ChainStructure({seq.id}|{alt_locs})<-(parent.id)".
         """
-        alt_locs = self.pdb.structure.id.split('|')[-1]
-        parent = f'<-({self.parent.id})' if self.parent else ''
-        return f'ChainStructure({self.seq.id}|{alt_locs}){parent}'
+        alt_locs = self.pdb.structure.id.split("|")[-1]
+        parent = f"<-({self.parent.id})" if self.parent else ""
+        return f"ChainStructure({self.seq.id}|{alt_locs}){parent}"
 
     @property
     def array(self) -> bst.AtomArray:
@@ -272,6 +271,10 @@ class ChainStructure:
         :return: ``True`` if the structure is empty and ``False`` otherwise.
         """
         return len(self) == 0
+
+    @property
+    def ligands(self) -> list[Ligand]:
+        return self.pdb.structure.ligands
 
     @classmethod
     def from_structure(
@@ -401,7 +404,6 @@ class ChainStructure:
             map_name: str | None,
             _atom_names: abc.Sequence[abc.Sequence[str]] | None,
         ) -> np.ndarray:
-
             if res_id is None:
                 return np.ones_like(c.array, bool)
 
@@ -414,7 +416,7 @@ class ChainStructure:
             return filter_selection(c.array, _res_id, _atom_names)
 
         if self.is_empty or other.is_empty:
-            raise MissingData('Overlapping empty structures is not supported')
+            raise MissingData("Overlapping empty structures is not supported")
 
         match atom_names:
             case [str(), *_]:
@@ -494,7 +496,7 @@ class ChainStructure:
             raise ValueError(f"Invalid boundaries {start, end}")
 
         if self.is_empty:
-            raise MissingData('Attempting to spawn a child from an empty structure')
+            raise MissingData("Attempting to spawn a child from an empty structure")
 
         name = name or self.seq.name
 
@@ -582,7 +584,7 @@ class ChainStructure:
         *,
         dump_names: _DumpNames = DumpNames,
         search_children: bool = False,
-        **kwargs
+        **kwargs,
     ) -> Self:
         """
         Read the chain structure from a file disk dump.
@@ -603,7 +605,7 @@ class ChainStructure:
         variables = None
 
         bname = dump_names.structure_base_name
-        stems = {p.name.split('.')[0]: p.name for p in files.values()}
+        stems = {p.name.split(".")[0]: p.name for p in files.values()}
         if bname not in stems:
             raise InitError(
                 f"{base_dir} must contain {bname}.fmt "
@@ -660,7 +662,7 @@ class ChainStructure:
         """
 
         if self.is_empty:
-            raise MissingData('Attempting to write an empty chain structure')
+            raise MissingData("Attempting to write an empty chain structure")
 
         base_dir.mkdir(exist_ok=True, parents=True)
 
@@ -675,9 +677,15 @@ class ChainStructure:
                 child_dir = base_dir / DumpNames.segments_dir / child_name
                 child.write(child_dir, fmt, dump_names=dump_names, write_children=True)
 
-    def summary(self, meta: bool = True, children: bool = False) -> pd.DataFrame:
+    def summary(
+        self, meta: bool = True, children: bool = False, ligands: bool = False
+    ) -> pd.DataFrame:
         s = self.seq.summary(meta=meta, children=False)
         s[ColNames.id] = [self.id]
+        if ligands and len(self.ligands) > 0:
+            lig_df = pd.DataFrame(lig.summary() for lig in self.ligands)
+            lig_df.columns = ["Ligand_" + c for c in lig_df.columns]
+            s = pd.concat([s, lig_df])
         if children and self.children:
             child_summaries = pd.concat(
                 [c.summary(meta=meta, children=children) for c in self.children]
@@ -686,5 +694,5 @@ class ChainStructure:
         return s
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError

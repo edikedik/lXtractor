@@ -4,6 +4,7 @@ from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import pandas as pd
 import pytest
 
 from lXtractor.core.alignment import Alignment
@@ -16,8 +17,8 @@ from lXtractor.util.seq import read_fasta, biotite_align, mafft_align
 @pytest.fixture
 def simple_chain_with_child(simple_chain_seq) -> ChainSequence:
     _, s = simple_chain_seq
-    s.add_seq('S', [1 for _ in range(len(s))])
-    s.spawn_child(1, 3, 'X1'), s.spawn_child(1, 1, 'X2')
+    s.add_seq("S", [1 for _ in range(len(s))])
+    s.spawn_child(1, 3, "X1"), s.spawn_child(1, 1, "X2")
     return s
 
 
@@ -35,17 +36,17 @@ def test_spawn(simple_chain_seq):
     s12 = s13.spawn_child(1, 2)
     assert s12.parent == s13
     assert s13.parent == s
-    assert s12.name == 'S'
-    assert s13.name == 'S'
+    assert s12.name == "S"
+    assert s13.name == "S"
 
 
 def test_degenerate():
-    s = ChainSequence.from_string('')
+    s = ChainSequence.from_string("")
     assert len(s) == 0
     assert s.start == s.end == 0
     assert len(list(iter(s))) == 0
     assert s == ChainSequence.make_empty()
-    c = ChainSequence.from_string('c')
+    c = ChainSequence.from_string("c")
     assert c.is_singleton
     o = c & s
     assert o.is_empty
@@ -59,8 +60,8 @@ def test_degenerate():
 
 def test_map_accession(simple_chain_seq):
     fields, s = simple_chain_seq
-    mapping = s.get_map('i')
-    assert mapping[1].seq1 == 'A'
+    mapping = s.get_map("i")
+    assert mapping[1].seq1 == "A"
     assert mapping[1].i == 1
 
 
@@ -78,26 +79,26 @@ def test_closest_and_boundaries():
     s = ChainSequence(
         1,
         5,
-        'S',
+        "S",
         seqs={
-            fields.seq1: 'ABCDE',
-            'N': [1, 3, 5, 10, 20],
-            'K': [None, 10, None, 20, None],
+            fields.seq1: "ABCDE",
+            "N": [1, 3, 5, 10, 20],
+            "K": [None, 10, None, 20, None],
         },
     )
-    assert s.get_closest('N', 2).N == 3
-    assert s.get_closest('N', 0).N == 1
-    assert s.get_closest('N', 12, reverse=True).N == 10
-    assert s.get_closest('N', 21) is None
-    assert s.get_closest('N', 0, reverse=True) is None
-    assert s.get_closest('K', 2).N == 3
-    assert s.get_closest('K', 21, reverse=True).N == 10
+    assert s.get_closest("N", 2).N == 3
+    assert s.get_closest("N", 0).N == 1
+    assert s.get_closest("N", 12, reverse=True).N == 10
+    assert s.get_closest("N", 21) is None
+    assert s.get_closest("N", 0, reverse=True) is None
+    assert s.get_closest("K", 2).N == 3
+    assert s.get_closest("K", 21, reverse=True).N == 10
 
-    b1, b2 = s.map_boundaries(1, 3, map_name='N')
+    b1, b2 = s.map_boundaries(1, 3, map_name="N")
     assert (b1.i, b2.i) == (1, 2)
-    b1, b2 = s.map_boundaries(-1, 0, map_name='N', closest=True)
+    b1, b2 = s.map_boundaries(-1, 0, map_name="N", closest=True)
     assert b1.i == b2.i == 1
-    b1, b2 = s.map_boundaries(22, 23, map_name='N', closest=True)
+    b1, b2 = s.map_boundaries(22, 23, map_name="N", closest=True)
     assert b1.i == b2.i == 5
 
 
@@ -108,17 +109,17 @@ def test_map(simple_fasta_path, chicken_src_seq, human_src_seq):
     s1 = ChainSequence.from_string(s1[1])
     s2 = ChainSequence.from_string(s2[1])
     mapping = s1.map_numbering(
-        s2, save=True, name='map_smaller', align_method=mafft_align
+        s2, save=True, name="map_smaller", align_method=mafft_align
     )
-    assert 'map_smaller' in s1
+    assert "map_smaller" in s1
     assert mapping == [None, None, 1, 2, 3, 4, 5, None, None]
     mapping = s2.map_numbering(
-        s1, save=True, name='map_larger', align_method=mafft_align
+        s1, save=True, name="map_larger", align_method=mafft_align
     )
-    assert 'map_larger' in s2
+    assert "map_larger" in s2
     assert mapping == [3, 4, 5, 6, 7]
 
-    mapping = s2.map_numbering(aln, save=True, name='map_aln', align_method=mafft_align)
+    mapping = s2.map_numbering(aln, save=True, name="map_aln", align_method=mafft_align)
     assert mapping == [3, 4, 5, 6, 7]
 
     s1 = ChainSequence.from_string(chicken_src_seq[1])
@@ -131,12 +132,12 @@ def test_map(simple_fasta_path, chicken_src_seq, human_src_seq):
 def test_map_transfer(simple_chain_seq):
     _, s1 = simple_chain_seq
     s2 = deepcopy(s1)
-    s1.add_seq('R', 'PUTIN')
-    s1.add_seq('V', 'MUDAK')
-    s2.add_seq('O', 'PUKIN')
-    s1.relate(s2, 'V', 'O', 'R')
-    assert 'V' in s2
-    assert s2['V'] == ['M', 'U', None, 'A', 'K']
+    s1.add_seq("R", "PUTIN")
+    s1.add_seq("V", "MUDAK")
+    s2.add_seq("O", "PUKIN")
+    s1.relate(s2, "V", "O", "R")
+    assert "V" in s2
+    assert s2["V"] == ["M", "U", None, "A", "K"]
 
 
 def test_io(simple_chain_seq):
@@ -163,38 +164,38 @@ def test_io(simple_chain_seq):
 
 
 def name2argh(x: ChainSequence) -> ChainSequence:
-    return ChainSequence(x.start, x.end, 'argh', seqs=x._seqs)
+    return ChainSequence(x.start, x.end, "argh", seqs=x._seqs)
 
 
 def test_apply_children(simple_chain_with_child):
     s = simple_chain_with_child
     s_new = s.apply_children(name2argh)
     assert len(s.children) == 2
-    assert all(x.name in ['X1', 'X2'] for x in s.children)
-    assert all(x.name == 'argh' for x in s_new.children)
+    assert all(x.name in ["X1", "X2"] for x in s.children)
+    assert all(x.name == "argh" for x in s_new.children)
     _ = s.apply_children(name2argh, inplace=True)
-    assert all(x.name == 'argh' for x in s.children)
+    assert all(x.name == "argh" for x in s.children)
 
 
 def test_filter_children(simple_chain_with_child):
     s = simple_chain_with_child
-    s_new = s.filter_children(lambda c: c.name != 'X1')
+    s_new = s.filter_children(lambda c: c.name != "X1")
     assert len(s.children) == 2
     assert len(s_new.children) == 1
-    assert s_new.children.pop().name == 'X2'
-    s.filter_children(lambda c: c.name != 'X1', inplace=True)
+    assert s_new.children.pop().name == "X2"
+    s.filter_children(lambda c: c.name != "X1", inplace=True)
     assert len(s.children) == 1
 
 
 def test_match(simple_chain_with_child):
     s = simple_chain_with_child
-    s.add_seq('X', 'AXCDX')
+    s.add_seq("X", "AXCDX")
     with pytest.raises(KeyError):
-        s.match('XXX', 'S')
-    match = s.match('seq1', 'X', as_fraction=False, save=False)
+        s.match("XXX", "S")
+    match = s.match("seq1", "X", as_fraction=False, save=False)
     assert match == 3
-    s.match('seq1', 'X', as_fraction=True, save=True)
-    match = s.meta['Match_seq1_X']
+    s.match("seq1", "X", as_fraction=True, save=True)
+    match = s.meta["Match_seq1_X"]
     assert match == 0.6
 
 
@@ -209,35 +210,35 @@ def is_iterable_of(xs, _type):
 def test_apply_to_map(simple_chain_with_child):
     s = simple_chain_with_child
 
-    s_new = s.apply_to_map('S', to_str)
-    assert is_iterable_of(s_new['S'], str)
+    s_new = s.apply_to_map("S", to_str)
+    assert is_iterable_of(s_new["S"], str)
     assert len(s_new.children) == 0
     for c in s.children:
-        assert is_iterable_of(c['S'], int)
+        assert is_iterable_of(c["S"], int)
 
     # Children weren't changed
-    s_new = s.apply_to_map('S', to_str, preserve_children=True)
+    s_new = s.apply_to_map("S", to_str, preserve_children=True)
     assert len(s_new.children) == 2
     for c in s_new.children:
-        assert is_iterable_of(c['S'], int)
+        assert is_iterable_of(c["S"], int)
 
     # Children were both transferred and transformed
-    s_new = s.apply_to_map('S', to_str, apply_to_children=True)
+    s_new = s.apply_to_map("S", to_str, apply_to_children=True)
     assert len(s_new.children) == 2
     for c in s_new.children:
-        assert is_iterable_of(c['S'], str)
+        assert is_iterable_of(c["S"], str)
 
     # Same but with in-place op
-    s_new = s.apply_to_map('S', to_str, apply_to_children=True, inplace=True)
+    s_new = s.apply_to_map("S", to_str, apply_to_children=True, inplace=True)
     assert id(s_new) == id(s)
     assert len(s_new.children) == len(s.children) == 2
     for c in s.children:
-        assert is_iterable_of(c['S'], str)
+        assert is_iterable_of(c["S"], str)
 
 
 def test_as_chain(simple_chain_seq, simple_chain_structure):
     _, seq = simple_chain_seq
-    c1 = seq.spawn_child(1, 2, 'C')
+    c1 = seq.spawn_child(1, 2, "C")
     s = simple_chain_structure
     c = seq.as_chain()
     assert c.seq == seq
@@ -248,3 +249,16 @@ def test_as_chain(simple_chain_seq, simple_chain_structure):
     assert len(c.children[0].structures) == 0
     c = seq.as_chain(structures=[s], add_to_children=True)
     assert len(c.children[0].structures) == 1
+
+
+@pytest.mark.parametrize("meta", [True, False])
+def test_summary(simple_chain_seq, meta):
+    _, seq = simple_chain_seq
+    df = seq.summary(meta=meta)
+    assert isinstance(df, pd.DataFrame)
+    assert "ObjectID" in df.columns
+    meta_keys = list(seq.meta)
+    if meta:
+        assert set(meta_keys).issubset(set(df.columns))
+    else:
+        assert len(set(meta_keys) & set(df.columns)) == 0
