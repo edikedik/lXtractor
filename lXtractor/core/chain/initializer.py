@@ -92,12 +92,16 @@ def _read_path(
     if suffix in supported_seq_ext:
         return ChainSequence.from_file(path)
     if suffix in supported_str_ext:
+        # Read initial structures, split by chains ant altloc
+        # and wrap into a ChainStructure
         return list(
             map(
                 ChainStructure.from_structure,
                 chain.from_iterable(
                     c.split_altloc()
-                    for c in GenericStructure.read(path).split_chains(polymer=True)
+                    for c in GenericStructure.read(path, altloc=True).split_chains(
+                        polymer=True
+                    )
                 ),
             )
         )
@@ -509,11 +513,9 @@ class ChainInitializer:
                 _add_structures,
                 map_name=map_name,
                 tolerate_failures=self.tolerate_failures,
-                **kwargs
+                **kwargs,
             )
-            __try_fn = curry(
-                _try_fn, fn=_fn, tolerate_failures=self.tolerate_failures
-            )
+            __try_fn = curry(_try_fn, fn=_fn, tolerate_failures=self.tolerate_failures)
             inputs = list(zip(items, numbering_groups, strict=True))
             chains = ChainList(
                 apply(
