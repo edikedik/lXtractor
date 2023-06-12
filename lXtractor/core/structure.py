@@ -280,7 +280,9 @@ class GenericStructure:
                 one_letter_code = "X"
             yield one_letter_code, atom.res_name, atom.res_id
 
-    def subset_with_ligands(self, mask: np.ndarray, cfg=LigandConfig()) -> Self:
+    def subset_with_ligands(
+        self, mask: np.ndarray, cfg=LigandConfig(), transfer_meta: bool = True
+    ) -> Self:
         """
         Create a sub-structure preserving connected :attr:`ligands`.
 
@@ -288,21 +290,42 @@ class GenericStructure:
             to create a sub-structure.
         :param cfg: Settings defining when a ligand is treated as "connected"
             to a subset of atoms defined by `mask`.
+        :param transfer_meta: Transfer a copy of existing metadata for
+            connected ligands.
         :return: A new instance with atoms defined by `mask` and connected
             ligands.
         """
+        # Filter connected ligands
         ligands = list(
             filter(
                 lambda lig: lig.is_locally_connected(mask, cfg),
                 self.ligands,
             )
         )
+        # Extend mask by atoms from the connected ligands
         ligands_mask = reduce(
             op.or_,
             (lig.mask for lig in ligands),
             np.zeros_like(self.array.res_id, dtype=bool),
         )
-        return self.__class__(self.array[mask | ligands_mask], self.pdb_id, True)
+        m = mask | ligands_mask
+        # Create a new instance
+        new = self.__class__(self.array[m], self.pdb_id, False)
+        # Populate its ligands by subsetting the existing ones.
+        for lig in ligands:
+            meta = lig.meta.copy() if transfer_meta else None
+            lig_ = Ligand(
+                new,
+                lig.mask[m],
+                lig.contact_mask[m],
+                lig.parent_contacts[m],
+                lig.ligand_idx[m],
+                lig.dist[m],
+                meta,
+            )
+            new._ligands.append(lig_)
+
+        return new
 
     def split_chains(
         self,
