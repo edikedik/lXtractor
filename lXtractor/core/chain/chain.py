@@ -26,8 +26,8 @@ from lXtractor.util.seq import read_fasta
 
 LOGGER = logging.getLogger(__name__)
 
+__all__ = ("Chain",)
 
-__all__ = ('Chain', )
 
 # TODO: support for empty chain in methods
 
@@ -100,8 +100,8 @@ class Chain:
         """
         :return: Chain identifier derived from its :attr:`seq` ID.
         """
-        parent = f'<-({self.parent.id})' if self.parent else ''
-        return f'Chain({self.seq.id}){parent}'
+        parent = f"<-({self.parent.id})" if self.parent else ""
+        return f"Chain({self.seq.id}){parent}"
 
     @property
     def meta(self) -> dict[str, str]:
@@ -342,7 +342,7 @@ class Chain:
         base_dir: Path,
         *,
         dump_names: _DumpNames = DumpNames,
-        str_fmt: str = "cif",
+        str_fmt: str = "mmtf.gz",
         write_children: bool = True,
     ):
         """
@@ -567,8 +567,8 @@ class Chain:
             str_summaries = pd.concat(
                 s.summary(meta=meta, children=False) for s in self.structures
             )
-            str_summaries['Structure'] = True
-            str_summaries['ParentChain'] = self.id
+            str_summaries["Structure"] = True
+            str_summaries["ParentChain"] = self.id
             s = pd.concat([s, str_summaries])
         if children and self.children:
             child_summaries = pd.concat(
@@ -578,5 +578,5 @@ class Chain:
         return s
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError
