@@ -97,8 +97,8 @@ def _read_path(
         return list(
             map(
                 ChainStructure.from_structure,
-                chain.from_iterable(
-                    c.split_altloc()
+                (
+                    next(c.split_altloc())
                     for c in GenericStructure.read(path, altloc=True).split_chains(
                         polymer=True
                     )
