@@ -40,7 +40,7 @@ def test_chainio(simple_structure, simple_chain_seq):
         tmp = Path(tmp)
         consume(io.write(struc, tmp))
         files = get_files(tmp)
-        stems = [x.stem for x in files.values()]
+        stems = [x.name.split('.')[0] for x in files.values()]
         assert DumpNames.structure_base_name in stems
         assert DumpNames.sequence in files
         assert DumpNames.meta in files
