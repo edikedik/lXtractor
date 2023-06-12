@@ -42,7 +42,7 @@ class GenericStructure:
     where ``*ids`` are ","-separated.
     """
 
-    __slots__ = ("_array", "pdb_id", "_ligands")
+    __slots__ = ("_array", "pdb_id", "_ligands", "_array_polymer_mask")
 
     def __init__(
         self,
@@ -66,6 +66,8 @@ class GenericStructure:
             _ligands = ligands
         #: A list of ligands
         self._ligands = _ligands
+
+        self._array_polymer_mask = None
 
     def __len__(self) -> int:
         return len(self.array)
@@ -114,7 +116,7 @@ class GenericStructure:
 
         :return: An atom array comprising all polymer atoms.
         """
-        return self.array[filter_any_polymer(self.array)]
+        return self.array[self.polymer_mask]
 
     @property
     def array_ligand(self) -> bst.AtomArray:
@@ -176,6 +178,12 @@ class GenericStructure:
         )
 
     @property
+    def polymer_mask(self) -> np.ndarray:
+        if self._array_polymer_mask is None:
+            self._array_polymer_mask = filter_any_polymer(self.array)
+        return self._array_polymer_mask
+
+    @property
     def is_empty(self) -> bool:
         """
         :return: ``True`` if the :meth:`array` is empty.
@@ -196,7 +204,7 @@ class GenericStructure:
         path2id: abc.Callable[[Path], str] = lambda p: p.name.split('.')[0],
         structure_id: str = EMPTY,
         ligands: bool = True,
-        altloc: bool = True,
+        altloc: bool = False,
         **kwargs,
     ) -> Self:
         """

@@ -9,14 +9,14 @@ import operator as op
 from collections import abc
 from functools import reduce, partial
 from io import IOBase, StringIO, BytesIO, BufferedReader
-from itertools import repeat, starmap
+from itertools import repeat, starmap, chain
 from pathlib import Path
 
 import biotite.structure as bst
 import biotite.structure.info as bstinfo
 import biotite.structure.io as bstio
 import numpy as np
-from more_itertools import unzip
+from more_itertools import unzip, windowed
 
 from lXtractor.core.config import SOLVENTS, BondThresholds, STRUCTURE_FMT
 from lXtractor.core.exceptions import LengthMismatch, MissingData, FormatError
@@ -202,6 +202,12 @@ def _is_polymer(array, min_size, pol_type):
     return bst.get_residue_count(array[mask]) >= min_size
 
 
+def _split_array(a: bst.AtomArray, idx: abc.Iterable[int]):
+    idx = chain([0], idx, [len(a)])
+    for i, j in windowed(idx, 2):
+        yield a[i:j]
+
+
 def filter_polymer(a, min_size=2, pol_type="peptide"):
     # TODO: make a PR
     """
@@ -228,8 +234,8 @@ def filter_polymer(a, min_size=2, pol_type="peptide"):
 
     check_pol = partial(_is_polymer, min_size=min_size, pol_type=pol_type)
     bool_idx = map(
-        lambda x: np.full(len(x), check_pol(bst.array(x)), dtype=bool),
-        np.split(a, split_idx),
+        lambda x: np.full(len(x), check_pol(x), dtype=bool),
+        _split_array(a, split_idx),
     )
     return np.concatenate(list(bool_idx))
 

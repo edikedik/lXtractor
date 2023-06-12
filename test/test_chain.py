@@ -3,6 +3,7 @@ import pytest
 from lXtractor.core.chain import Chain, ChainStructure
 from lXtractor.core.config import Sep, SeqNames
 from lXtractor.core.exceptions import NoOverlap, InitError
+from lXtractor.util import biotite_align
 from test.common import sample_chain, mark_meta
 
 
@@ -33,7 +34,7 @@ def test_add_structure(chicken_src_seq, src_str):
     c.add_structure(src_str)
     assert len(c.structures) == 1
     c.structures.pop()
-    c.add_structure(src_str, add_to_children=True)
+    c.add_structure(src_str, add_to_children=True, align_method=biotite_align)
     children = list(c.iter_children())
     assert len(children) == 2
     c1, c2 = children[0][0], children[1][0]
@@ -73,7 +74,6 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     child = p.spawn_child(
         1, 260, str_map_from=SeqNames.map_canonical, str_map_closest=True
     )
-    print(child, child.structures, child.structures[0].seq.seq1)
     assert len(child.seq) == 260
     s = child.structures[0]
     assert len(s.seq) == 5

@@ -25,9 +25,10 @@ def items(
 @pytest.fixture
 def mapping(chicken_src_str_path, chicken_src_seq_path, simple_structure):
     simple_seq = "".join(map(op.itemgetter(0), simple_structure.get_sequence()))
+    s = Chain.from_seq(chicken_src_seq_path)[0]
+    s.spawn_child(start=s.start + 1, end=s.end - 1)
     return {
-        # chicken_src_seq_path: [chicken_src_str_path],
-        ChainSequence.from_file(chicken_src_seq_path): [(chicken_src_str_path, ["A"])],
+        s: [(chicken_src_str_path, ["A"])],
         ("S", simple_seq): [simple_structure],
     }
 
@@ -48,39 +49,38 @@ def test_iterable_parallel(items):
     assert_iterable(io, items, 2)
 
 
-def assert_mapping(mapping, io, num_proc=1, assert_mapped=True):
+@pytest.mark.parametrize("assert_children", [True, False])
+@pytest.mark.parametrize("num_proc", [1])
+def test_mapping(mapping, assert_children, num_proc):
+    io = ChainInitializer(tolerate_failures=False)
     chains = io.from_mapping(
         mapping,
-        map_numberings=assert_mapped,
+        map_numberings=assert_children,
         num_proc_read_str=num_proc,
         num_proc_read_seq=num_proc,
         num_proc_map_numbering=num_proc,
+        add_to_children=assert_children,
     )
     assert len(chains) == 2
     assert all(isinstance(x, Chain) for x in chains)
     assert len(chains[0].structures) == 1
     assert len(chains[1].structures) == 1
-    if assert_mapped:
+    if assert_children:
         assert all(
             SeqNames.map_canonical in x.seq
             for x in chain.from_iterable(c.structures for c in chains)
+        )
+        children = chains.collapse_children().structures
+        assert len(children) == 1
+        assert all(
+            SeqNames.map_canonical in x.seq
+            for x in chains.collapse_children().structures
         )
     else:
         assert all(
             SeqNames.map_canonical not in x.seq
             for x in chain.from_iterable(c.structures for c in chains)
         )
-
-
-def test_mapping(mapping):
-    io = ChainInitializer(tolerate_failures=False)
-    assert_mapping(mapping, io)
-    assert_mapping(mapping, io, assert_mapped=False)
-
-
-def test_mapping_parallel(mapping):
-    io = ChainInitializer()
-    assert_mapping(mapping, io, num_proc=2)
 
 
 def test_mapping_invalid_objects(simple_chain_seq):

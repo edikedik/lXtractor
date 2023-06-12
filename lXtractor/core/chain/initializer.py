@@ -338,7 +338,7 @@ class ChainInitializer:
     def from_mapping(
         self,
         m: abc.Mapping[
-            ChainSequence | tuple[str, str] | Path,
+            ChainSequence | Chain | tuple[str, str] | Path,
             abc.Sequence[
                 ChainStructure
                 | GenericStructure
