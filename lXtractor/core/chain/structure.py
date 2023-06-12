@@ -73,7 +73,7 @@ def _validate_chain(pdb: PDB_Chain):
             f"Invalid chain {pdb}. Actual chain {chain_id} does not match "
             f"chain attribute {pdb.chain}"
         )
-    alt_loc = pdb.structure.altloc_ids
+    alt_loc = list(filter(lambda x: x != "", pdb.structure.altloc_ids))
     if len(alt_loc) > 1:
         raise InitError(
             f"Invalid chain {pdb}: the structure must contain a single alt loc; "
