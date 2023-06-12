@@ -356,6 +356,7 @@ class ChainInitializer:
         num_proc_read_str: int = 1,
         num_proc_item_callbacks: int = 1,
         num_proc_map_numbering: int = 1,
+        num_proc_add_structure: int = 1,
         **kwargs,
     ) -> ChainList[Chain]:
         """
@@ -420,6 +421,11 @@ class ChainInitializer:
             less resource hungry (although, keep in mind the size of the
             canonical sequence: if it's too high, the RAM usage will likely
             explode). If ``None``, will default to :attr:`num_proc`.
+        :param num_proc_add_structure: In case of parallel numberings mapping,
+            i.e, when ``num_proc_map_numbering > 1``, this option allows to
+            transfer these numberings and add structures to chains in parallel.
+            It may be useful to when ``add_to_children=True`` is passed in
+            ``kwargs`` as it allows creating sub-structures in parallel.
         :param kwargs: Passed to :meth:`Chain.add_structure`.
         :return: A list of initialized chains.
         """
@@ -485,36 +491,60 @@ class ChainInitializer:
             for c, ss in items:
                 for s in ss:
                     c.add_structure(s, align_method=biotite_align, **kwargs)
+            chains = ChainList(x[0] for x in items)
         else:
             map_name = kwargs.get("map_name") or SeqNames.map_canonical
 
             # create numbering groups -- lists of lists with numberings
             # for each structure in values
-            numbering_groups = map_numbering_many2many(
-                [x.seq for x, _ in items],
-                [[x.seq for x in strs] for _, strs in items],
-                num_proc=num_proc_map_numbering,
-                verbose=self.verbose,
+            numbering_groups = list(
+                map_numbering_many2many(
+                    [x.seq for x, _ in items],
+                    [[x.seq for x in strs] for _, strs in items],
+                    num_proc=num_proc_map_numbering,
+                    verbose=self.verbose,
+                )
             )
-            for (c, ss), num_group in zip(items, numbering_groups, strict=True):
-                if len(num_group) != len(ss):
-                    raise LengthMismatch(
-                        f"The number of mapped numberings {len(num_group)} must match "
-                        f"the number of structures {len(ss)}."
-                    )
-                for s, n in zip(ss, num_group):
-                    try:
-                        s.seq.add_seq(map_name, n)
-                        c.add_structure(s, map_to_seq=False, **kwargs)
-                    except Exception as e:
-                        LOGGER.warning(
-                            f"Failed to add structure {s} to chain {c} due to {e}"
-                        )
-                        LOGGER.exception(e)
-                        if not self.tolerate_failures:
-                            raise e
+            _fn = curry(
+                _add_structures,
+                map_name=map_name,
+                tolerate_failures=self.tolerate_failures,
+                **kwargs
+            )
+            __try_fn = curry(
+                _try_fn, fn=_fn, tolerate_failures=self.tolerate_failures
+            )
+            inputs = list(zip(items, numbering_groups, strict=True))
+            chains = ChainList(
+                apply(
+                    __try_fn,
+                    inputs,
+                    self.verbose,
+                    "Adding structures to chains",
+                    num_proc_add_structure,
+                )
+            )
 
-        return ChainList(x[0] for x in items)
+        return chains
+
+
+def _add_structures(
+    inp: tuple[tuple[Chain, abc.Iterable[ChainStructure]], list[list[int | None]]],
+    map_name: str,
+    tolerate_failures: bool,
+    **kwargs,
+):
+    (c, ss), num_group = inp
+    for s, n in zip(ss, num_group, strict=True):
+        try:
+            s.seq.add_seq(map_name, n)
+            c.add_structure(s, map_to_seq=False, **kwargs)
+        except Exception as e:
+            LOGGER.warning(f"Failed to add structure {s} to chain {c} due to {e}")
+            LOGGER.exception(e)
+            if not tolerate_failures:
+                raise e
+    return c
 
 
 if __name__ == "__main__":

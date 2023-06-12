@@ -50,7 +50,7 @@ def test_iterable_parallel(items):
 
 
 @pytest.mark.parametrize("assert_children", [True, False])
-@pytest.mark.parametrize("num_proc", [1])
+@pytest.mark.parametrize("num_proc", [1, 2])
 def test_mapping(mapping, assert_children, num_proc):
     io = ChainInitializer(tolerate_failures=False)
     chains = io.from_mapping(
@@ -59,6 +59,7 @@ def test_mapping(mapping, assert_children, num_proc):
         num_proc_read_str=num_proc,
         num_proc_read_seq=num_proc,
         num_proc_map_numbering=num_proc,
+        num_proc_add_structure=num_proc,
         add_to_children=assert_children,
     )
     assert len(chains) == 2
@@ -99,6 +100,8 @@ def test_mapping_invalid_objects(simple_chain_seq):
 def accept(obj):
     if isinstance(obj, ChainSequence):
         obj.name = "X"
+    elif isinstance(obj, Chain):
+        obj.seq.name = "X"
     return obj
 
 
@@ -107,20 +110,24 @@ def empty_structures(item):
 
 
 def spawn_child(item):
-    seq = item[0]
-    seq.spawn_child(seq.start, seq.end)
-    return seq, item[1]
+    if isinstance(item[0], Chain):
+        seq = item[0].seq
+    elif isinstance(item[0], ChainSequence):
+        seq = item[0]
+    else:
+        raise TypeError
+    seq.spawn_child(seq.start + 2, seq.end - 2)
+    return item[0], item[1]
 
 
-def test_callbacks(items, mapping):
+@pytest.mark.parametrize('num_proc', [1, 2])
+def test_callbacks(items, mapping, num_proc):
     io = ChainInitializer()
     xs = list(io.from_iterable(items, callbacks=[accept]))
     assert len(xs) == 6
     assert xs[0].name == "X"
 
-    chains = io.from_mapping(mapping, key_callbacks=[accept])
-    assert all([c.seq.name == "X" for c in chains])
-    chains = io.from_mapping(mapping, key_callbacks=[accept], num_proc_read_seq=2)
+    chains = io.from_mapping(mapping, key_callbacks=[accept], num_proc_read_seq=num_proc)
     assert all([c.seq.name == "X" for c in chains])
 
     # Emptying structures results in subsequent filtering to produce
@@ -132,6 +139,7 @@ def test_callbacks(items, mapping):
         mapping,
         item_callbacks=[spawn_child],
         num_proc_item_callbacks=2,
+        check_ids=False  # OK to add a structure with the same ID to a chain
     )
     assert len(chains) == 2
-    assert all([len(c.children) == 1 for c in chains])
+    assert all([len(c.seq.children) == 1 for c in chains])
