@@ -110,12 +110,13 @@ class Ligand:
         #: A dictionary of meta info.
         self.meta = meta
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.id
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self.id
 
+    @property
     def id(self) -> str:
         return f"{self.res_name}_{self.res_id}:{self.chain_id}<-({self.parent})"
 
