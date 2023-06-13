@@ -628,11 +628,14 @@ class ChainStructure:
                 f"{base_dir} must contain {bname}.fmt "
                 f'where "fmt" is supported structure format'
             )
-        structure = GenericStructure.read(base_dir / stems[bname], **kwargs)
 
         seq = ChainSequence.read(base_dir, dump_names=dump_names, search_children=False)
         pdb_id = seq.meta.get(MetaNames.pdb_id, EMPTY_PDB_ID)
         chain_id = seq.meta.get(MetaNames.pdb_chain, EMPTY_CHAIN_ID)
+
+        structure = GenericStructure.read(
+            base_dir / stems[bname], structure_id=pdb_id, **kwargs
+        )
 
         if structure.pdb_id == EMPTY_PDB_ID:
             structure.pdb_id = pdb_id
