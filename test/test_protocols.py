@@ -7,11 +7,8 @@ from lXtractor.core.chain import ChainSequence
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData
 from lXtractor.ext import filter_by_method
-from lXtractor.protocols import (
-    filter_selection_extended,
-    subset_to_matching,
-    superpose_pairwise,
-)
+from lXtractor.core.chain.structure import filter_selection_extended, subset_to_matching
+from lXtractor.protocols.superpose import superpose_pairwise
 from lXtractor.util.seq import biotite_align
 
 

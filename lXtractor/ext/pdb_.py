@@ -2,6 +2,7 @@
 Utilities to interact with the RCSB PDB database.
 """
 import json
+import logging
 from collections import abc
 from pathlib import Path
 
@@ -10,7 +11,6 @@ from toolz import valfilter
 from lXtractor.core.base import UrlGetter
 from lXtractor.core.exceptions import FormatError
 from lXtractor.ext.base import StructureApiBase
-from lXtractor.protocols import LOGGER
 from lXtractor.util.io import fetch_text
 
 OBSOLETE_LINK = "https://files.wwpdb.org/pub/pdb/data/status/obsolete.dat"
@@ -35,6 +35,7 @@ SERVICES = (
     # Three-argument group
     ("interface", "entry_id", "assembly_id", "interface_id"),
 )
+LOGGER = logging.getLogger(__name__)
 
 
 def url_getters() -> dict[str, UrlGetter]:

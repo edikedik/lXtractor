@@ -15,10 +15,10 @@ from toolz import curry
 from tqdm.auto import tqdm
 
 from lXtractor.core.chain import ChainStructure
-from lXtractor.core.config import SeqNames
+from lXtractor.core.chain.structure import filter_selection_extended, subset_to_matching
 from lXtractor.core.exceptions import MissingData, LengthMismatch, InitError
 from lXtractor.util.seq import biotite_align
-from lXtractor.util.structure import filter_selection, filter_to_common_atoms
+from lXtractor.util.structure import filter_to_common_atoms
 
 LOGGER = logging.getLogger(__name__)
 
@@ -57,120 +57,6 @@ SupOutputFlexT: t.TypeAlias = tuple[
     tuple[float, float, float, float],
     tuple[float, float, float, float],
 ]
-
-
-# _SupOutputT = t.TypeVar('_SupOutputT', SupOutputStrict, SupOutputFlex)
-
-
-def filter_selection_extended(
-    c: ChainStructure,
-    pos: abc.Sequence[int] | None = None,
-    atom_names: abc.Sequence[abc.Sequence[str]] | abc.Sequence[str] | None = None,
-    map_name: str | None = None,
-    exclude_hydrogen: bool = False,
-    tolerate_missing: bool = False,
-) -> np.ndarray:
-    """
-    Get mask for certain positions and atoms of a chain structure.
-
-    .. seealso:
-        :func:`lXtractor.util.seq.filter_selection`
-
-    :param c: Arbitrary chain structure.
-    :param pos: A sequence of positions.
-    :param atom_names: A sequence of atom names (broadcasted to each position
-        in `res_id`) or an iterable over such sequences for each position
-        in `res_id`.
-    :param map_name: A map name to map from `pos` to
-        :meth:`numbering <lXtractor.core.Chain.ChainSequence.numbering>`
-    :param exclude_hydrogen: For convenience, exclude hydrogen atoms.
-        Especially useful during pre-processing for superposition.
-    :param tolerate_missing: If certain positions failed to map, does not
-        raise an error.
-    :return: A binary mask, ``True`` for selected atoms.
-    """
-    if pos is not None and map_name:
-        _map = c.seq.get_map(map_name)
-
-        mapped_pairs = [(p, _map.get(p, None)) for p in pos]
-
-        if not tolerate_missing:
-            for p, p_mapped in mapped_pairs:
-                if p_mapped is None:
-                    raise MissingData(f'Position {p} failed to map for {c}')
-
-        pos = [x[1].numbering for x in mapped_pairs if x[1] is not None]
-
-        if len(pos) == 0:
-            LOGGER.warning('No positions were selected.')
-            return np.zeros_like(c.array, dtype=bool)
-
-    m = filter_selection(c.array, pos, atom_names)
-
-    if exclude_hydrogen:
-        m &= c.array.element != 'H'
-
-    return m
-
-
-def subset_to_matching(
-    reference: ChainStructure,
-    c: ChainStructure,
-    map_name: str | None = None,
-    skip_if_match: str = SeqNames.seq1,
-    **kwargs,
-) -> tuple[ChainStructure, ChainStructure]:
-    """
-    Subset both chain structures to aligned residues using
-    **sequence alignment**.
-
-    .. note::
-        It's not necessary, but it makes sense for `c1` and `c2` to be
-        somehow related.
-
-    :param reference: A chain structure to align to.
-    :param c: A chain structure to align.
-    :param map_name: If provided, `c` is considered "pre-aligned" to the
-        `reference`, and `reference` possessed the numbering under `map_name`.
-    :param skip_if_match: Two options:
-
-        1. Sequence/Map name, e.g., "seq1" -- if sequences under this name
-        match exactly, skip alignment and return original chain structures.
-
-        2. "len" -- if sequences have equal length, skip alignment and return
-        original chain structures.
-    :return: A pair of new structures having the same number of residues
-        that were successfully matched during the alignment.
-    """
-    if skip_if_match == 'len':
-        if len(reference.seq) == len(c.seq):
-            return reference, c
-    else:
-        if reference.seq[skip_if_match] == c.seq[skip_if_match]:
-            return reference, c
-
-    pos_pairs: abc.Iterable[tuple[int, int | None]]
-    if not map_name:
-        pos2 = reference.seq.map_numbering(c.seq, **kwargs)
-        pos1 = reference.seq[SeqNames.enum]
-        pos_pairs = zip(pos1, pos2, strict=True)
-    else:
-        pos_pairs = zip(
-            reference.seq[SeqNames.enum], reference.seq[map_name], strict=True
-        )
-
-    pos_pairs = filter(lambda x: x[0] is not None and x[1] is not None, pos_pairs)
-    _pos1, _pos2 = unzip(pos_pairs)
-    _pos1, _pos2 = map(list, [_pos1, _pos2])
-
-    c1_new, c2_new = starmap(
-        lambda s, pos: ChainStructure.from_structure(
-            s.pdb.structure.extract_positions(pos, s.pdb.chain)
-        ),
-        [(reference, _pos1), (c, _pos2)],
-    )
-
-    return c1_new, c2_new
 
 
 def superpose(fs: _StagedSupInpStrict, ms: _StagedSupInpStrict) -> SupOutputStrictT:
