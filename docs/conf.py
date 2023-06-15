@@ -54,7 +54,7 @@ language = 'en'
 html_static_path = ['_static']
 
 # Required theme setup
-html_theme = 'sphinx_material'
+html_theme = "sphinx_rtd_theme"
 
 # Set link name generated in the top bar.
 html_title = 'lXtractor'
@@ -83,7 +83,7 @@ html_theme_options = {
     'repo_name': 'lXtractor',
     'repo_type': 'github',
     # Visible levels of the global TOC; -1 means unlimited
-    'globaltoc_depth': 4,
+    'globaltoc_depth': 3,
     # If False, expand all TOC entries
     'globaltoc_collapse': True,
     # If True, show hidden TOC entries
