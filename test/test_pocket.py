@@ -33,6 +33,13 @@ DATA = Path(__file__).parent / "data"
             {1: 1038, 2: 871},
             {("933", True), ("PHU", True)},
         ),
+(
+            DATA / "4hvd.mmtf.gz",
+            "cs:904,905,906:any >= 4",
+            True,
+            None,
+            {("933", False), ("PHU", False)},
+        ),
     ],
 )
 def test_pocket(path, definition, is_valid, mapping, expected):
