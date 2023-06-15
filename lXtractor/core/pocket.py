@@ -18,45 +18,42 @@ class Pocket:
     """
     A binding pocket.
 
-    The pocket is defined via a single string following a particular syntax,
-    such that, when applied to a ligand using :meth:`is_connected`, it allows
-    deciding whether a ligand is connected or not. Consequently, it is tightly
-    bound to :class:`lXtractor.core.ligand.Ligand`. Namely, the definition
-    relies on two matrices:
+    The pocket is defined via a single string following a particular syntax
+    (a definition), such that, when applied to a ligand using
+    :meth:`is_connected`, the latter outputs ``True`` if ligand is connected.
+    Consequently, it is tightly bound to :class:`lXtractor.core.ligand.Ligand`.
+    Namely, the definition relies on two matrices:
 
     #. "c" = :attr:`lXtractor.core.ligand.Ligand.contact_mask` (boolean mask)
     #. "d" = :attr:`lXtractor.core.ligand.Ligand.dist` (distances)
 
-    The definition comprises statements. Each statement involves the selection
-    consisting of a matrix ("c" or "d"), residue positions, and residue atom
-    names, formatted as::
-
-        {matrix-prefix}:[pos]:[atom_names]
-
-    where ``[pos]`` and ``[atom_names]`` can be comma-separated lists, a
-    comparison operator, and a number (``int`` or ``float``) to compare to.
-    Thus, a statement has the following format::
+    The definition is a combination of statements. Each statement involves the
+    selection consisting of a matrix ("c" or "d"), residue positions, and
+    residue atom names, formatted as::
 
         {matrix-prefix}:[pos]:[atom_names] {sign} {number}
 
-    For instance, selection ``c:1:CA,CB == 2`` translates into "must have
-    exactly two contacts with atoms "CA" and "CB" at position 1. See more
-    examples below.
+    where ``[pos]`` and ``[atom_names]`` can be comma-separated lists, ``sign``
+    is` a comparison operator, and a ``number`` (``int`` or ``float``) is what
+    to compare to. For instance, selection ``c:1:CA,CB == 2`` translates into
+    "must have exactly two contacts with atoms "CA" and "CB" at position 1.
+    See more examples below.
 
-    Comparing via ``sign`` and ``number`` have different meaning for matrices
-    "c" and "d". In the former case, ``>= x`` means "at least x contacts".
+    Comparison meaning depends on the matrix type used: "c" or "d".
+
+    In the former case, ``>= x`` means "at least x contacts".
     In the latter case, "<= x" means "have distance below x".
 
     In the case of the "d" matrix, applying selection and comparison will
-    result in a ``bool`` vector still requiring an aggregation. Two aggregation
-    types are supported: "da" (any) and "daa" (all).
+    result in a vector of ``bool`` bool values, requiring an aggregation.
+    Two aggregation types are supported: "da" (any) and "daa" (all).
 
     In the case of the "c" matrix, possible matrix prefixes are "c" and "cs".
     They have very different meanings! In the former case, the statements
     compares the total number of contacts when the selection is applied.
     In the latter case, the statement will select residues **separately** and,
     for each residue, decide whether the selected atoms form enough contact to
-    extrapolate towards the full residue and mark it as "contacting". These
+    extrapolate towards the full residue and mark it as "contacting" (controlled via `min_contacts`). These
     decisions are summed across each residue and this sum is compared to the
     number in the statement. See the example below.
 
@@ -69,7 +66,7 @@ class Pocket:
 
         c:1,5:any >= 2
 
-    Note that means this is a "cumulative" definition, i.e., it is applied to
+    Note that the above is a "cumulative" statement, i.e., it is applied to
     both residues at the same time. Thus, if a residue 1 has two atoms
     contacting a ligand while a residue 2 has none, this will still evaluate
     to ``True``. The following definition will ensure that each residue has
@@ -115,27 +112,19 @@ class Pocket:
         self,
         ligand: Ligand,
         mapping: dict[int, int] | None = None,
-        *,
-        skip_unmapped: bool = False,
+        **kwargs,
     ) -> bool:
         """
-        Check whether a ligand is connected to this pocket.
-
-        .. warning::
-            ``skip_unmapped=True`` may change the pocket's definition and lead
-            to undesired conclusions. Caution advised!
+        Check whether a ligand is connected.
 
         :param ligand: An arbitrary ligand.
         :param mapping: A mapping to the ligand's parent structure numbering.
-        :param skip_unmapped: If the `mapping` is provided and some position
-            is left unmapped, skip this position.
+        :param kwargs: Passed to :func:`translate_definition`.
         :return: ``True`` if the ligand is bound within the pocket and ``False``
             otherwise.
         """
 
-        translation = translate_definition(
-            self.definition, mapping, skip_unmapped=skip_unmapped
-        )
+        translation = translate_definition(self.definition, mapping, **kwargs)
         a = ligand.parent.array
         c = ligand.contact_mask > 0
         d = ligand.dist
@@ -190,10 +179,15 @@ def translate_definition(
     >>> translate_definition("cs:1,2:any > 2")
     'sum([c[(a.res_id == 1)].sum() >= 1, c[(a.res_id == 2)].sum() >= 1]) > 2'
 
+    .. warning::
+        ``skip_unmapped=True`` may change the pocket's definition and lead
+        to undesired conclusions. Caution advised!
+
     :param definition: A string definition of a :class:`Pocket`.
     :param mapping: An optional mapping from the definition's numbering to
         a structure's numbering.
-    :param skip_unmapped: Skip positions not present in `mapping`.
+    :param skip_unmapped: If the `mapping` is provided and some position
+            is left unmapped, skip this position.
     :param min_contacts: If prefix is "cs", use this threshold to determine a
         minimum number of residue contacts required to consider it bound.
     :return: A new string with statements of the provided definition translated
