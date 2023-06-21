@@ -9,7 +9,7 @@ import numpy as np
 from lXtractor.core import Ligand
 from lXtractor.core.exceptions import ParsingError, FormatError
 
-__all__ = ("Pocket", "translate_definition")
+__all__ = ("Pocket", "translate_definition", "make_sel")
 
 STATEMENT = re.compile(r"[dcsa]+:[,\d]+:[,\w]+ [>=<]+ \d+")
 
@@ -53,9 +53,10 @@ class Pocket:
     compares the total number of contacts when the selection is applied.
     In the latter case, the statement will select residues **separately** and,
     for each residue, decide whether the selected atoms form enough contact to
-    extrapolate towards the full residue and mark it as "contacting" (controlled via `min_contacts`). These
-    decisions are summed across each residue and this sum is compared to the
-    number in the statement. See the example below.
+    extrapolate towards the full residue and mark it as "contacting"
+    (controlled via `min_contacts`). These decisions are summed across each
+    residue and this sum is compared to the number in the statement.
+    See the example below.
 
     Finally, statements can be bracketed and combined by boolean operators
     "AND" and "OR" (which one can abbreviate by "&" and "|").
