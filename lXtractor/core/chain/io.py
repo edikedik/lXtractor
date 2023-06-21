@@ -88,6 +88,7 @@ def _read_objs(
 def read_chains(
     paths: Path | abc.Sequence[Path],
     children: bool,
+    *,
     seq_cfg: ChainIOConfig = ChainIOConfig(),
     str_cfg: ChainIOConfig = ChainIOConfig(),
     seq_callbacks: abc.Sequence[_CB] = (),
@@ -103,7 +104,7 @@ def read_chains(
 
     Consider using it for:
 
-        #. For parallel parsing of ``Chain``s with many structures per chain.
+        #. For parallel parsing of ``Chain`` objects with many structures.
         #. For separate treatment of chain sequences and chain structures.
         #. For better customization of chain sequences and structures parsing.
 
@@ -131,6 +132,7 @@ def read_chains(
         node2data = valfilter(lambda x: "structures" in x, node2data)
         seq2str = valmap(lambda x: x["structures"], node2data)
     else:
+        trees = None
         seq_paths = paths
         seq2str = {p: list(p.glob("structures/*")) for p in seq_paths}
         seq2str = valfilter(bool, seq2str)
@@ -139,10 +141,16 @@ def read_chains(
 
     path2seq = _read_objs(ChainSequence, seq_paths, seq_cfg, seq_callbacks, seq_kwargs)
     path2str = _read_objs(ChainStructure, str_paths, str_cfg, str_callbacks, str_kwargs)
-
     path2chain = valmap(Chain, path2seq)
 
-    if children:
+    for seq_path, str_paths in seq2str.items():
+        parent_chain = path2chain[seq_path]
+        for str_path in str_paths:
+            bound_str = path2str.get(str_path, None)
+            if bound_str is not None:
+                parent_chain.structures.append(bound_str)
+
+    if trees is not None:
         for tree in trees:
             for parent, child in tree.edges:
                 parent_chain = path2chain[parent]
@@ -150,13 +158,7 @@ def read_chains(
 
                 if not (parent_chain is None or child_chain is None):
                     parent_chain.children.append(child_chain)
-
-    for seq_path, str_paths in seq2str.items():
-        parent_chain = path2chain[seq_path]
-        for str_path in str_paths:
-            bound_str = path2str[str_path]
-            if bound_str is not None:
-                parent_chain.structures.append(bound_str)
+                    child_chain.parent = parent_chain
 
     return ChainList(c for p, c in path2chain.items() if p in paths)
 
