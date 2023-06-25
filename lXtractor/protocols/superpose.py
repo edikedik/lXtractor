@@ -5,95 +5,42 @@ A sandbox module to encapsulate high-level operations based on core
 import logging
 import typing as t
 from collections import abc, namedtuple
-from concurrent.futures import ProcessPoolExecutor
-from itertools import starmap, combinations
+from itertools import combinations
 
 import biotite.structure as bst
 import numpy as np
-from more_itertools import unzip
 from toolz import curry
-from tqdm.auto import tqdm
 
 from lXtractor.core.chain import ChainStructure
 from lXtractor.core.chain.structure import filter_selection_extended, subset_to_matching
 from lXtractor.core.exceptions import MissingData, LengthMismatch, InitError
+from lXtractor.util import apply
 from lXtractor.util.seq import biotite_align
 from lXtractor.util.structure import filter_to_common_atoms
 
 LOGGER = logging.getLogger(__name__)
 
 _Diff = namedtuple(
-    '_Diff', ['SuperposeFixed', 'RmsdFixed', 'SuperposeMobile', 'RmsdMobile']
+    "_Diff", ["SuperposeFixed", "RmsdFixed", "SuperposeMobile", "RmsdMobile"]
 )
-_StagedSupInpStrict: t.TypeAlias = tuple[str, bst.AtomArray, bst.AtomArray]
-_StagedSupInpFlex: t.TypeAlias = tuple[str, ChainStructure, ChainStructure]
-_StagedSupInp = t.TypeVar('_StagedSupInp', _StagedSupInpStrict, _StagedSupInpFlex)
-
-SupOutputStrict = namedtuple(
-    'SupOutputStrict',
-    ['ID_fix', 'ID_mob', 'RmsdSuperpose', 'RmsdTarget', 'Transformation'],
-)
-SupOutputStrictT: t.TypeAlias = tuple[
-    str, str, float, float, tuple[np.ndarray, np.ndarray, np.ndarray]
+_InpSuperpose: t.TypeAlias = tuple[str, bst.AtomArray, bst.AtomArray | None]
+_InpAlignSuperpose: t.TypeAlias = tuple[str, ChainStructure, ChainStructure]
+_OutSuperpose = t.TypeAlias = tuple[
+    str, str, float, t.Any, tuple[np.ndarray, np.ndarray, np.ndarray]
 ]
-SupOutputFlex = namedtuple(
-    'SupOutputFlex',
+_StagedSupInp = t.TypeVar("_StagedSupInp", _InpSuperpose, _InpAlignSuperpose)
+_DistFn = t.TypeAlias = abc.Callable[[bst.AtomArray, bst.AtomArray], t.Any]
+
+SuperposeOutput = t.NamedTuple(
+    "SuperposeOutput",
     [
-        'ID_fix',
-        'ID_mob',
-        'RmsdSuperpose',
-        'RmsdTarget',
-        'Transformation',
-        'DiffSeq',
-        'DiffAtoms',
+        ("ID_fix", str),
+        ("ID_mob", str),
+        ("RmsdSuperpose", float),
+        ("RmsdTarget", t.Any),
+        ("Transformation", tuple[np.ndarray, np.ndarray, np.ndarray]),
     ],
 )
-SupOutputFlexT: t.TypeAlias = tuple[
-    str,
-    str,
-    float,
-    float,
-    tuple[np.ndarray, np.ndarray, np.ndarray],
-    tuple[float, float, float, float],
-    tuple[float, float, float, float],
-]
-
-
-def superpose(fs: _StagedSupInpStrict, ms: _StagedSupInpStrict) -> SupOutputStrictT:
-    """
-    A lower-level function performing superposition and rmsd calculation
-    of already prepared :class:`AtomArray`'s.
-
-    .. seealso::
-        :func:`superpose_pairwise_strict`, :func:`superpose_pairwise_flex`
-
-    :param fs: Staged input for a fixed structure.
-    :param ms: Staged input for a mobile structure.
-    :return: (id_fixed, id_mobile, rmsd, transformation)
-    """
-    f_id, fs_sup, fs_rmsd = fs
-    m_id, ms_sup, ms_rmsd = ms
-
-    if len(fs_sup) != len(ms_sup):
-        raise LengthMismatch(
-            'For superposition, expected fixed and mobile array to have '
-            f'the same number of atoms, but {len(fs_sup)} != {len(ms_sup)}'
-        )
-    if len(fs_rmsd) != len(ms_rmsd):
-        raise LengthMismatch(
-            'For RMSD calculation, expected fixed and mobile array to have '
-            f'the same number of atoms, but {len(fs_rmsd)} != {len(ms_rmsd)}'
-        )
-
-    _, transformation = bst.superimpose(fs_sup, ms_sup)
-
-    ms_rmsd = bst.superimpose_apply(ms_rmsd, transformation)
-    ms_sup = bst.superimpose_apply(ms_sup, transformation)
-
-    rmsd_sup = bst.rmsd(fs_sup, ms_sup)
-    rmsd_target = bst.rmsd(fs_rmsd, ms_rmsd)
-
-    return f_id, m_id, rmsd_sup, rmsd_target, transformation
 
 
 @curry
@@ -111,13 +58,13 @@ def _stage_inp(
     exclude_hydrogen: bool,
     to_array: bool,
     tolerate_missing: bool,
-) -> _StagedSupInpStrict | _StagedSupInpFlex:
+) -> _InpSuperpose | _InpAlignSuperpose:
     def init_sub_chain(a):
         try:
             return ChainStructure.from_structure(a, c.pdb.id, c.pdb.chain)
         except Exception as e:
             raise InitError(
-                f'Failed to create ChainStructure from array {a} for {c}'
+                f"Failed to create ChainStructure from array {a} for {c}"
             ) from e
 
     pos_sup, atoms_sup = selection_superpose
@@ -146,10 +93,10 @@ def _stage_inp(
     a_sup, a_rmsd = c.array[mask_sup], c.array[mask_rmsd]
 
     if len(a_sup) == 0:
-        raise MissingData(f'Empty selection for superposition atoms in structure {c}')
+        raise MissingData(f"Empty selection for superposition atoms in structure {c}")
 
     if len(a_rmsd) == 0:
-        raise MissingData(f'Empty selection for RMSD atoms in structure {c}')
+        raise MissingData(f"Empty selection for RMSD atoms in structure {c}")
 
     if to_array:
         return c.id, a_sup, a_rmsd
@@ -175,52 +122,81 @@ def _yield_staged_pairs(
                 yield fs, ms
 
 
-@curry
-def _align_and_superpose(
-    fs: _StagedSupInpFlex, ms: _StagedSupInpFlex, skip_aln_if_match: str
-) -> SupOutputFlexT:
-    def subset_to_common(c1, c2):
-        m1, m2 = filter_to_common_atoms(c1.array, c2.array, allow_residue_mismatch=True)
-        c1_sub, c2_sub = c1.array[m1], c2.array[m2]
-        return c1_sub, c2_sub, len(c1_sub) / len(c1.array), len(c2_sub) / len(c2.array)
+def superpose_pair(
+    pair: tuple[_InpSuperpose, _InpSuperpose], dist_fn: _DistFn | None
+) -> _OutSuperpose:
+    """
+    A function performing superposition and rmsd calculation of already prepared
+    :class:`AtomArray` objects. Each must have the same number of atoms.
 
-    (id1, c_sup1, c_rmsd1), (id2, c_sup2, c_rmsd2) = fs, ms
-    c_sup1_aligned, c_sup2_aligned = subset_to_matching(
-        c_sup1,
-        c_sup2,
+    :param pair: A pair of staged inputs. A staged input is a tuple with an
+        identifier, an atom array to superpose, and an optional atom array for
+        the `dist_fn`.
+    :param dist_fn: An optional distance function accepting two positional args:
+        "fixed" atom array and superposed atom array.
+    :return: a tuple with id_fixed, id_mobile, rmsd of the superposed atoms,
+        calculated distance, and the transformation matrices.
+    """
+    # f_ for fixed, m_ for mobile
+    (f_id, f_array_sup, f_array_dist), (m_id, m_array_sup, m_array_dist) = pair
+
+    if len(f_array_sup) != len(m_array_sup):
+        raise LengthMismatch(
+            "For superposition, expected fixed and mobile array to have "
+            f"the same number of atoms, but {len(f_array_sup)} != {len(m_array_sup)}"
+        )
+
+    _, transformation = bst.superimpose(f_array_sup, m_array_sup)
+
+    m_array_sup = bst.superimpose_apply(m_array_sup, transformation)
+    rmsd_sup = bst.rmsd(f_array_sup, m_array_sup)
+
+    if all(x is not None for x in [dist_fn, f_array_dist, m_array_dist]):
+        m_array_dist = bst.superimpose_apply(m_array_dist, transformation)
+        dist = dist_fn(f_array_dist, m_array_dist)
+    else:
+        dist = None
+
+    return f_id, m_id, rmsd_sup, dist, transformation
+
+
+def align_and_superpose_pair(
+    pair: tuple[_InpAlignSuperpose, _InpAlignSuperpose],
+    dist_fn: _DistFn | None,
+    skip_aln_if_match: str,
+) -> _OutSuperpose:
+    """
+    A lower-level function performing superposition and rmsd calculation
+    of already prepared :class:`AtomArray`'s.
+
+    :param pair: A pair of staged inputs.
+    :param dist_fn: An optional distance function accepting two positional args:
+        "fixed" atom array and superposed atom array.
+    :param skip_aln_if_match: Passed to
+        :func:`lXtractor.core.chain.subset_to_matching`.
+    :return: a tuple with id_fixed, id_mobile, rmsd of the superposed atoms,
+        calculated distance, and the transformation matrices.
+    """
+    (f_id, f_str_sup, f_str_dist), (m_id, m_str_sup, m_str_dist) = pair
+
+    f_str_aln, m_str_aln = subset_to_matching(
+        f_str_sup,
+        m_str_sup,
         skip_if_match=skip_aln_if_match,
         align_method=biotite_align,
-        name='Mobile',
+        name="Mobile",
     )
-    c_rmsd1_aligned, c_rmsd2_aligned = subset_to_matching(
-        c_rmsd1,
-        c_rmsd2,
-        skip_if_match=skip_aln_if_match,
-        align_method=biotite_align,
-        name='Mobile',
+    f_mask, m_mask = filter_to_common_atoms(
+        f_str_aln.array, m_str_aln.array, allow_residue_mismatch=True
     )
 
-    a_sup1, a_sup2, sup1_diff, sup2_diff = subset_to_common(
-        c_sup1_aligned, c_sup2_aligned
+    return superpose_pair(
+        (
+            (f_id, f_str_aln.array[f_mask], f_str_dist.array),
+            (m_id, m_str_aln.array[m_mask], m_str_dist.array),
+        ),
+        dist_fn,
     )
-    a_rmsd1, a_rmsd2, rmsd1_diff, rmsd2_diff = subset_to_common(
-        c_rmsd1_aligned, c_rmsd2_aligned
-    )
-
-    # wrap into namedtuples later
-    diff_seqs = (
-        len(c_sup1.seq) - len(c_sup1_aligned.seq),
-        len(c_rmsd1.seq) - len(c_rmsd1_aligned.seq),
-        len(c_sup2.seq) - len(c_sup2_aligned.seq),
-        len(c_rmsd2.seq) - len(c_rmsd2_aligned.seq),
-    )
-    diff_atoms = (sup1_diff, rmsd1_diff, sup2_diff, rmsd2_diff)
-
-    id1, id2, rmsd_sup, rsmd_target, transformation = superpose(
-        (id1, a_sup1, a_rmsd1), (id2, a_sup2, a_rmsd2)
-    )
-
-    return id1, id2, rmsd_sup, rsmd_target, transformation, diff_seqs, diff_atoms
 
 
 def superpose_pairwise(
@@ -230,18 +206,20 @@ def superpose_pairwise(
         abc.Sequence[int] | None,
         abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None,
     ] = (None, None),
-    selection_rmsd: tuple[
+    selection_dist: tuple[
         abc.Sequence[int] | None,
         abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None,
     ] = (None, None),
+    dist_fn: _DistFn | None = None,
+    *,
+    strict: bool = True,
     map_name: str | None = None,
     exclude_hydrogen: bool = False,
-    strict: bool = True,
-    skip_aln_if_match: str = 'len',
+    skip_aln_if_match: str = "len",
     verbose: bool = False,
-    num_proc: int | None = None,
+    num_proc: int = 1,
     **kwargs,
-) -> abc.Generator[SupOutputFlex | SupOutputStrict, None, None]:
+) -> abc.Generator[SuperposeOutput, None, None]:
     """
 
     Superpose pairs of structures.
@@ -270,9 +248,8 @@ def superpose_pairwise(
     mobile.
 
     .. seealso::
-        :func:`filter_selection_extended` -- for selection arguments breakdown.
-
-        :func:`biotite.structure.superimpose`
+        :func:`lXtractor.util.structure.filter_selection_extended` --
+        used to apply the selections.
 
     :param fixed: An iterable over chain structures that won't be moved.
     :param mobile: An iterable over chain structures to superpose onto
@@ -280,8 +257,11 @@ def superpose_pairwise(
     :param selection_superpose: A tuple with (residue positions, atom names)
         to select atoms for superposition. Will be applied to each `fixed`
         and `mobile` structure.
-    :param selection_rmsd: A tuple with (residue positions, atom names)
-        to select atoms for RMSD calculation.
+    :param selection_dist: A tuple with (residue positions, atom names)
+        to select atoms for `dist_fn` calculation.
+    :param dist_fn: An optional distance function applied to a pair of
+        superposed atom arrays, possibly different from the arrays selected
+        for superposition, which is controlled via `selection_dist`.
     :param map_name: Mapping for positions in both selection arguments.
         If used, must exist within :attr:`Seq <lXtractor.core.chain.
         ChainStructure.seq>` of each fixed and mobile structure.
@@ -296,26 +276,14 @@ def superpose_pairwise(
         may consume a lot of RAM, so caution advised.
     :param kwargs: Passed to :meth:`ProcessPoolExecutor.map`. Useful for
         controlling `chunksize` and `timeout` parameters.
-    :return: A generator over tuples (id_fixed, id_mobile, rmsd,
-        transformation) where transformation is a set of vectors and matrices
-        used to superpose the mobile structure. It can be used directly with
-        :func:`biotite.structure.superimpose_apply`.
+    :return: A generator of ``namedtuple`` outputs each containing the IDs of
+        the superposed objects, the RMSD between superposed structures,
+        the distance function output, and the transformation matrices.
     """
-
-    # TODO: does it require wrapping the output?
-    # TODO: should I create a separate signature for flex and strict to simplify typing?
-
-    def wrap_output(res) -> SupOutputFlex | SupOutputStrict:
-        if strict:
-            return SupOutputStrict(*res)
-        id1, id2, rmsd_sup, rmsd_tar, tr, diff_seq, diff_atoms = res
-        return SupOutputFlex(
-            id1, id2, rmsd_sup, rmsd_tar, tr, _Diff(*diff_seq), _Diff(*diff_atoms)
-        )
 
     stage = _stage_inp(  # pylint: disable=no-value-for-parameter
         selection_superpose=selection_superpose,
-        selection_rmsd=selection_rmsd,
+        selection_rmsd=selection_dist,
         map_name=map_name,
         exclude_hydrogen=exclude_hydrogen,
         to_array=strict,
@@ -332,25 +300,16 @@ def superpose_pairwise(
                 n = int(len(fixed) * (len(fixed) - 1) / 2)
 
     fn = (
-        superpose
+        curry(superpose_pair)(dist_fn=dist_fn)
         if strict
-        else _align_and_superpose(  # pylint: disable=no-value-for-parameter
-            skip_aln_if_match=skip_aln_if_match
+        else curry(align_and_superpose_pair)(  # pylint: disable=no-value-for-parameter
+            skip_aln_if_match=skip_aln_if_match,
+            dist_fn=dist_fn
         )
     )
-    results: abc.Iterable[SupOutputFlex | SupOutputStrict]
-    if num_proc is not None and num_proc > 1:
-        with ProcessPoolExecutor(num_proc) as executor:
-            results = map(wrap_output, executor.map(fn, *unzip(pairs), **kwargs))
-            if verbose:
-                results = tqdm(results, desc='Superposing pairs', total=n)
-            yield from results
-    else:
-        results = map(wrap_output, starmap(fn, pairs))
-        if verbose:
-            results = tqdm(results, desc='Superposing pairs', total=n)
-        yield from results
+    results = apply(fn, pairs, verbose, "Superposing pairs", num_proc, n, **kwargs)
+    yield from map(lambda x: SuperposeOutput(*x), results)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError

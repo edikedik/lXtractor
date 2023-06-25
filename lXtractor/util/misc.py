@@ -82,19 +82,20 @@ def is_valid_field_name(s: str) -> bool:
         return False
 
 
-def _apply_sequentially(fn, it, verbose, desc):
+def _apply_sequentially(fn, it, verbose, desc, total):
+    total = total or (len(it) if isinstance(it, abc.Sized) else None)
     if verbose:
-        it = tqdm(it, desc=desc)
+        it = tqdm(it, desc=desc, total=total)
     yield from map(fn, it)
 
 
-def _apply_parallel(fn, it, verbose, desc, num_proc):
+def _apply_parallel(fn, it, verbose, desc, num_proc, total, **kwargs):
     assert num_proc > 1, "More than 1 CPU requested"
-    total = len(it) if isinstance(it, abc.Sized) else None
+    total = total or (len(it) if isinstance(it, abc.Sized) else None)
     with ProcessPoolExecutor(num_proc) as executor:
         if verbose:
             yield from tqdm(
-                executor.map(fn, it),
+                executor.map(fn, it, **kwargs),
                 desc=desc, total=total
             )
         else:
@@ -107,6 +108,8 @@ def apply(
     verbose: bool,
     desc: str,
     num_proc: int,
+    total: int | None = None,
+    **kwargs
 ) -> abc.Iterator[R]:
     """
     :param fn: A one-argument function.
@@ -116,12 +119,13 @@ def apply(
     :param num_proc: The number of processes to use. Anything below ``1``
         indicates sequential processing. Otherwise, will apply ``fn``
         in parallel using ``ProcessPoolExecutor``.
-    :return:
+    :param total: The total number of elements. Used for the progress bar.
+    :return: Passed to :meth:`ProcessPoolExecutor.map()`.
     """
     if num_proc > 1:
-        yield from _apply_parallel(fn, it, verbose, desc, num_proc)
+        yield from _apply_parallel(fn, it, verbose, desc, num_proc, total, **kwargs)
     else:
-        yield from _apply_sequentially(fn, it, verbose, desc)
+        yield from _apply_sequentially(fn, it, verbose, desc, total)
 
 
 if __name__ == "__main__":

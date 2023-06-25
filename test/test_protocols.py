@@ -85,7 +85,7 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
     res = res.pop()
     assert len(res) == 5
     assert res.ID_fix == res.ID_mob
-    assert res.RmsdSuperpose < 0.001 and res.RmsdTarget < 0.001
+    assert res.RmsdSuperpose < 0.001
 
     src_seq = ChainSequence.from_string(human_src_seq[1], name=human_src_seq[0])
     abl_str.seq.map_numbering(src_seq, name='REF')
@@ -93,29 +93,21 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
 
     # Align using backbone atoms, then calculate rmsd using all atoms
     res = list(
-        superpose_pairwise(
-            [abl_str],
-            [src_str],
-            selection_superpose=([407, 408, 409], ['CA', 'C', 'N']),
-            selection_rmsd=([407, 408], None),
-            map_name='REF',
-        )
+        superpose_pairwise([abl_str], [src_str],
+                           selection_superpose=([407, 408, 409], ['CA', 'C', 'N']),
+                           selection_dist=([407, 408], None), map_name='REF')
     )
     assert len(res) == 1
     res = res.pop()
     assert res.ID_fix == abl_str.id and res.ID_mob == src_str.id
-    assert res.RmsdSuperpose <= 1 and res.RmsdTarget < 1
+    assert res.RmsdSuperpose <= 1
 
     # Trying to do the same in parallel
     res = list(
-        superpose_pairwise(
-            [abl_str, src_str],
-            [src_str, abl_str],
-            selection_superpose=([407, 408, 409], ['CA', 'C', 'N']),
-            selection_rmsd=([407, 408], None),
-            map_name='REF',
-            num_proc=2,
-        )
+        superpose_pairwise([abl_str, src_str], [src_str, abl_str],
+                           selection_superpose=([407, 408, 409], ['CA', 'C', 'N']),
+                           selection_dist=([407, 408], None), map_name='REF',
+                           num_proc=2)
     )
     assert len(res) == 4
 
@@ -130,50 +122,39 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
     # Strict should fail since the first residues have different numbers of atoms
     with pytest.raises(ValueError):
         next(
-            superpose_pairwise(
-                [abl_str], [src_str], selection_superpose=(pos, None), map_name='REF'
-            )
+            superpose_pairwise([abl_str], [src_str], selection_superpose=(pos, None),
+                               map_name='REF')
         )
 
     res = next(
-        superpose_pairwise(
-            [abl_str],
-            [src_str],
-            selection_superpose=(pos, None),
-            map_name='REF',
-            strict=False,
-        )
+        superpose_pairwise([abl_str], [src_str], selection_superpose=(pos, None),
+                           strict=False, map_name='REF')
     )
 
-    assert len(res) == 7
-    diff_seq, diff_atoms = res[-2:]
-
-    assert diff_seq.SuperposeFixed == diff_seq.SuperposeMobile == 0
-    assert diff_seq.RmsdFixed == diff_seq.RmsdMobile == 0
-    assert diff_atoms.SuperposeFixed == diff_atoms.RmsdFixed
-    assert diff_atoms.SuperposeMobile == diff_atoms.RmsdMobile
+    assert len(res) == 5
+    # diff_seq, diff_atoms = res[-2:]
+    #
+    # assert diff_seq.SuperposeFixed == diff_seq.SuperposeMobile == 0
+    # assert diff_seq.RmsdFixed == diff_seq.RmsdMobile == 0
+    # assert diff_atoms.SuperposeFixed == diff_atoms.RmsdFixed
+    # assert diff_atoms.SuperposeMobile == diff_atoms.RmsdMobile
     assert res[2] < 1
 
     # 3. Flexible with backbone atoms, same selection
     # ===============================================
 
     res = next(
-        superpose_pairwise(
-            [abl_str],
-            [src_str],
-            selection_superpose=(pos, ['N', 'CA', 'C']),
-            map_name='REF',
-            strict=False,
-        )
+        superpose_pairwise([abl_str], [src_str],
+                           selection_superpose=(pos, ['N', 'CA', 'C']), strict=False,
+                           map_name='REF')
     )
 
-    print(res)
     diff_seq, diff_atoms = res[-2:]
 
-    assert diff_seq.SuperposeFixed == diff_seq.SuperposeMobile == 0
-    assert diff_seq.RmsdFixed == diff_seq.RmsdMobile == 0
-    assert diff_atoms.SuperposeFixed == diff_atoms.RmsdFixed
-    assert diff_atoms.SuperposeMobile == diff_atoms.RmsdMobile
+    # assert diff_seq.SuperposeFixed == diff_seq.SuperposeMobile == 0
+    # assert diff_seq.RmsdFixed == diff_seq.RmsdMobile == 0
+    # assert diff_atoms.SuperposeFixed == diff_atoms.RmsdFixed
+    # assert diff_atoms.SuperposeMobile == diff_atoms.RmsdMobile
     assert res[2] < 1
 
 

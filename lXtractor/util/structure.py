@@ -143,9 +143,7 @@ def filter_to_common_atoms(
     """
 
     def preprocess_array(a: bst.AtomArray) -> tuple[int, bst.AtomArray]:
-        num_res = bst.get_residue_count(a)
-        r_it = bst.residue_iter(a)
-        return num_res, r_it
+        return bst.get_residue_count(a), bst.residue_iter(a)
 
     def process_pair(
         r1: bst.AtomArray, r2: bst.AtomArray
