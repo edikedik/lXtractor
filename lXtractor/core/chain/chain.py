@@ -100,7 +100,7 @@ class Chain:
         """
         :return: Chain identifier derived from its :attr:`seq` ID.
         """
-        parent = f"<-({self.parent.id})" if self.parent else ""
+        parent = "" if self.parent is None else f"<-({self.parent.id})"
         return f"Chain({self.seq.id}){parent}"
 
     @property
