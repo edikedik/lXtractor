@@ -4,7 +4,7 @@ A sandbox module to encapsulate high-level operations based on core
 """
 import logging
 import typing as t
-from collections import abc, namedtuple
+from collections import abc
 from itertools import combinations
 
 import biotite.structure as bst
@@ -20,16 +20,18 @@ from lXtractor.util.structure import filter_to_common_atoms
 
 LOGGER = logging.getLogger(__name__)
 
-_Diff = namedtuple(
-    "_Diff", ["SuperposeFixed", "RmsdFixed", "SuperposeMobile", "RmsdMobile"]
-)
 _InpSuperpose: t.TypeAlias = tuple[str, bst.AtomArray, bst.AtomArray | None]
-_InpAlignSuperpose: t.TypeAlias = tuple[str, ChainStructure, ChainStructure]
-_OutSuperpose = t.TypeAlias = tuple[
+_InpAlignSuperpose: t.TypeAlias = tuple[str, ChainStructure, bst.AtomArray | None]
+_OutSuperpose: t.TypeAlias = tuple[
     str, str, float, t.Any, tuple[np.ndarray, np.ndarray, np.ndarray]
 ]
 _StagedSupInp = t.TypeVar("_StagedSupInp", _InpSuperpose, _InpAlignSuperpose)
-_DistFn = t.TypeAlias = abc.Callable[[bst.AtomArray, bst.AtomArray], t.Any]
+_DistFn: t.TypeAlias = abc.Callable[[bst.AtomArray, bst.AtomArray], t.Any]
+_Selection: t.TypeAlias = tuple[
+    abc.Sequence[int] | None,
+    abc.Sequence[abc.Sequence[str]] | abc.Sequence[str] | None,
+]
+_Selector: t.TypeAlias = abc.Callable[[ChainStructure], bst.AtomArray]
 
 SuperposeOutput = t.NamedTuple(
     "SuperposeOutput",
@@ -37,7 +39,7 @@ SuperposeOutput = t.NamedTuple(
         ("ID_fix", str),
         ("ID_mob", str),
         ("RmsdSuperpose", float),
-        ("RmsdTarget", t.Any),
+        ("Distance", t.Any),
         ("Transformation", tuple[np.ndarray, np.ndarray, np.ndarray]),
     ],
 )
@@ -46,14 +48,8 @@ SuperposeOutput = t.NamedTuple(
 @curry
 def _stage_inp(
     c: ChainStructure,
-    selection_superpose: tuple[
-        abc.Sequence[int] | None,
-        abc.Sequence[abc.Sequence[str]] | abc.Sequence[str] | None,
-    ],
-    selection_rmsd: tuple[
-        abc.Sequence[int] | None,
-        abc.Sequence[abc.Sequence[str]] | abc.Sequence[str] | None,
-    ],
+    selection_superpose: _Selection | _Selector,
+    selection_dist: _Selection | _Selector | None,
     map_name: str | None,
     exclude_hydrogen: bool,
     to_array: bool,
@@ -67,44 +63,38 @@ def _stage_inp(
                 f"Failed to create ChainStructure from array {a} for {c}"
             ) from e
 
-    pos_sup, atoms_sup = selection_superpose
-    pos_rmsd, atoms_rmsd = selection_rmsd
+    def apply_selection(sel: _Selection) -> bst.AtomArray:
+        pos, atoms = sel
+        mask = filter_selection_extended(
+            c,
+            pos=pos,
+            atom_names=atoms,
+            map_name=map_name,
+            exclude_hydrogen=exclude_hydrogen,
+            tolerate_missing=tolerate_missing,
+        )
+        return c.array[mask]
 
-    if pos_rmsd is None or atoms_rmsd is None:
-        pos_rmsd, atoms_rmsd = pos_sup, atoms_sup
+    if isinstance(selection_superpose, tuple):
+        a_sup = apply_selection(selection_superpose)
+    else:
+        a_sup = selection_superpose(c)
 
-    mask_sup = filter_selection_extended(
-        c,
-        pos=pos_sup,
-        atom_names=atoms_sup,
-        map_name=map_name,
-        exclude_hydrogen=exclude_hydrogen,
-        tolerate_missing=tolerate_missing,
-    )
-    mask_rmsd = filter_selection_extended(
-        c,
-        pos=pos_rmsd,
-        atom_names=atoms_rmsd,
-        map_name=map_name,
-        exclude_hydrogen=exclude_hydrogen,
-        tolerate_missing=tolerate_missing,
-    )
-
-    a_sup, a_rmsd = c.array[mask_sup], c.array[mask_rmsd]
+    if selection_dist is None:
+        a_dist = None
+    else:
+        if isinstance(selection_dist, tuple):
+            a_dist = apply_selection(selection_dist)
+        else:
+            a_dist = selection_dist(c)
 
     if len(a_sup) == 0:
         raise MissingData(f"Empty selection for superposition atoms in structure {c}")
 
-    if len(a_rmsd) == 0:
-        raise MissingData(f"Empty selection for RMSD atoms in structure {c}")
-
     if to_array:
-        return c.id, a_sup, a_rmsd
+        return c.id, a_sup, a_dist
 
-    c_sup = init_sub_chain(a_sup)
-    c_rmsd = init_sub_chain(a_rmsd)
-
-    return c.id, c_sup, c_rmsd
+    return c.id, init_sub_chain(a_sup), a_dist
 
 
 def _yield_staged_pairs(
@@ -166,8 +156,10 @@ def align_and_superpose_pair(
     skip_aln_if_match: str,
 ) -> _OutSuperpose:
     """
-    A lower-level function performing superposition and rmsd calculation
-    of already prepared :class:`AtomArray`'s.
+    Use sequence alignment to subset each chain structure in `pair` to common
+    aligned residues and common atoms in each aligned residue pair. Use
+    :func:`superpose_pair` to superpose the atom arrays from subsetted
+    chain structures.
 
     :param pair: A pair of staged inputs.
     :param dist_fn: An optional distance function accepting two positional args:
@@ -192,8 +184,8 @@ def align_and_superpose_pair(
 
     return superpose_pair(
         (
-            (f_id, f_str_aln.array[f_mask], f_str_dist.array),
-            (m_id, m_str_aln.array[m_mask], m_str_dist.array),
+            (f_id, f_str_aln.array[f_mask], f_str_dist),
+            (m_id, m_str_aln.array[m_mask], m_str_dist),
         ),
         dist_fn,
     )
@@ -202,14 +194,8 @@ def align_and_superpose_pair(
 def superpose_pairwise(
     fixed: abc.Iterable[ChainStructure],
     mobile: abc.Iterable[ChainStructure] | None = None,
-    selection_superpose: tuple[
-        abc.Sequence[int] | None,
-        abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None,
-    ] = (None, None),
-    selection_dist: tuple[
-        abc.Sequence[int] | None,
-        abc.Iterable[abc.Sequence[str]] | abc.Sequence[str] | None,
-    ] = (None, None),
+    selection_superpose: _Selection | _Selector = (None, None),
+    selection_dist: _Selection | _Selector | None = None,
     dist_fn: _DistFn | None = None,
     *,
     strict: bool = True,
@@ -255,10 +241,14 @@ def superpose_pairwise(
     :param mobile: An iterable over chain structures to superpose onto
         fixed ones. If ``None``, will use the combinations of `fixed`.
     :param selection_superpose: A tuple with (residue positions, atom names)
-        to select atoms for superposition. Will be applied to each `fixed`
-        and `mobile` structure.
-    :param selection_dist: A tuple with (residue positions, atom names)
-        to select atoms for `dist_fn` calculation.
+        to select atoms for superposition, which will be applied to each `fixed`
+        and `mobile` structure. If ``(None, None)``, will use all positions
+        and atoms. Alternatively, a selector function accepting a chain
+        structure and returning an atom array. If `strict` is ``False``, it
+        will convert the selected atom array to a chain structure.
+    :param selection_dist: Same as `selection_superpose`. In addition, accepts
+        ``None`` to indicate an empty selection, in which case, `dist_fn`
+        should also be ``None``.
     :param dist_fn: An optional distance function applied to a pair of
         superposed atom arrays, possibly different from the arrays selected
         for superposition, which is controlled via `selection_dist`.
@@ -283,7 +273,7 @@ def superpose_pairwise(
 
     stage = _stage_inp(  # pylint: disable=no-value-for-parameter
         selection_superpose=selection_superpose,
-        selection_rmsd=selection_dist,
+        selection_dist=selection_dist,
         map_name=map_name,
         exclude_hydrogen=exclude_hydrogen,
         to_array=strict,
@@ -303,8 +293,7 @@ def superpose_pairwise(
         curry(superpose_pair)(dist_fn=dist_fn)
         if strict
         else curry(align_and_superpose_pair)(  # pylint: disable=no-value-for-parameter
-            skip_aln_if_match=skip_aln_if_match,
-            dist_fn=dist_fn
+            skip_aln_if_match=skip_aln_if_match, dist_fn=dist_fn
         )
     )
     results = apply(fn, pairs, verbose, "Superposing pairs", num_proc, n, **kwargs)
