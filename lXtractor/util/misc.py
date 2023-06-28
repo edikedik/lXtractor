@@ -166,8 +166,8 @@ def apply(
         :class:`joblib.Parallel`.
     """
     if num_proc > 1:
-        fn = _apply_parallel_joblib if use_joblib else _apply_parallel
-        yield from fn(fn, it, verbose, desc, num_proc, total, **kwargs)
+        f = _apply_parallel_joblib if use_joblib else _apply_parallel
+        yield from f(fn, it, verbose, desc, num_proc, total, **kwargs)
     else:
         yield from _apply_sequentially(fn, it, verbose, desc, total)
 
