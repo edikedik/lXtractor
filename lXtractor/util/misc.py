@@ -3,11 +3,13 @@ Miscellaneous utilities that couldn't be properly categorized.
 """
 from __future__ import annotations
 
+import contextlib
 import typing as t
 from collections import namedtuple, abc
 from concurrent.futures import ProcessPoolExecutor
 from itertools import groupby
 
+import joblib
 import pandas as pd
 from tqdm.auto import tqdm
 
@@ -89,15 +91,53 @@ def _apply_sequentially(fn, it, verbose, desc, total):
     yield from map(fn, it)
 
 
-def _apply_parallel(fn, it, verbose, desc, num_proc, total, **kwargs):
+@contextlib.contextmanager
+def tqdm_joblib(tqdm_object):
+    """Context manager to patch joblib to report into tqdm progress bar given as argument"""
+
+    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+        def __call__(self, *args, **kwargs):
+            tqdm_object.update(n=self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    old_batch_callback = joblib.parallel.BatchCompletionCallBack
+    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield tqdm_object
+    finally:
+        joblib.parallel.BatchCompletionCallBack = old_batch_callback
+        tqdm_object.close()
+
+
+def _apply_parallel_joblib(fn, it, verbose, desc, num_proc, total, **kwargs):
     assert num_proc > 1, "More than 1 CPU requested"
+    if total is None and isinstance(it, abc.Sized):
+        print(total)
+        total = len(it)
+    if verbose:
+        with tqdm_joblib(tqdm(desc=desc, total=total)):
+            with joblib.Parallel(n_jobs=num_proc, **kwargs) as executor:
+                yield from executor(joblib.delayed(fn)(x) for x in it)
+    else:
+        with joblib.Parallel(n_jobs=num_proc) as executor:
+            yield from executor(joblib.delayed(fn)(x) for x in it)
+
+    # # Alternative version, without the context manager:
+    # with joblib.Parallel(n_jobs=num_proc) as executor:
+    #     # yield from executor(delayed(fn)(x) for x in it)
+    #     if verbose:
+    #         yield from executor(
+    #             joblib.delayed(fn)(x) for x in tqdm(it, desc=desc, total=total)
+    #         )
+    #     else:
+    #         yield from executor(joblib.delayed(fn)(x) for x in it)
+
+
+def _apply_parallel(fn, it, verbose, desc, num_proc, total, **kwargs):
     total = total or (len(it) if isinstance(it, abc.Sized) else None)
     with ProcessPoolExecutor(num_proc) as executor:
         if verbose:
-            yield from tqdm(
-                executor.map(fn, it, **kwargs),
-                desc=desc, total=total
-            )
+            yield from tqdm(executor.map(fn, it, **kwargs), desc=desc, total=total)
         else:
             yield from executor.map(fn, it)
 
@@ -109,7 +149,8 @@ def apply(
     desc: str,
     num_proc: int,
     total: int | None = None,
-    **kwargs
+    use_joblib: bool = False,
+    **kwargs,
 ) -> abc.Iterator[R]:
     """
     :param fn: A one-argument function.
@@ -120,10 +161,13 @@ def apply(
         indicates sequential processing. Otherwise, will apply ``fn``
         in parallel using ``ProcessPoolExecutor``.
     :param total: The total number of elements. Used for the progress bar.
-    :return: Passed to :meth:`ProcessPoolExecutor.map()`.
+    :param use_joblib: Use :class:`joblib.Parallel` for parallel application.
+    :return: Passed to :meth:`ProcessPoolExecutor.map()` or
+        :class:`joblib.Parallel`.
     """
     if num_proc > 1:
-        yield from _apply_parallel(fn, it, verbose, desc, num_proc, total, **kwargs)
+        fn = _apply_parallel_joblib if use_joblib else _apply_parallel
+        yield from fn(fn, it, verbose, desc, num_proc, total, **kwargs)
     else:
         yield from _apply_sequentially(fn, it, verbose, desc, total)
 

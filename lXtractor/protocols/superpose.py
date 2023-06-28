@@ -296,7 +296,9 @@ def superpose_pairwise(
             skip_aln_if_match=skip_aln_if_match, dist_fn=dist_fn
         )
     )
-    results = apply(fn, pairs, verbose, "Superposing pairs", num_proc, n, **kwargs)
+    results = apply(
+        fn, pairs, verbose, "Superposing pairs", num_proc, n, use_joblib=True, **kwargs
+    )
     yield from map(lambda x: SuperposeOutput(*x), results)
 
 
