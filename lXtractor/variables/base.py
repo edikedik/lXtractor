@@ -13,12 +13,10 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from toolz import curry
 
 import lXtractor.resources as resources
-from lXtractor.core.exceptions import FailedCalculation
+from lXtractor.core import Ligand
 from lXtractor.core.structure import GenericStructure
-# from lXtractor.ext import resources
 from lXtractor.util.io import read_n_col_table
 
 
@@ -32,12 +30,12 @@ AggFns: dict[str, AggFn] = dict(
 )
 
 LOGGER = logging.getLogger(__name__)
-T = t.TypeVar('T')
-V = t.TypeVar('V')
+T = t.TypeVar("T")
+V = t.TypeVar("V")
 
 MappingT: t.TypeAlias = abc.Mapping[int, t.Optional[int]]
-OT = t.TypeVar('OT', GenericStructure, abc.Sequence)  # object type
-RT = t.TypeVar('RT')  # return type
+OT = t.TypeVar("OT", GenericStructure, abc.Sequence)  # object type
+RT = t.TypeVar("RT")  # return type
 ERT: t.TypeAlias = tuple[bool, RT]  # extended return type
 
 
@@ -68,16 +66,16 @@ class AbstractVariable(t.Generic[OT, RT], metaclass=ABCMeta):
 
         def parse_value(v):
             if isinstance(v, str):
-                return f"\'{v}\'"
+                return f"'{v}'"
             return v
 
         # Complains about accessing init of an instance since it can change
         # which is exactly the purpose of this method!
         init_params = inspect.signature(self.__init__).parameters  # type: ignore
-        args = ','.join(
-            map(lambda x: f'{x}={parse_value(getattr(self, x))}', init_params)
+        args = ",".join(
+            map(lambda x: f"{x}={parse_value(getattr(self, x))}", init_params)
         )
-        return f'{self.__class__.__name__}({args})'
+        return f"{self.__class__.__name__}({args})"
 
     @property
     @abstractmethod
@@ -128,9 +126,26 @@ class SequenceVariable(AbstractVariable[abc.Sequence[T], RT], t.Generic[T, RT]):
     __slots__ = ()
 
     @abstractmethod
-    def calculate(
-        self, obj: abc.Sequence[T], mapping: MappingT | None = None
-    ) -> RT:
+    def calculate(self, obj: abc.Sequence[T], mapping: MappingT | None = None) -> RT:
+        """
+        :param obj: Some sequence.
+        :param mapping: Optional mapping between sequence and some reference
+            object numbering schemes.
+        :return: A calculation result of some sensible non-sequence type, such
+            as string, float, int, etc.
+        """
+
+
+class LigandVariable(AbstractVariable[Ligand, RT], t.Generic[T, RT]):
+    """
+    A type of variable whose :meth:`calculate` method requires protein
+    sequence.
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    def calculate(self, obj: Ligand, mapping: MappingT | None = None) -> RT:
         """
         :param obj: Some sequence.
         :param mapping: Optional mapping between sequence and some reference
@@ -141,7 +156,7 @@ class SequenceVariable(AbstractVariable[abc.Sequence[T], RT], t.Generic[T, RT]):
 
 
 VT = t.TypeVar(
-    'VT', bound=t.Union[StructureVariable, SequenceVariable]
+    "VT", bound=t.Union[StructureVariable, SequenceVariable]
 )  # variable type
 
 
@@ -198,27 +213,27 @@ class Variables(UserDict):
         variables = cls()
 
         for v_id, v_val in vs.itertuples(index=False):
-            v_name = v_id.split('(')[0]
+            v_name = v_id.split("(")[0]
 
-            import_statement = f'from lXtractor.variables import {v_name}'
+            import_statement = f"from lXtractor.variables import {v_name}"
             try:
                 exec(import_statement)
             except ImportError:
                 LOGGER.exception(
-                    f'Failed to exec {import_statement} for variable {v_name} '
-                    f'causing variable\'s init to fail'
+                    f"Failed to exec {import_statement} for variable {v_name} "
+                    f"causing variable's init to fail"
                 )
                 continue
 
             try:
                 v = eval(v_id)
             except Exception as e:
-                LOGGER.exception(f'Failed to eval variable {v_id} due to {e}')
+                LOGGER.exception(f"Failed to eval variable {v_id} due to {e}")
                 continue
             try:
                 v_val = eval(v_val)
             except Exception as e:
-                LOGGER.debug(f'Failed to eval {v_val} for variable {v_name} due to {e}')
+                LOGGER.debug(f"Failed to eval {v_val} for variable {v_name} due to {e}")
             variables[v] = v_val
 
         return variables
@@ -229,8 +244,8 @@ class Variables(UserDict):
         :param skip_if_contains: Skip if a variable ID contains any of the
             provided strings.
         """
-        items = (f'{v.id}\t{r}' for v, r in self.items())
-        path.write_text('\n'.join(items))
+        items = (f"{v.id}\t{r}" for v, r in self.items())
+        path.write_text("\n".join(items))
 
     def as_df(self) -> pd.DataFrame:
         """
@@ -239,7 +254,7 @@ class Variables(UserDict):
         if len(self) == 0:
             return pd.DataFrame()
         return pd.DataFrame(
-            {'VariableID': [k.id for k in self], 'VariableResult': list(self.values())}
+            {"VariableID": [k.id for k in self], "VariableResult": list(self.values())}
         )
 
 
@@ -362,8 +377,8 @@ class ProtFP:
 
     """
 
-    def __init__(self, path: Path = Path(resources.__file__).parent / 'PFP.csv'):
-        self._df = pd.read_csv(path).set_index('AA')
+    def __init__(self, path: Path = Path(resources.__file__).parent / "PFP.csv"):
+        self._df = pd.read_csv(path).set_index("AA")
 
     @t.overload
     def __getitem__(self, item: tuple[str, int]) -> float:
@@ -392,18 +407,8 @@ class ProtFP:
             case int():
                 return self._df[str(item - 1)]
             case _:
-                raise TypeError(f'Invalid index type {item}')
+                raise TypeError(f"Invalid index type {item}")
 
 
-@curry
-def _try_map(p: T, m: abc.Mapping[T, V] | None) -> V | T:
-    try:
-        if m is not None:
-            return m[p]
-        return p
-    except KeyError as e:
-        raise FailedCalculation(f'Missing {p} in mapping') from e
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError

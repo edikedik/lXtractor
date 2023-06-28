@@ -11,7 +11,8 @@ from more_itertools import islice_extended
 
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import FailedCalculation
-from lXtractor.variables.base import SequenceVariable, MappingT, ProtFP, _try_map
+from lXtractor.variables.base import SequenceVariable, MappingT, ProtFP
+from lXtractor.variables.util import _try_map
 
 T = t.TypeVar('T')
 V = t.TypeVar('V')

@@ -12,7 +12,7 @@ from itertools import starmap
 import biotite.structure as bst
 import numpy as np
 from more_itertools import unique_justseen
-from toolz import curry, pipe
+from toolz import pipe
 
 from lXtractor.core.config import LigandConfig
 from lXtractor.core.exceptions import FailedCalculation, InitError
@@ -21,9 +21,9 @@ from lXtractor.variables.base import (
     StructureVariable,
     AggFns,
     MappingT,
-    _try_map,
-    AggFn,
 )
+from lXtractor.variables.util import residue_mask, atom_mask, _get_residue, _get_coord, \
+    _agg_dist
 
 if t.TYPE_CHECKING:
     from lXtractor.core.structure import GenericStructure
@@ -39,113 +39,12 @@ __all__ = (
     "Chi1",
     "Chi2",
     "SASA",
-    "LigandContactsCount",
-    "LigandNames",
-    "LigandDist",
+    "ClosestLigandContactsCount",
+    "ClosestLigandNames",
+    "ClosestLigandDist",
 )
 
 LOGGER = logging.getLogger(__name__)
-
-
-@curry
-def residue_mask(pos: int, a: bst.AtomArray, m: MappingT | None = None) -> np.ndarray:
-    """
-    Get a boolean mask for specific position in an atom array.
-
-    :param pos: Position.
-    :param a: Atom array.
-    :param m: Optional mapping to map `pos` onto structure's numbering.
-    :return: A boolean mask ``True`` for indicated `pos`.
-    """
-    pos = _try_map(pos, m)
-
-    mask: np.ndarray = np.equal(a.res_id, pos)
-
-    residue_atoms = a[mask]
-    if residue_atoms.array_length() == 0:
-        raise FailedCalculation(f"Missing position {pos}")
-
-    num_starts = bst.get_residue_starts(residue_atoms)
-    if len(num_starts) > 1:
-        raise FailedCalculation(
-            f"Position {pos} points to {len(num_starts)}>1 residues"
-        )
-
-    return mask
-
-
-def atom_mask(
-    pos: int, atom_name: str, a: bst.AtomArray, m: MappingT | None
-) -> np.ndarray:
-    """
-    Get a boolean mask for certain atom at some position.
-
-    :param pos: Position number.
-    :param atom_name: The name of the atom within `pos`.
-    :param a: Atom array.
-    :param m: Optional mapping to map `pos` onto structure's numbering.
-    :return: A boolean mask with a single ``True`` pointing to the desired atom.
-    """
-    r_mask = residue_mask(pos, a, m)
-    a_mask = r_mask & (a.atom_name == atom_name)
-    if a[a_mask].array_length() == 0:
-        raise FailedCalculation(
-            f"Missing atom {atom_name} at position {pos} (unmapped)"
-        )
-    if a[a_mask].array_length() > 1:
-        raise FailedCalculation(
-            f"More than one atom {atom_name} at position {pos} (unmapped)"
-        )
-    return a_mask
-
-
-@curry
-def _get_residue(
-    pos: int, array: bst.AtomArray, mapping: MappingT | None = None
-) -> bst.AtomArray:
-    mask = residue_mask(pos, array, mapping)
-    return array[mask]
-
-
-@curry
-def _get_atom(array: bst.AtomArray, name: str) -> bst.Atom:
-    atom = array[array.atom_name == name]
-
-    size = atom.array_length()
-
-    if not size:
-        raise FailedCalculation(f"Missing atom {name}")
-
-    if size > 1:
-        raise FailedCalculation(f"Non-unique atom with name {name}")
-
-    return atom[0]
-
-
-@curry
-def _get_coord(
-    residue: bst.AtomArray, atom_name: str | None, agg_fn: AggFn = AggFns["mean"]
-) -> np.ndarray:
-    if atom_name is None:
-        coord = agg_fn(residue.coord, axis=0)
-    else:
-        coord = _get_atom(residue, atom_name).coord
-    assert isinstance(coord, np.ndarray) and coord.shape == (3,)
-    return coord
-
-
-def _agg_dist(r1: bst.AtomArray, r2: bst.AtomArray, agg_fn: AggFn) -> float:
-    """
-    Calculate the aggregated distance between two residues
-    """
-    res = agg_fn(np.linalg.norm(r1.coord[:, np.newaxis] - r2.coord, axis=2))
-    if not isinstance(res, (float, np.floating)):
-        raise TypeError(
-            f"Expected float-type return when aggregating distances; "
-            f"Got res {res} of type {type(res)}"
-        )
-
-    return res
 
 
 def _verify_consecutive(positions: abc.Iterable[int]) -> None:
@@ -529,7 +428,7 @@ class SASA(StructureVariable):
         return float(np.sum(sasa[~np.isnan(sasa)]))
 
 
-class LigandContactsCount(StructureVariable):
+class ClosestLigandContactsCount(StructureVariable):
     """
     The number of atoms involved in contacting ligands.
     """
@@ -568,7 +467,7 @@ class LigandContactsCount(StructureVariable):
         return n_contacts
 
 
-class LigandNames(StructureVariable):
+class ClosestLigandNames(StructureVariable):
     """
     ``","``-separated contacting ligand (residue) names.
     """
@@ -606,7 +505,7 @@ class LigandNames(StructureVariable):
         return ",".join(names)
 
 
-class LigandDist(StructureVariable):
+class ClosestLigandDist(StructureVariable):
     """
     A distance from the selected residue or a residue's atom to a connected
     ligand.
@@ -617,7 +516,7 @@ class LigandDist(StructureVariable):
     single number.
 
     For instance, to obtain max distance for the closest ligand of a residue 1,
-    use ``LigandDist(1, agg_res='max')``.
+    use ``ClosestLigandDist(1, agg_res='max')``.
 
     If structure has no
     :attr:`<ligands lXtractor.core.structure.GenericStructure.ligands>`,
@@ -676,8 +575,8 @@ class LigandDist(StructureVariable):
                 dists.append(lig.dist[mask])
             except IndexError as e:
                 raise FailedCalculation(
-                    f"Failed to apply obtained position mask derived from {obj.pdb_id} "
-                    f"to a ligand {lig.res_name} ({lig.parent.pdb_id}) parent contacts"
+                    f"Failed to apply obtained position mask "
+                    f"to a ligand's {lig} parent contacts."
                 ) from e
         d = np.vstack(dists)
         d = AggFns[self.agg_lig](d, axis=0)

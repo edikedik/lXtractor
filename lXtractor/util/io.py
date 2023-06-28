@@ -42,6 +42,7 @@ __all__ = (
     "run_sp",
     "path_tree",
     "parse_suffix",
+    "read_n_col_table"
 )
 
 
@@ -555,7 +556,7 @@ def parse_suffix(path: Path) -> str:
 # =================================== Parsing ==========================================
 
 
-def read_n_col_table(path: Path, n: int, sep="\t") -> t.Optional[pd.DataFrame]:
+def read_n_col_table(path: Path, n: int, sep="\t") -> pd.DataFrame | None:
     """
     Read table from file and ensure it has exactly `n` columns.
     """

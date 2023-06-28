@@ -89,7 +89,7 @@ def get_mapping(obj: t.Any, map_name: str | None, map_to: str | None) -> dict | 
         try:
             seq = obj.seq
         except AttributeError as e:
-            raise MissingData(f'Object {obj} is missing `seq` attribute') from e
+            raise MissingData(f"Object {obj} is missing `seq` attribute") from e
     else:
         seq = obj
 
@@ -180,11 +180,11 @@ def stage(
         target = find_structure(obj)
         if isinstance(target, GenericStructure):
             return obj, target, str_vs, mapping
-        raise MissingData(f'Failed to find structure for calculation on {obj}')
+        raise MissingData(f"Failed to find structure for calculation on {obj}")
     if isinstance(obj, lxc.ChainSequence):
         target = obj[seq_name]
         return obj, target, seq_vs, mapping
-    raise TypeError(f'Invalid object type {type(obj)}')
+    raise TypeError(f"Invalid object type {type(obj)}")
 
 
 def find_structure(s: lxc.ChainStructure) -> GenericStructure | None:
@@ -226,7 +226,7 @@ class Manager:
     of course, the calculations themselves.
     """
 
-    __slots__ = ('verbose',)
+    __slots__ = ("verbose",)
 
     def __init__(self, verbose: bool = False):
         """
@@ -252,7 +252,7 @@ class Manager:
         )
 
         if self.verbose:
-            staged_objs = tqdm(staged_objs, desc='Assigning variables')
+            staged_objs = tqdm(staged_objs, desc="Assigning variables")
 
         for o, _vs in staged_objs:
             o.variables.update({v: None for v in _vs})
@@ -271,7 +271,7 @@ class Manager:
             return vs is not None and v in vs or vs is None
 
         if self.verbose:
-            chains = tqdm(chains, desc='Removing variables')
+            chains = tqdm(chains, desc="Removing variables")
 
         for c in chains:
             keys = list(filter(_take_key, c.variables))
@@ -293,7 +293,7 @@ class Manager:
             return vs is not None and v in vs or vs is None
 
         if self.verbose:
-            chains = tqdm(chains, desc='Resetting variable results')
+            chains = tqdm(chains, desc="Resetting variable results")
 
         for c in chains:
             keys = list(filter(_take_key, c.variables))
@@ -322,8 +322,8 @@ class Manager:
 
         def get_vs(obj: SoS) -> pd.DataFrame:
             vs_df = obj.variables.as_df()
-            vs_df['ObjectID'] = obj.id
-            vs_df['ObjectType'] = obj.__class__.__name__
+            vs_df["ObjectID"] = obj.id
+            vs_df["ObjectType"] = obj.__class__.__name__
             return vs_df
 
         vs: abc.Iterable[pd.DataFrame] = filter(
@@ -332,11 +332,11 @@ class Manager:
         vs = peekable(vs)
         if vs.peek(None) is None:
             return pd.DataFrame(
-                columns=['VariableID', 'VariableResult', 'ObjectID', 'ObjectType']
+                columns=["VariableID", "VariableResult", "ObjectID", "ObjectType"]
             )
 
         if self.verbose:
-            vs = tqdm(vs, desc='Aggregating variables')
+            vs = tqdm(vs, desc="Aggregating variables")
 
         return pd.concat(vs, ignore_index=True)
 
@@ -352,7 +352,7 @@ class Manager:
 
         :param results: An iterable over calculation results.
         :param vs_to_cols: If ``True``, will attempt to use the wide format for
-            the final results with variables are columns. Otherwise, will use
+            the final results with variables as columns. Otherwise, will use
             the long format with fixed columns: "ObjectID", "VariableID",
             "VariableCalculated", and "VariableResult". Note that for the wide
             format to work, all objects variables were calculated on must have
@@ -368,15 +368,17 @@ class Manager:
             the rest.
         """
 
+        # TODO: this is a bottleneck that desperately needs a speedup
+
         d: t.DefaultDict[str, list] = defaultdict(list)
 
         if self.verbose:
-            results = tqdm(results, 'Aggregating variables')
+            results = tqdm(results, "Aggregating variables")
 
         if vs_to_cols:
             # Note that these should already be sorted by ID
             for obj_id, group in groupby(results, lambda x: x[0].id):
-                d['ObjectID'].append(obj_id)
+                d["ObjectID"].append(obj_id)
                 for _, v, is_calculated, calc_res in group:
                     if is_calculated:
                         d[v.id].append(calc_res)
@@ -386,19 +388,22 @@ class Manager:
                         else:
                             d[v.id].append(calc_res)
         else:
-            for obj, v, is_calculated, calc_res in results:
-                d['ObjectID'].append(obj.id)
-                d['VariableID'].append(v.id)
-                d['VariableCalculated'].append(is_calculated)
-                d['VariableResult'].append(
-                    replace_errors_with
-                    if replace_errors and not is_calculated
-                    else calc_res
-                )
+            obj, v, is_calculated, calc_res = map(list, unzip(results))
+            if replace_errors:
+                calc_res = [
+                    (replace_errors_with if not is_c else x)
+                    for x, is_c in zip(calc_res, is_calculated)
+                ]
+            for name, x in zip(
+                ["Object", "Variable", "VariableCalculated", "VariableResult"],
+                [obj, v, is_calculated, calc_res],
+            ):
+                d[name] = x
+
         try:
             return pd.DataFrame(d)
         except ValueError as e:
-            LOGGER.error('Failed to convert to a DataFrame (stacktrace below)')
+            LOGGER.error("Failed to convert to a DataFrame (stacktrace below)")
             LOGGER.exception(e)
             return d
 
@@ -430,10 +435,6 @@ class Manager:
         :return: An iterable over tuples holding data for variables'
             calculation.
         """
-
-        if self.verbose:
-            chains = tqdm(chains, desc='Staging calculations')
-
         yield from map(curry(stage)(vs=vs, **kwargs), chains)
 
     def calculate(
@@ -486,7 +487,7 @@ class Manager:
         calculated = calculator(targets, variables1, mappings)
 
         if self.verbose:
-            calculated = tqdm(calculated, desc='Calculating variables')
+            calculated = tqdm(calculated, desc="Calculating variables")
 
         for obj, _vs, results in zip(objs, variables2, calculated, strict=True):
             for v, (is_calculated, res) in zip(_vs, results, strict=True):
@@ -498,5 +499,5 @@ class Manager:
                 yield obj, v, is_calculated, res
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError
