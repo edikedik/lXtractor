@@ -12,8 +12,8 @@
 """
 import logging
 import typing as t
-from collections import abc, defaultdict
-from itertools import chain, groupby, repeat, tee
+from collections import abc
+from itertools import chain, repeat, tee
 
 import numpy as np
 import pandas as pd
@@ -22,20 +22,24 @@ from toolz import curry
 from tqdm.auto import tqdm
 
 import lXtractor.core.chain as lxc
+from lXtractor.core import Ligand
 from lXtractor.core.config import SeqNames
 from lXtractor.core.exceptions import MissingData
 from lXtractor.core.structure import GenericStructure
 from lXtractor.variables.base import (
-    VT,
     SequenceVariable,
     StructureVariable,
     Variables,
     AbstractCalculator,
+    LigandVariable,
 )
 
-SoS: t.TypeAlias = lxc.ChainSequence | lxc.ChainStructure
-SoSv: t.TypeAlias = SequenceVariable | StructureVariable
-CalcRes: t.TypeAlias = tuple[SoS, SoSv, bool, t.Any]
+T = t.TypeVar("T")
+LigInp: t.TypeAlias = tuple[lxc.ChainStructure, Ligand]
+Inp: t.TypeAlias = lxc.ChainSequence | lxc.ChainStructure | LigInp
+InpT = t.TypeVar("InpT", lxc.ChainStructure, lxc.ChainSequence, LigInp)
+InpV: t.TypeAlias = SequenceVariable | StructureVariable | LigandVariable
+CalcRes: t.TypeAlias = tuple[Inp, InpV, bool, t.Any]
 StagedSeq: t.TypeAlias = tuple[
     lxc.ChainSequence,
     abc.Sequence[t.Any],
@@ -48,11 +52,17 @@ StagedStr: t.TypeAlias = tuple[
     abc.Sequence[StructureVariable],
     abc.Mapping[int, int] | None,
 ]
+StagedLig: t.TypeAlias = tuple[
+    tuple[lxc.ChainStructure, Ligand],
+    Ligand,
+    abc.Sequence[LigandVariable],
+    abc.Mapping[int, int] | None,
+]
 
 LOGGER = logging.getLogger(__name__)
 
 
-def _update_variables(vs: Variables, upd: abc.Iterable[SoSv]) -> Variables:
+def _update_variables(vs: Variables, upd: abc.Iterable[InpV]) -> Variables:
     for v in upd:
         vs[v] = None
     return vs
@@ -117,11 +127,35 @@ def _get_vs(obj: lxc.ChainSequence, missing) -> list[SequenceVariable]:
 
 
 def _get_vs(
-    obj: SoS, missing: bool
+    obj: Inp, missing: bool
 ) -> list[SequenceVariable] | list[StructureVariable]:
     if missing:
         return [v for v, r in obj.variables.items() if r is None]
     return list(obj.variables)
+
+
+def _filter_type(xs: abc.Iterable[t.Any], _t: t.Type[T]) -> abc.Iterator[T]:
+    return filter(lambda x: isinstance(x, _t), xs)
+
+
+def _split_objects(
+    objs: abc.Iterable[Inp],
+) -> tuple[list[lxc.ChainSequence], list[lxc.ChainStructure], list[Ligand]]:
+    types = [lxc.ChainSequence, lxc.ChainStructure, LigandVariable]
+    seqs, strs, ligs = (
+        list(_filter_type(xs, _t)) for xs, _t in zip(tee(objs, len(types)), types)
+    )
+    return seqs, strs, ligs
+
+
+def _split_variables(
+    vs: abc.Sequence[InpV],
+) -> tuple[list[SequenceVariable], list[StructureVariable], list[LigandVariable]]:
+    seq_vs, str_vs, lig_vs = (
+        list(_filter_type(vs, _t))
+        for _t in [SequenceVariable, StructureVariable, LigandVariable]
+    )
+    return seq_vs, str_vs, lig_vs
 
 
 @t.overload
@@ -138,21 +172,34 @@ def stage(
     ...
 
 
+@t.overload
 def stage(
-    obj: lxc.ChainStructure | lxc.ChainSequence,
-    vs: abc.Sequence[VT] | None,
+    obj: lxc.ChainSequence, vs, *, missing, seq_name, map_name, map_to
+) -> StagedSeq:
+    ...
+
+
+@t.overload
+def stage(obj: LigInp, vs, *, missing, seq_name, map_name, map_to) -> StagedLig:
+    ...
+
+
+def stage(
+    obj: InpT,
+    vs: abc.Sequence[InpV] | None,
     *,
     missing: bool = True,
     seq_name: str = SeqNames.seq1,
     map_name: str | None = None,
     map_to: str | None = None,
-) -> StagedStr | StagedSeq:
+) -> StagedStr | StagedSeq | StagedLig:
     """
     Stage object for calculation. If it's a chain sequence, will stage some
     sequence/mapping within it. If it's a chain structure, will stage the
     atom array.
 
-    :param obj: Sequence/structure to calculate variables on.
+    :param obj: A chain sequence or structure or structure-ligand pair to
+        calculate the variables on.
     :param vs: A sequence of variables to calculate.
     :param missing: If ``True``, calculate only those assigned variables that
         are missing.
@@ -164,27 +211,32 @@ def stage(
         See :func:`get_mapping` for details.
     :return: A tuple with four elements:
         1. Original object.
-        2. Staged sequence or atom array.
+        2. Staged target passed to a variable for calculation.
         3. A sequence of sequence or structural variables.
         4. An optional mapping.
     """
     target: lxc.ChainStructure | abc.Sequence | None
 
-    seq_vs, str_vs = _split_variables(vs or _get_vs(obj, missing))
-    mapping = get_mapping(obj, map_name, map_to)
+    def stage_vs_and_mapping(cs: lxc.ChainStructure | lxc.ChainSequence):
+        return (
+            *_split_variables(vs or _get_vs(cs, missing)),
+            get_mapping(cs, map_name, map_to),
+        )
 
-    if isinstance(obj, lxc.ChainStructure):
-        # TODO: searching always gets the original `obj`'s structure
-        # since the chain structure must have an atom array.
-        # to fix this, should I allow empty atom array?
-        target = find_structure(obj)
-        if isinstance(target, GenericStructure):
-            return obj, target, str_vs, mapping
-        raise MissingData(f"Failed to find structure for calculation on {obj}")
-    if isinstance(obj, lxc.ChainSequence):
-        target = obj[seq_name]
-        return obj, target, seq_vs, mapping
-    raise TypeError(f"Invalid object type {type(obj)}")
+    match obj:
+        case lxc.ChainStructure():
+            target = find_structure(obj)
+            _, _vs, _, m = stage_vs_and_mapping(obj)
+        case lxc.ChainSequence():
+            target = obj[seq_name]
+            _vs, _, _, m = stage_vs_and_mapping(obj)
+        case (lxc.ChainStructure(), Ligand()):
+            target = obj[1]
+            _, _, _vs, m = stage_vs_and_mapping(obj[0])
+        case _:
+            raise TypeError(f"Invalid object type {type(obj)}")
+
+    return obj, target, _vs, m
 
 
 def find_structure(s: lxc.ChainStructure) -> GenericStructure | None:
@@ -202,24 +254,6 @@ def find_structure(s: lxc.ChainStructure) -> GenericStructure | None:
     return None or structure
 
 
-def _split_objects(
-    objs: abc.Iterable[SoS],
-) -> tuple[list[lxc.ChainSequence], list[lxc.ChainStructure]]:
-    obs1, obs2 = tee(objs)
-    seqs = [x for x in obs1 if isinstance(x, lxc.ChainSequence)]
-    strs = [x for x in obs2 if isinstance(x, lxc.ChainStructure)]
-    return seqs, strs
-
-
-def _split_variables(
-    vs: abc.Iterable[SoSv],
-) -> tuple[list[SequenceVariable], list[StructureVariable]]:
-    vs1, vs2 = tee(vs)
-    seq_vs = [x for x in vs1 if isinstance(x, SequenceVariable)]
-    str_vs = [x for x in vs2 if isinstance(x, StructureVariable)]
-    return seq_vs, str_vs
-
-
 class Manager:
     """
     Manager of variable calculations, handling assignment, aggregation, and,
@@ -234,7 +268,7 @@ class Manager:
         """
         self.verbose = verbose
 
-    def assign(self, vs: abc.Sequence[SoSv], chains: abc.Iterable[SoS]):
+    def assign(self, vs: abc.Sequence[InpV], chains: abc.Iterable[Inp]):
         """
         Assign variables to chains sequences/structures.
 
@@ -244,11 +278,13 @@ class Manager:
             `variables` attribute.
         """
 
-        seq_vs, str_vs = _split_variables(vs)
-        seqs, strs = _split_objects(chains)
+        seq_vs, str_vs, lig_vs = _split_variables(vs)
+        seqs, strs, ligs = _split_objects(chains)
 
-        staged_objs: abc.Iterable[tuple[SoS, abc.Sequence[SoSv]]] = chain(
-            zip(seqs, repeat(seq_vs)), zip(strs, repeat(str_vs))
+        staged_objs: abc.Iterable[tuple[Inp, abc.Sequence[InpV]]] = chain(
+            zip(seqs, repeat(seq_vs)),
+            zip(strs, repeat(str_vs)),
+            zip(ligs, repeat(lig_vs)),
         )
 
         if self.verbose:
@@ -257,7 +293,7 @@ class Manager:
         for o, _vs in staged_objs:
             o.variables.update({v: None for v in _vs})
 
-    def remove(self, chains: abc.Iterable[SoS], vs: abc.Sequence[SoSv] | None = None):
+    def remove(self, chains: abc.Iterable[Inp], vs: abc.Sequence[InpV] | None = None):
         """
         Remove variables from the `variables` container.
 
@@ -278,7 +314,7 @@ class Manager:
             for k in keys:
                 c.variables.pop(k)
 
-    def reset(self, chains: abc.Iterable[SoS], vs: abc.Sequence[SoSv] | None = None):
+    def reset(self, chains: abc.Iterable[Inp], vs: abc.Sequence[InpV] | None = None):
         """
         Similar to :meth:`remove`, but instead of deleting, resets variable
         calculation results.
@@ -300,7 +336,7 @@ class Manager:
             for k in keys:
                 c.variables[k] = None
 
-    def aggregate_from_chains(self, chains: abc.Iterable[SoS]) -> pd.DataFrame:
+    def aggregate_from_chains(self, chains: abc.Iterable[Inp]) -> pd.DataFrame:
         """
         Aggregate calculation results from the `variables` container of the
         provided chains.
@@ -320,7 +356,7 @@ class Manager:
             results.
         """
 
-        def get_vs(obj: SoS) -> pd.DataFrame:
+        def get_vs(obj: Inp) -> pd.DataFrame:
             vs_df = obj.variables.as_df()
             vs_df["ObjectID"] = obj.id
             vs_df["ObjectType"] = obj.__class__.__name__
@@ -370,45 +406,28 @@ class Manager:
 
         # TODO: this is a bottleneck that desperately needs a speedup
 
-        d: t.DefaultDict[str, list] = defaultdict(list)
-
         if self.verbose:
             results = tqdm(results, "Aggregating variables")
 
-        if vs_to_cols:
-            # Note that these should already be sorted by ID
-            for obj_id, group in groupby(results, lambda x: x[0].id):
-                d["ObjectID"].append(obj_id)
-                for _, v, is_calculated, calc_res in group:
-                    if is_calculated:
-                        d[v.id].append(calc_res)
-                    else:
-                        if replace_errors:
-                            d[v.id].append(replace_errors_with)
-                        else:
-                            d[v.id].append(calc_res)
-        else:
-            obj, v, is_calculated, calc_res = map(list, unzip(results))
-            if replace_errors:
-                calc_res = [
-                    (replace_errors_with if not is_c else x)
-                    for x, is_c in zip(calc_res, is_calculated)
-                ]
-            for name, x in zip(
-                ["Object", "Variable", "VariableCalculated", "VariableResult"],
-                [obj, v, is_calculated, calc_res],
-            ):
-                d[name] = x
+        colnames = ["Object", "Variable", "VariableCalculated", "VariableResult"]
+        df = pd.DataFrame(dict(zip(colnames, map(list, unzip(results)))))
 
-        try:
-            return pd.DataFrame(d)
-        except ValueError as e:
-            LOGGER.error("Failed to convert to a DataFrame (stacktrace below)")
-            LOGGER.exception(e)
-            return d
+        if replace_errors:
+            df.loc[~df["VariableCalculated"], "VariableResult"] = replace_errors_with
+
+        if vs_to_cols:
+            df["VariableID"] = df["Variable"].map(lambda x: x.id)
+            df["ObjectID"] = df["Object"].map(
+                lambda x: x[1].id if isinstance(x, tuple) else x.id
+            )
+            df = df.pivot(
+                columns="VariableID", index="ObjectID", values="VariableResult"
+            )
+
+        return df
 
     def stage(
-        self, chains: abc.Iterable[SoS], vs: abc.Sequence[SoSv] | None, **kwargs
+        self, chains: abc.Iterable[Inp], vs: abc.Sequence[InpV] | None, **kwargs
     ) -> abc.Generator[StagedSeq | StagedStr, None, None]:
         """
         Stage objects for calculations (e.g., using :meth:`calculate`).
@@ -439,8 +458,8 @@ class Manager:
 
     def calculate(
         self,
-        chains: abc.Iterable[SoS],
-        vs: abc.Sequence[SoSv] | None,
+        objs: abc.Iterable[Inp],
+        vs: abc.Sequence[InpV] | None,
         calculator: AbstractCalculator,
         *,
         save: bool = False,
@@ -462,12 +481,12 @@ class Manager:
         >>> s = lxc.ChainSequence.from_string('ABCD', name='seq')
         >>> m = Manager()
         >>> c = GenericCalculator()
-        >>> list(m.calculate([s], [SeqEl(1)], c))
+        >>> list(m.calculate([s],[SeqEl(1)],c))
         [(seq|1-4, SeqEl(p=1,_rtype='str',seq_name='seq1'), True, 'A')]
-        >>> list(m.calculate([s], [SeqEl(5)], c))[0][-2:]
+        >>> list(m.calculate([s],[SeqEl(5)],c))[0][-2:]
         (False, 'Missing index 4 in sequence')
 
-        :param chains: An iterable over chain sequences/structures.
+        :param objs: An iterable over chain sequences/structures.
         :param vs: A sequence of variables. If not provided, will use assigned
             variables (see :meth:`assign`).
         :param calculator: A calculator object -- some callable with the right
@@ -482,7 +501,7 @@ class Manager:
             4. The calculation result (or the error message).
         """
 
-        objs, targets, variables, mappings = unzip(self.stage(chains, vs, **kwargs))
+        objs, targets, variables, mappings = unzip(self.stage(objs, vs, **kwargs))
         variables1, variables2 = tee(variables)
         calculated = calculator(targets, variables1, mappings)
 

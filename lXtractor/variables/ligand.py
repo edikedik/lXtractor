@@ -5,6 +5,8 @@ from .util import atom_mask, residue_mask, _agg_dist
 from ..core import Ligand
 from ..core.exceptions import InitError
 
+__all__ = ("LigandDist",)
+
 
 class LigandDist(LigandVariable):
     def __init__(

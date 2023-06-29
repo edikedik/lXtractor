@@ -30,9 +30,9 @@ class SeqEl(SequenceVariable[T, T]):
 
     >>> v1, v2 = SeqEl(1), SeqEl(1, 'X')
     >>> s1, s2 = 'XYZ', [1, 2, 3]
-    >>> v1.calculate(s1)
+    >>> v1.calculate(s1,,
     'X'
-    >>> v2.calculate(s2)
+    >>> v2.calculate(s2,,
     1
 
     """
@@ -217,7 +217,7 @@ def make_str(
     >>> v.id
     "SliceSum(start=1,stop=2,step=None,seq_name='X')"
 
-    >>> v.calculate([1, 2, 3, 4, 5])
+    >>> v.calculate([1, 2, 3, 4, 5],,
     3
 
     **Example 2: with transformation:**
@@ -233,7 +233,7 @@ def make_str(
     >>> upper = lambda x: "".join(x).upper()
     >>> v = make_str(count_x, int, transform=upper, transform_name='upper',
     ...              reduce_name='countX')()
-    >>> v.calculate('XoXoxo')
+    >>> v.calculate('XoXoxo',,
     3
     >>> v.id
     "SliceUpperCountx(start=None,stop=None,step=None,seq_name='seq1')"
