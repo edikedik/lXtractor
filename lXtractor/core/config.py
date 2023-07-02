@@ -313,7 +313,7 @@ class BondThresholds:
     """
 
     covalent: Bounds = Bounds(1.2, 1.8)
-    non_covalent: Bounds = Bounds(1.8, 5.5)
+    non_covalent: Bounds = Bounds(1.8, 5)
 
 
 @dataclass(frozen=True)
