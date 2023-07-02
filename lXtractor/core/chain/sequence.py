@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from more_itertools import first_true, always_reversible
+from toolz import valmap, valfilter, keyfilter
 from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
@@ -38,6 +39,7 @@ from lXtractor.core.config import (
 )
 from lXtractor.core.exceptions import MissingData, InitError, AmbiguousMapping
 from lXtractor.util.io import get_files, get_dirs
+from lXtractor.util.misc import is_empty
 from lXtractor.util.seq import (
     mafft_align,
     map_pairs_numbering,
@@ -47,13 +49,12 @@ from lXtractor.util.seq import (
 if t.TYPE_CHECKING:
     from lXtractor.core.chain import Chain, ChainStructure
 
-
 # TODO: add "reset_numbering()" method for a segment
 # It "reenumerates" the segment from the new start (1 by default)
 # and may keep an existing numbering
 
 
-__all__ = ('ChainSequence', )
+__all__ = ("ChainSequence",)
 
 
 class ChainSequence(lxs.Segment):
@@ -118,7 +119,7 @@ class ChainSequence(lxs.Segment):
         try:
             return self[name]
         except KeyError:
-            raise MissingData(f'Missing sequence {name}')
+            raise MissingData(f"Missing sequence {name}")
 
     @property
     def numbering(self) -> abc.Sequence[int]:
@@ -148,7 +149,7 @@ class ChainSequence(lxs.Segment):
                 seq1 = self[SeqNames.seq1]
             except KeyError as e:
                 raise MissingData(
-                    'Attempted to construct seq3 from seq1 but the latter is missing.'
+                    "Attempted to construct seq3 from seq1 but the latter is missing."
                 ) from e
             mapping = AminoAcidDict()
             return [mapping[x] for x in seq1]
@@ -162,14 +163,14 @@ class ChainSequence(lxs.Segment):
         Categories are kept under "category" field in :attr:`meta`
         as a ","-separated list of strings. For instance, "domain,family_x".
         """
-        cat: str = self.meta.get(MetaNames.category, '')
+        cat: str = self.meta.get(MetaNames.category, "")
         return cat.split(",") if cat else []
 
     def _setup_and_validate(self) -> None:
         super()._setup_and_validate()
 
         if SeqNames.seq1 not in self:
-            warnings.warn(f'Missing {SeqNames.seq1}')
+            warnings.warn(f"Missing {SeqNames.seq1}")
         else:
             if not isinstance(self.seq1, str):
                 try:
@@ -218,7 +219,7 @@ class ChainSequence(lxs.Segment):
         def get_seq1(s: abc.Sequence[str] | str) -> str:
             if isinstance(s, str):
                 return s
-            return ''.join(s)
+            return "".join(s)
 
         if isinstance(other, str):
             name = name or UNK_NAME
@@ -422,10 +423,12 @@ class ChainSequence(lxs.Segment):
         div = len(self) if as_fraction else 1
         res = res / div
         if save:
-            self.meta[f'Match_{map_name1}_{map_name2}'] = res
+            self.meta[f"Match_{map_name1}_{map_name2}"] = res
         return res
 
-    def get_map(self, key: str) -> dict[t.Hashable, NamedTupleT]:
+    def get_map(
+        self, key: str, to: str | None = None, rm_empty: bool = False
+    ) -> dict[t.Hashable, NamedTupleT]:
         """
         Obtain the mapping of the form "key->item(seq_name=*,...)".
 
@@ -434,12 +437,25 @@ class ChainSequence(lxs.Segment):
         {1: Item(i=1, seq1='A'), 2: Item(i=2, seq1='B'), 3: Item(i=3, seq1='C')}
         >>> s.get_map('seq1')
         {'A': Item(i=1, seq1='A'), 'B': Item(i=2, seq1='B'), 'C': Item(i=3, seq1='C')}
+        >>> s.add_seq('S', [1, 2, np.nan])
+        >>> s.get_map('seq1', 'S', rm_empty=True)
+        {'A': 1, 'B': 2}
 
-        :param key: map name.
+        :param key: A seq name to map from.
+        :param to: A seq name to map to.
+        :param rm_empty: Remove empty keys and values. A numeric value is empty
+            if it is of type NaN. A string value is empty if it is an empty
+            string (``""``).
         :return: `dict` mapping key values to items.
         """
         keys = (x.i for x in self) if key == "i" else self[key]
-        return dict(zip(keys, iter(self)))
+        d = dict(zip(keys, iter(self)))
+        if to is not None:
+            d = valmap(lambda x: x._asdict()[to], d)
+        if rm_empty:
+            d = keyfilter(lambda x: not is_empty(x), d)
+            d = valfilter(lambda x: not is_empty(x), d)
+        return d
 
     def get_item(self, key: str, value: t.Any) -> NamedTupleT:
         """
@@ -724,7 +740,7 @@ class ChainSequence(lxs.Segment):
         size = len(s)
         s_x = fn(s)
         if len(s_x) != size:
-            raise ValueError(f'Seq length changed from {size} to {len(s_x)}')
+            raise ValueError(f"Seq length changed from {size} to {len(s_x)}")
 
         children = self.children
         if apply_to_children:
@@ -829,7 +845,7 @@ class ChainSequence(lxs.Segment):
         """
         :return: An empty chain sequence.
         """
-        return cls.from_string('')
+        return cls.from_string("")
 
     @classmethod
     def from_df(
@@ -988,5 +1004,5 @@ class ChainSequence(lxs.Segment):
         return pd.DataFrame(rows)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError

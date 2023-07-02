@@ -10,12 +10,13 @@ from concurrent.futures import ProcessPoolExecutor
 from itertools import groupby
 
 import joblib
+import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 
 from lXtractor.core.exceptions import FormatError
 
-__all__ = ("is_valid_field_name", "apply")
+__all__ = ("is_valid_field_name", "apply", "is_empty", "col2col", )
 
 T = t.TypeVar("T")
 R = t.TypeVar("R")
@@ -82,6 +83,14 @@ def is_valid_field_name(s: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def is_empty(x: t.Any) -> bool:
+    if isinstance(x, float):
+        return np.isnan(x)
+    elif isinstance(x, str):
+        return x == ""
+    return False
 
 
 def _apply_sequentially(fn, it, verbose, desc, total):

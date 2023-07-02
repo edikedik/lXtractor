@@ -33,7 +33,7 @@ else:
 
 T = t.TypeVar("T")
 
-__all__ = ('ChainList', )
+__all__ = ('ChainList', "add_category")
 
 
 def add_category(c: t.Any, cat: str):
