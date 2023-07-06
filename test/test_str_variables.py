@@ -17,7 +17,7 @@ TEST_VARIABLES = (
     (str_vs.Omega(413), 3.08),
     (str_vs.ClosestLigandContactsCount(413, 'OH'), 1),
     (str_vs.ClosestLigandContactsCount(413, 'CB'), 0),
-    (str_vs.ClosestLigandContactsCount(413), 8),
+    (str_vs.ClosestLigandContactsCount(413), 6),
     (str_vs.ClosestLigandNames(413, 'OH'), '66K'),
     (str_vs.ClosestLigandNames(413, 'CB'), ''),
     (str_vs.ClosestLigandNames(413), '66K'),

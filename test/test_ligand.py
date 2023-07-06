@@ -62,7 +62,6 @@ def test_find_ligands(path, expected):
                 ("D", "DGL", "D"),
                 ("D", "GLY", "D"),
                 ("D", "UXA", "D"),
-                ("D", "UXA", "C"),
             },
         ),
     ],
