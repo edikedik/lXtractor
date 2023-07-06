@@ -161,7 +161,7 @@ class AlignMethod(t.Protocol):
 
 class SeqReader(t.Protocol):
     """
-    A callable reading sequences into tuples of (header, seq) pairs.
+    A callable reading sequences into tuples of (header, _seq) pairs.
     """
 
     def __call__(
@@ -172,7 +172,7 @@ class SeqReader(t.Protocol):
 
 class SeqWriter(t.Protocol):
     """
-    A callable writing (header, seq) pairs to disk.
+    A callable writing (header, _seq) pairs to disk.
     """
 
     def __call__(
@@ -186,7 +186,7 @@ class SeqWriter(t.Protocol):
 
 class SeqMapper(t.Protocol):
     """
-    A callable accepting and returning a pair (header, seq).
+    A callable accepting and returning a pair (header, _seq).
     """
 
     def __call__(self, seq: tuple[str, str], **kwargs) -> tuple[str, str]:
@@ -195,7 +195,7 @@ class SeqMapper(t.Protocol):
 
 class SeqFilter(t.Protocol):
     """
-    A callable accepting a pair (header, seq) and returning a boolean.
+    A callable accepting a pair (header, _seq) and returning a boolean.
     """
 
     def __call__(self, seq: tuple[str, str], **kwargs) -> bool:

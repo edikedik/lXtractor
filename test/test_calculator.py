@@ -15,7 +15,7 @@ def count_char(seq: str, c: str):
 
 @pytest.fixture
 def chain_structure(four_chain_structure):
-    return ChainStructure.from_structure(next(four_chain_structure.split_chains()))
+    return ChainStructure(next(four_chain_structure.split_chains()))
 
 
 @pytest.fixture
@@ -73,7 +73,7 @@ def get_obj(is_seq_str, chain_structure_seq, chain_structure):
         o, m = chain_structure_seq
         o = o.seq1
     else:
-        o, m = chain_structure.pdb.structure, None
+        o, m = chain_structure.structure, None
     return o, m
 
 

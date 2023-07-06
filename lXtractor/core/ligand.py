@@ -248,7 +248,7 @@ def find_ligands(
         meta = {
             MetaNames.res_name: name,
             MetaNames.res_id: str(a[m_res].res_id[0]),
-            MetaNames.pdb_chain: a[m_res].chain_id[0],
+            MetaNames.structure_chain_id: a[m_res].chain_id[0],
         }
 
         yield Ligand(structure, m_ligand, m_contacts, contacts, ligand_idx, dist, meta)

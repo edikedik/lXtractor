@@ -15,47 +15,47 @@ from test.conftest import EPS
 
 
 @pytest.fixture
-def simple_chain_structure(simple_structure):
-    return ChainStructure.from_structure(simple_structure, "xxxx")
+def test_structure(simple_structure):
+    return ChainStructure(simple_structure, "A")
 
 
 def test_init(simple_structure, four_chain_structure):
     pdb_id = "xxxx"
     # no structure init
-    s = ChainStructure(pdb_id, "A", simple_structure)
+    s = ChainStructure(simple_structure)
     assert s.seq is not None
 
-    # chain must match
-    with pytest.raises(InitError):
-        ChainStructure(pdb_id, "B", simple_structure)
+    # chain ID is ignored if the structure is not empty
+    s = ChainStructure(simple_structure, "B")
+    assert s.chain_id == "A"
 
     # must be a single chain
     with pytest.raises(InitError):
-        ChainStructure(pdb_id, "ABCD", four_chain_structure)
+        ChainStructure(four_chain_structure)
 
     # init from structure or atom array work exactly the same
-    s = ChainStructure.from_structure(simple_structure.array)
-    assert s.pdb.chain == "A"
-    assert s.pdb.structure is not None
+    s = ChainStructure(simple_structure.array)
+    assert s.chain_id == "A"
+    assert s.structure is not None
     assert s.seq is not None
 
-    s = ChainStructure.from_structure(simple_structure)
-    assert s.pdb.chain == "A"
-    assert s.pdb.structure is not None
+    s = ChainStructure(simple_structure)
+    assert s.chain_id == "A"
+    assert s.structure is not None
     assert s.seq is not None
 
-    # ensure seq is initialized
+    # ensure _seq is initialized
     fields = s.seq.field_names()
     assert fields.seq1 in s.seq
     assert fields.seq3 in s.seq
     assert fields.enum in s.seq
 
 
-def test_degenerate(simple_chain_structure):
-    simple_cs = simple_chain_structure
-    cs = ChainStructure("xxxx", "x", None)
+def test_degenerate(test_structure):
+    simple_cs = test_structure
+    cs = ChainStructure(None)
     assert len(cs) == 0 and cs.is_empty
-    assert ChainStructure.make_empty("xxxx", "x") == cs
+    assert ChainStructure.make_empty() == cs
     assert len(cs.seq) == 0
     assert cs.rm_solvent() == cs
     with pytest.raises(MissingData):
@@ -70,8 +70,8 @@ def test_degenerate(simple_chain_structure):
         cs.write(Path("./anywhere"))
 
 
-def test_spawn(simple_chain_structure):
-    s = simple_chain_structure
+def test_spawn(test_structure):
+    s = test_structure
 
     # invalid boundaries
     with pytest.raises(ValueError):
@@ -97,8 +97,8 @@ def test_spawn(simple_chain_structure):
     assert len(sub.seq) == 100
 
 
-def test_iterchildren(simple_chain_structure):
-    s = simple_chain_structure
+def test_iterchildren(test_structure):
+    s = test_structure
     child1 = s.spawn_child(1, 10)
     child2 = child1.spawn_child(5, 6)
     levels = list(s.iter_children())
@@ -107,8 +107,8 @@ def test_iterchildren(simple_chain_structure):
 
 
 @pytest.mark.parametrize("fmt", ["cif", "cif.gz", "mmtf.gz"])
-def test_io(simple_chain_structure, fmt):
-    s = simple_chain_structure
+def test_io(test_structure, fmt):
+    s = test_structure
     child1 = s.spawn_child(1, 10)
 
     with TemporaryDirectory() as tmp:
@@ -125,23 +125,25 @@ def test_io(simple_chain_structure, fmt):
 
         s_r = ChainStructure.read(tmp, search_children=True)
         assert s_r.seq is not None
-        assert s_r.pdb.structure is not None
-        assert s_r.pdb.id == s.pdb.id
-        assert s_r.pdb.chain == s.pdb.chain
+        assert s_r.structure is not None
+        assert s_r.structure.structure_id == s.structure.structure_id
+        assert s_r.chain_id == s.chain_id
 
         assert len(s_r.children) == 1
         s_r_child = s_r.children.pop()
         assert not s_r_child.seq.children
-        assert s_r_child.seq.meta[MetaNames.pdb_id] == child1.pdb.id
-        assert s_r_child.seq.meta[MetaNames.pdb_chain] == child1.pdb.chain
+        assert (
+            s_r_child.seq.meta[MetaNames.structure_id] == child1.structure.structure_id
+        )
+        assert s_r_child.seq.meta[MetaNames.structure_chain_id] == child1.chain_id
 
 
-def test_superpose(simple_chain_structure):
-    s = simple_chain_structure
+def test_superpose(test_structure):
+    s = test_structure
 
     superposed, rmsd, _ = s.superpose(s)
     assert rmsd < EPS
-    assert f"rmsd_xxxx:A" in superposed.seq.meta
+    assert f"rmsd_{test_structure.structure.structure_id}:A" in superposed.seq.meta
 
     _, rmsd, _ = s.superpose(s, [1])
     assert rmsd < EPS
@@ -156,7 +158,7 @@ def test_superpose(simple_chain_structure):
 
     # using mappings
     s_cp = deepcopy(s)
-    s_cp.pdb.structure.array.res_id += 1
+    s_cp.structure.array.res_id += 1
     s_cp.seq["numbering"] = [x + 1 for x in s_cp.seq["numbering"]]
     s_cp.seq.map_numbering(s.seq, name="original")
 
@@ -166,8 +168,8 @@ def test_superpose(simple_chain_structure):
     assert rmsd < EPS
 
 
-def test_rm_solvent(simple_chain_structure):
-    s = simple_chain_structure
+def test_rm_solvent(test_structure):
+    s = test_structure
     _, seq = bst.get_residues(s.array)
     assert "HOH" in seq
     n_hoh = sum(1 for x in seq if x == "HOH")
@@ -180,20 +182,20 @@ def test_rm_solvent(simple_chain_structure):
     assert len(seq_rm) + n_hoh == len(seq)
 
 
-def test_filter_children(simple_chain_structure):
-    s = simple_chain_structure
+def test_filter_children(test_structure):
+    s = test_structure
     s.spawn_child(s.seq.start + 1, s.seq.end - 1, "X1")
     s.spawn_child(s.seq.start + 1, s.seq.end - 1, "X2")
-    s_new = s.filter_children(lambda x: x.seq.name != "X1")
+    s_new = s.filter_children(lambda x: x._seq.name != "X1")
     assert (len(s.children) - 1) == len(s_new.children) == 1
     assert s_new.children[0].seq.name == "X2"
-    _ = s.filter_children(lambda x: x.seq.name != "X1", inplace=True)
+    _ = s.filter_children(lambda x: x._seq.name != "X1", inplace=True)
     assert len(s.children) == 1
     assert s.children[0].seq.name == "X2"
 
 
-def test_apply_children(simple_chain_structure):
-    s = simple_chain_structure
+def test_apply_children(test_structure):
+    s = test_structure
     s.spawn_child(s.seq.start + 1, s.seq.end - 1, "X1")
     s.spawn_child(s.seq.start + 1, s.seq.end - 1, "X2")
     s_new = s.apply_children(mark_meta)
@@ -207,7 +209,7 @@ def test_apply_children(simple_chain_structure):
 @pytest.mark.parametrize("meta", [True, False])
 @pytest.mark.parametrize("ligands", [True, False])
 def test_summary(chicken_src_str, meta, ligands):
-    s = ChainStructure.from_structure(next(chicken_src_str.split_chains()))
+    s = ChainStructure(next(chicken_src_str.split_chains()))
     df = s.summary(meta=meta, ligands=ligands)
     assert isinstance(df, pd.DataFrame)
     assert "ObjectID" in df.columns

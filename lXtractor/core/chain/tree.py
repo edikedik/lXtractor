@@ -13,7 +13,7 @@ from more_itertools import windowed
 from toolz import groupby
 
 from lXtractor.core.chain import Chain, ChainSequence, ChainStructure, ChainList
-from lXtractor.core.config import EMPTY_PDB_ID, EMPTY_CHAIN_ID
+from lXtractor.core.config import EMPTY_STRUCTURE_ID, EMPTY_CHAIN_ID
 from lXtractor.core.exceptions import MissingData, FormatError
 
 T = t.TypeVar('T')
@@ -137,7 +137,7 @@ def make_filled(name: str, _t: CT | t.Type[CT]) -> CT:
         if is_chain_instance[1]:
             return seq
         if is_chain_instance[2]:
-            return ChainStructure(EMPTY_PDB_ID, EMPTY_CHAIN_ID, None, seq=seq)
+            return ChainStructure(None, seq=seq)
         raise RuntimeError('...')
     try:
         is_chain_subclass = (
@@ -153,7 +153,7 @@ def make_filled(name: str, _t: CT | t.Type[CT]) -> CT:
     if is_chain_subclass[1]:
         return seq
     if is_chain_subclass[2]:
-        return ChainStructure(EMPTY_PDB_ID, EMPTY_CHAIN_ID, None, seq=seq)
+        return ChainStructure(None, seq=seq)
 
     raise RuntimeError('...')
 

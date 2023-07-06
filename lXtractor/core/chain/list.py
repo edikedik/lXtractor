@@ -392,14 +392,14 @@ class ChainList(abc.MutableSequence[CT]):
 
     def iter_structure_sequences(self) -> abc.Generator[ChainSequence, None, None]:
         """
-        :return: Iterate over :attr:`ChainStructure.seq` attributes.
+        :return: Iterate over :attr:`ChainStructure._seq` attributes.
         """
         yield from (s.seq for s in self.iter_structures())
 
     @property
     def sequences(self) -> ChainList[ChainSequence]:
         """
-        :return: Get all :attr:`lXtractor.core.chain.Chain.seq` or
+        :return: Get all :attr:`lXtractor.core.chain.Chain._seq` or
             `lXtractor.core.chain.sequence.ChainSequence` objects within this
             chain list.
         """
@@ -421,7 +421,7 @@ class ChainList(abc.MutableSequence[CT]):
             seq: ChainSequence, seg: lxs.Segment, map_name: t.Optional[str] = None
         ) -> bool:
             if map_name is not None:
-                # Get elements in the seq whose mapped sequence matches
+                # Get elements in the _seq whose mapped sequence matches
                 # seg boundaries
                 start_item = seq.get_closest(map_name, seg.start)
                 end_item = seq.get_closest(map_name, seg.end, reverse=True)
@@ -484,7 +484,7 @@ class ChainList(abc.MutableSequence[CT]):
         map_name: t.Optional[str],
     ) -> abc.Iterator[bool]:
         return self._filter_seqs(
-            map(lambda x: x.seq, structures), match_type, s, map_name
+            map(lambda x: x._seq, structures), match_type, s, map_name
         )
 
     def filter_pos(
@@ -499,7 +499,7 @@ class ChainList(abc.MutableSequence[CT]):
         or arbitrary positions' collections.
 
         For :class:`Chain` and :class:`ChainStructure`, the filtering is over
-        `seq` attributes.
+        `_seq` attributes.
 
         :param s: What to search for:
 

@@ -61,7 +61,7 @@ class ChainSequence(lxs.Segment):
     """
     A class representing polymeric sequence of a single entity (chain).
 
-    The sequences are stored internally as a dictionary `{seq_name => seq}`
+    The sequences are stored internally as a dictionary `{seq_name => _seq}`
     and must all have the same length.
     Additionally, `seq_name` must be a valid field name:
     something one could use in namedtuples.
@@ -208,7 +208,7 @@ class ChainSequence(lxs.Segment):
         [None, 1, 2, 3, 4, 5, None]
         >>> assert 'map_aln' in s
 
-        :param other: another chain seq.
+        :param other: another chain _seq.
         :param align_method: a method to use for alignment.
         :param save: save the numbering as a sequence.
         :param name: a name to use if `save` is ``True``.
@@ -441,8 +441,8 @@ class ChainSequence(lxs.Segment):
         >>> s.get_map('seq1', 'S', rm_empty=True)
         {'A': 1, 'B': 2}
 
-        :param key: A seq name to map from.
-        :param to: A seq name to map to.
+        :param key: A _seq name to map from.
+        :param to: A _seq name to map to.
         :param rm_empty: Remove empty keys and values. A numeric value is empty
             if it is of type NaN. A string value is empty if it is an empty
             string (``""``).
@@ -790,7 +790,7 @@ class ChainSequence(lxs.Segment):
             If not provided, will evaluate to a sequence's header.
         :param meta: Meta-info to add for the sequence.
         :param kwargs: Additional sequences other than `seq1`
-            (as used during initialization via `seq` attribute).
+            (as used during initialization via `_seq` attribute).
         :return: Initialized chain sequence.
         """
         seqs = list(reader(inp))
@@ -828,7 +828,7 @@ class ChainSequence(lxs.Segment):
         :param name: Name of a new chain sequence.
         :param meta: Meta info of a new sequence.
         :param kwargs: Additional sequences other than `seq1`
-            (as used during initialization via `seq` attribute).
+            (as used during initialization via `_seq` attribute).
         :return: Initialized chain sequence.
         """
         if len(s) == 0:

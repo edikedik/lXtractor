@@ -45,7 +45,7 @@ def read_fasta(
 
     :param inp: Path or opened file or an iterable over lines.
     :param strip_id: Strip ID to the first consecutive (spaceless) string.
-    :return: A generator of (header, seq) pairs.
+    :return: A generator of (header, _seq) pairs.
     """
 
     def _yield_seqs(buffer):
@@ -70,7 +70,7 @@ def write_fasta(inp: abc.Iterable[tuple[str, str]], out: Path | SupportsWrite) -
     """
     Simple fasta writer.
 
-    :param inp: Iterable over (header, seq) pairs.
+    :param inp: Iterable over (header, _seq) pairs.
     :param out: Something that supports `.write` method.
     :return: Nothing.
     """
@@ -146,11 +146,11 @@ def mafft_align(
     """
     Align an arbitrary number of sequences using mafft.
 
-    :param seqs: An iterable over (header, seq) pairs
+    :param seqs: An iterable over (header, _seq) pairs
         or path to file with sequences to align.
     :param thread: How many threads to dedicate for `mafft`.
     :param mafft: `mafft` executable (path or env variable).
-    :return: An Iterator over aligned (header, seq) pairs.
+    :return: An Iterator over aligned (header, _seq) pairs.
     """
     if isinstance(seqs, Path):
         cmd = f'{mafft} --anysymbol --thread {thread} --inputorder {seqs}'
@@ -239,7 +239,7 @@ def partition_gap_sequences(
 
 def parse_cdhit(clstr_file: Path) -> t.List[t.List[str]]:
     """
-    Parse cd-hit cluster file into a (list of lists of) clusters with seq ids.
+    Parse cd-hit cluster file into a (list of lists of) clusters with _seq ids.
     """
     with clstr_file.open() as f:
         return list(
@@ -258,10 +258,10 @@ def parse_cdhit(clstr_file: Path) -> t.List[t.List[str]]:
 # ) -> t.List[t.List[SeqRec]]:
 #     """
 #     Run cd-hit with params `-A 0.9 -g 1 -T 0 -d 0`.
-#     :param seqs: Collection of seq records.
+#     :param seqs: Collection of _seq records.
 #     :param ts: Threshold value (`c` parameter).
 #     :param cdhit_exec: Path or name of the executable.
-#     :return: clustered seq record objects.
+#     :return: clustered _seq record objects.
 #     """
 #
 #     def get_word_length():
@@ -279,10 +279,10 @@ def parse_cdhit(clstr_file: Path) -> t.List[t.List[str]]:
 #             return 3
 #         return 2
 #
-#     def ungap_seq(seq: SeqRec):
+#     def ungap_seq(_seq: SeqRec):
 #         return SeqRec(
-#             seq.seq.ungap(), id=seq.id, name=seq.name,
-#             description=seq.description)
+#             _seq._seq.ungap(), id=_seq.id, name=_seq.name,
+#             description=_seq.description)
 #
 #     seqs_map = {s.id: s for s in seqs}
 #     seqs = list(map(ungap_seq, seqs_map.values()))

@@ -39,7 +39,7 @@ class Chain:
 
     A typical use case is when one wants to benefit from the connection
     of structural and sequential data, e.g., using single full canonical
-    sequence as :attr:`seq` and all the associated structures within
+    sequence as :attr:`_seq` and all the associated structures within
     :attr:`structures`. In this case, this data structure makes it easier
     to extract, annotate, and calculate variables using canonical sequence
     mapped to the sequence of a structure.
@@ -54,13 +54,13 @@ class Chain:
 
     .. code-block:: python
 
-        c = Chain.from_sequence((header, seq))
+        c = Chain.from_sequence((header, _seq))
         for s in structures:
             c.add_structure(s)
 
     """
 
-    __slots__ = ("seq", "structures", "parent", "children")
+    __slots__ = ("_seq", "_id", "structures", "_parent", "children")
 
     def __init__(
         self,
@@ -73,14 +73,13 @@ class Chain:
 
         :param seq: A chain sequence.
         :param structures: Chain structures corresponding to a single protein
-            chain specified by `seq`.
+            chain specified by `_seq`.
         :param parent: A parent chain this chain had descended from.
         :param children: A collection of children.
         """
-        #: A chain sequence.
-        self.seq: ChainSequence = seq
+        self._seq: ChainSequence = seq
 
-        #: A collection of structures corresponding to :attr:`seq`.
+        #: A collection of structures corresponding to :attr:`_seq`.
         if structures is None:
             structures = ChainList([])
         else:
@@ -89,24 +88,54 @@ class Chain:
         self.structures: ChainList[ChainStructure] = structures
 
         #: A parent chain this chain had descended from.
-        self.parent: Chain | None = parent
+        self._parent: Chain | None = parent
 
         #: A collection of children preferably obtained using
         #: :meth:`spawn_child`.
         self.children: ChainList[Chain] = _wrap_children(children)
 
-    @property
-    def id(self) -> str:
-        """
-        :return: Chain identifier derived from its :attr:`seq` ID.
-        """
+        self._id = self._make_id()
+
+    def _make_id(self) -> str:
         parent = "" if self.parent is None else f"<-({self.parent.id})"
         return f"Chain({self.seq.id}){parent}"
 
     @property
+    def id(self) -> str:
+        """
+        :return: Chain identifier derived from its :attr:`_seq` ID.
+        """
+        return self._id
+
+    @property
+    def seq(self) -> ChainSequence:
+        return self._seq
+
+    @seq.setter
+    def seq(self, value: ChainSequence) -> None:
+        if not isinstance(value, ChainSequence):
+            raise TypeError(f"Invalid type {type(value)}")
+        self._seq = value
+        self._id = self._make_id()
+
+    @property
+    def parent(self) -> Self | None:
+        return self._parent
+
+    @parent.setter
+    def parent(self, value: Self | None):
+        if not isinstance(value, (type(self), type(None))):
+            raise TypeError(
+                f"Invalid type {type(value)}. "
+                f"Parent must be of the same type {type(self)}"
+            )
+        self._parent = value
+        self._id = self._make_id()
+
+    @property
     def meta(self) -> dict[str, str]:
         """
-        :return: A :attr:`seq`'s :attr:`ChainSequence.meta`.
+        :return: A :meth:`seq`'s :attr:`ChainSequence.meta`.
         """
         return self.seq.meta
 
@@ -137,7 +166,7 @@ class Chain:
     @property
     def categories(self) -> list[str]:
         """
-        :return: A list of categories from :attr:`seq`'s
+        :return: A list of categories from :attr:`_seq`'s
             :attr:`ChainSequence.meta`.
         """
         return self.seq.categories
@@ -275,13 +304,14 @@ class Chain:
         | abc.Iterable[str],
         read_method: SeqReader = read_fasta,
     ) -> Self | ChainList[Self]:
+        # TODO: consider removing and passing the functionality to init
         """
 
-        :param inp: A string of with a sequence or a pair (header, seq).
+        :param inp: A string of with a sequence or a pair (header, _seq).
             Otherwise, something that the `read_method` accepts.
         :param read_method: A callable accepting a path to a file or opened
             file or an iterable over the file lines and returning pairs
-            (header, seq).
+            (header, _seq).
         :return: If a single sequence is provided as a string or pair,
             return an initialized chain. Otherwise, use `read_method` to parse
             the input and embed the resulting :class:`Chain`'s into
@@ -389,10 +419,10 @@ class Chain:
         Add a structure to :attr:`structures`.
 
         :param structure: A structure of a single chain corresponding to
-            :attr:`seq`.
+            :attr:`_seq`.
         :param check_ids: Check that existing :attr:`structures`
             don't encompass the structure with the same :meth:`id`.
-        :param map_to_seq: Align the structure sequence to the :attr:`seq` and
+        :param map_to_seq: Align the structure sequence to the :attr:`_seq` and
             create a mapping within the former.
         :param map_name: If `map_to_seq` is ``True``, use this map name.
         :param add_to_children: If ``True``, will recursively add structure to
@@ -429,16 +459,16 @@ class Chain:
         **kwargs,
     ):
         """
-        Transfer sequence mapping to each :attr:`ChainStructure.seq` within
+        Transfer sequence mapping to each :attr:`ChainStructure._seq` within
         :attr:`structures`.
 
         This method simply utilizes :meth:`ChainSequence.relate` to transfer
-        some map from the :attr:`seq` to each :attr:`ChainStructure.seq`.
+        some map from the :attr:`_seq` to each :attr:`ChainStructure._seq`.
         Check :meth:`ChainSequence.relate` for an explanation.
 
         :param map_name: The name of the map to transfer.
         :param link_map: A name of the map existing within
-            :attr:`ChainStructure.seq` of each structure in :attr:`structures`.
+            :attr:`ChainStructure._seq` of each structure in :attr:`structures`.
         :param link_map_points_to: Which sequence values of the `link_map`
             point to.
         :param kwargs: Passed to :meth:`ChainSequence.relate`
@@ -467,8 +497,8 @@ class Chain:
         str_seq_keep_child: bool = False,
     ) -> Chain:
         """
-        Subset a :attr:`seq` and (optionally) each structure in
-        :attr:`structures` using the provided :attr:`seq` boundaries
+        Subset a :attr:`_seq` and (optionally) each structure in
+        :attr:`structures` using the provided :attr:`_seq` boundaries
         (inclusive).
 
         :param start: Start coordinate.
@@ -480,27 +510,27 @@ class Chain:
             doesn't raise an error.
         :param keep: Save created child to :attr:`children`.
         :param seq_deep_copy: Deep copy potentially mutable sequences within
-            :attr:`seq`.
+            :attr:`_seq`.
         :param seq_map_from: Use this map to obtain coordinates within
-            :attr:`seq`.
+            :attr:`_seq`.
         :param seq_map_closest: Map to the closest matching coordinates of
-            a :attr:`seq`. See :meth:`ChainSequence.map_boundaries`
+            a :attr:`_seq`. See :meth:`ChainSequence.map_boundaries`
             and :meth:`ChainSequence.find_closest`.
         :param seq_keep_child: Keep a spawned :class:`ChainSequence` as a child
-            within :attr:`seq`. Should be ``False`` if `keep` is ``True`` to
+            within :attr:`_seq`. Should be ``False`` if `keep` is ``True`` to
             avoid data duplication.
         :param str_deep_copy: Deep copy each sub-structure.
         :param str_map_from: Use this map to obtain coordinates within
-            :attr:`ChainStructure.seq` of each structure.
+            :attr:`ChainStructure._seq` of each structure.
         :param str_map_closest: Map to the closest matching coordinates of
-            a :attr:`seq`. See :meth:`ChainSequence.map_boundaries`
+            a :attr:`_seq`. See :meth:`ChainSequence.map_boundaries`
             and :meth:`ChainSequence.find_closest`.
         :param str_keep_child: Keep a spawned sub-structure as a child in
             :attr:`ChainStructure.children`. Should be ``False`` if `keep` is
             ``True`` to avoid data duplication.
         :param str_seq_keep_child: Keep a sub-sequence of a spawned structure
             within the :attr:`ChainSequence.children` of
-            :attr:`ChainStructure.seq` of a spawned structure. Should be
+            :attr:`ChainStructure._seq` of a spawned structure. Should be
             ``False`` if `keep` or `str_keep_child` is ``True`` to avoid
             data duplication.
         :return: A sub-chain with sub-sequence and (optionally) sub-structures.

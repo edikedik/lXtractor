@@ -21,7 +21,7 @@ def test_extended_selection_filter(src_str):
     assert m.sum() == 6
 
     child = src_str.spawn_child(404, 406, map_from=SeqNames.enum)
-    child.seq.add_seq('X', [1, 2, 3])
+    child._seq.add_seq('X', [1, 2, 3])
     m = filter_selection_extended(
         child, pos=[2], atom_names=['N', 'C', 'CA'], map_name='X', exclude_hydrogen=True
     )
@@ -67,10 +67,10 @@ def test_subset_to_matching(abl_str, src_str):
     # num_abl_res = bst.get_residue_count(
     #     abl_str.array[bst.filter_canonical_amino_acids(abl_str.array)]
     # )
-    # assert len(abl_sub.seq) == num_abl_res - 5
+    # assert len(abl_sub._seq) == num_abl_res - 5
 
     # pre-aligning should yield the same result
-    abl_str.seq.map_numbering(src_str.seq, name='SRC', align_method=biotite_align)
+    abl_str._seq.map_numbering(src_str._seq, name='SRC', align_method=biotite_align)
     abl_sub, src_sub = subset_to_matching(abl_str, src_str, map_name='SRC')
     assert len(abl_sub.seq) == len(src_sub.seq), 'Same number of residues'
 
@@ -88,8 +88,8 @@ def test_superpose_pairwise(abl_str, src_str, human_src_seq):
     assert res.RmsdSuperpose < 0.001
 
     src_seq = ChainSequence.from_string(human_src_seq[1], name=human_src_seq[0])
-    abl_str.seq.map_numbering(src_seq, name='REF')
-    src_str.seq.map_numbering(src_seq, name='REF')
+    abl_str._seq.map_numbering(src_seq, name='REF')
+    src_str._seq.map_numbering(src_seq, name='REF')
 
     # Align using backbone atoms, then calculate rmsd using all atoms
     res = list(

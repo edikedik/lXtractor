@@ -87,7 +87,7 @@ class PyHMMer:
 
     def convert_seq(self, obj: t.Any) -> DigitalSequence:
         """
-        :param obj: A `Chain*`-type object or string or a tuple of (name, seq).
+        :param obj: A `Chain*`-type object or string or a tuple of (name, _seq).
             A sequence of this object must be compatible with the alphabet of
             the HMM model.
         :return: A digitized sequence compatible with PyHMMer.
@@ -103,7 +103,7 @@ class PyHMMer:
             case ChainSequence():
                 accession, name, text = obj.id, obj.name, obj.seq1
             case ChainStructure() | Chain():
-                accession, name, text = obj.id, obj.id, obj.seq.seq1
+                accession, name, text = obj.id, obj.id, obj._seq.seq1
             case _:
                 raise TypeError(f'Unsupported sequence type {type(obj)}')
         return TextSequence(
@@ -234,7 +234,7 @@ class PyHMMer:
                 # => - 2 3 - 4 5
                 num = [hmm_i for seq_i, hmm_i in _enumerate_numbering(aln) if seq_i]
 
-                # n = the number of valid HMM nodes covered by seq
+                # n = the number of valid HMM nodes covered by _seq
                 # => 2 3 4 5 => 4
                 n = sum(1 for x in num if x is not None)
 

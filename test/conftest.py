@@ -8,6 +8,7 @@ import pytest
 from lXtractor.core.chain import ChainList, ChainStructure, ChainSequence, Chain
 from lXtractor.core.config import SeqNames, DumpNames
 from lXtractor.core.structure import GenericStructure
+from lXtractor.util import filter_polymer
 from lXtractor.util.seq import read_fasta
 from lXtractor.variables.sequential import SeqEl
 from lXtractor.variables.structural import Dist, PseudoDihedral
@@ -112,7 +113,7 @@ def simple_fasta_path() -> Path:
 
 @pytest.fixture()
 def sample_chain_list(simple_structure) -> ChainList:
-    chain_str = ChainStructure.from_structure(simple_structure)
+    chain_str = ChainStructure(simple_structure)
     return ChainList(
         [
             sample_chain(prefix="c", structure=chain_str),
@@ -144,15 +145,13 @@ def simple_chain_variables() -> tuple[PseudoDihedral, Dist, SeqEl]:
 @pytest.fixture()
 def simple_chain_seq() -> tuple[SeqNames, ChainSequence]:
     fields = ChainSequence.field_names()
-    s = ChainSequence(1, 5, "S", {fields.seq1: "ABCDE"})
+    s = ChainSequence(1, 5, "S", {fields.seq1: "AAAAA"})
     return fields, s
 
 
 @pytest.fixture()
-def simple_chain_structure(simple_chain_seq) -> ChainStructure:
-    _, s = simple_chain_seq
-    a = bst.array([bst.Atom([1, 2, 3], chain_id="X", res_name=c) for c in s.seq1])
-    return ChainStructure("XXXX", "X", GenericStructure(a))
+def simple_chain_structure(simple_structure) -> ChainStructure:
+    return ChainStructure(simple_structure)
 
 
 @pytest.fixture

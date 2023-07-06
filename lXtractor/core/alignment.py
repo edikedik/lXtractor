@@ -50,7 +50,7 @@ class Alignment:
         align_method: AlignMethod = mafft_align,
     ):
         """
-        :param seqs: An iterable with (id, seq) pairs.
+        :param seqs: An iterable with (id, _seq) pairs.
         :param add_method: A callable adding sequences.
             Check the type for a signature.
         :param align_method: A callable aligning sequences.
@@ -196,7 +196,7 @@ class Alignment:
 
         :param seq: A sequence, iterable over sequences, or another
             :class:`Alignment`.
-        :return: A new alignment object with sequences from `seq`.
+        :return: A new alignment object with sequences from `_seq`.
             The original number of columns should be preserved,
             which is true when using the default :attr:`add_method`.
         """
@@ -305,7 +305,7 @@ class Alignment:
         Filter alignment sequences.
 
         :param fn: A function accepting a sequence
-            -- (name, seq) pair -- and returning a boolean.
+            -- (name, _seq) pair -- and returning a boolean.
         :return: A new :class:`Alignment` object with
             filtered sequences.
         """
@@ -385,7 +385,7 @@ class Alignment:
         :param inp: A Path to aligned sequences, or a file handle,
             or iterable over file lines.
         :param read_method: A method accepting `inp` and returning an iterable
-            over pairs (header, seq). By default, it's :func:`read_fasta`.
+            over pairs (header, _seq). By default, it's :func:`read_fasta`.
             Hence, the default expected format is fasta.
         :param add_method: A sequence addition method for a new
             :class:`Alignment` object.
@@ -408,7 +408,7 @@ class Alignment:
         Create a new alignment from a collection of unaligned sequences.
         For aligned sequences, please utilize :meth:`read`.
 
-        :param seqs: An iterable over (header, seq) objects.
+        :param seqs: An iterable over (header, _seq) objects.
         :param method: A callable accepting unaligned sequences
             and returning the aligned ones.
         :param add_method: A sequence addition method for
@@ -436,7 +436,7 @@ class Alignment:
         :param inp: A Path to aligned sequences, or a file handle,
             or iterable over file lines.
         :param read_method: A method accepting `inp` and returning an iterable
-            over pairs (header, seq). By default, it's :func:`read_fasta`.
+            over pairs (header, _seq). By default, it's :func:`read_fasta`.
             Hence, the default expected format is fasta.
         :param add_method: A sequence addition method for a new
             :class:`Alignment` object.

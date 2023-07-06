@@ -4,6 +4,7 @@ from pathlib import Path
 import biotite.structure as bst
 import pytest
 
+from lXtractor.core.config import EMPTY_STRUCTURE_ID
 from lXtractor.core.exceptions import LengthMismatch, MissingData, NoOverlap
 from lXtractor.core.structure import GenericStructure
 from test.conftest import EPS
@@ -20,7 +21,7 @@ def test_degenerate(simple_structure):
     s = GenericStructure.make_empty()
     assert len(s) == 0
     assert s.is_empty
-    assert s.pdb_id is None
+    assert s._structure_id == EMPTY_STRUCTURE_ID
 
     assert len(list(s.get_sequence())) == 0
     assert len(list(s.split_chains())) == 0

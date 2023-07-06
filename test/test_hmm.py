@@ -51,7 +51,7 @@ def test_convert(pkinase_hmm_path, abl_str, simple_chain_seq):
 
 def test_domain_extraction(chicken_src_str, pkinase_hmm_path):
     seqs = [
-        ChainStructure.from_structure(chain_str, '2oiq').seq
+        ChainStructure(chain_str, '2oiq')._seq
         for chain_str in chicken_src_str.split_chains()
     ]
     annotator = PyHMMer(pkinase_hmm_path, bit_cutoffs='trusted')

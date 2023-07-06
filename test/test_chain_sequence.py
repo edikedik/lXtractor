@@ -193,10 +193,10 @@ def test_match(simple_chain_with_child):
     with pytest.raises(KeyError):
         s.match("XXX", "S")
     match = s.match("seq1", "X", as_fraction=False, save=False)
-    assert match == 3
+    assert match == 1
     s.match("seq1", "X", as_fraction=True, save=True)
     match = s.meta["Match_seq1_X"]
-    assert match == 0.6
+    assert match == 0.2
 
 
 def to_str(s) -> list[str]:

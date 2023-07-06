@@ -8,7 +8,7 @@ from lXtractor.core.segment import Segment
 
 @pytest.fixture
 def structure(simple_structure) -> ChainStructure:
-    return ChainStructure("1234", "A", simple_structure)
+    return ChainStructure(simple_structure)
 
 
 @pytest.fixture
@@ -72,8 +72,8 @@ def test_basic(sample_chain_list, sequence, structure):
 
     cl = sample_chain_list
     assert len(cl) == 2
-    assert cl[0].seq.name == "c_root"
-    assert cl[1].seq.name == "k_root"
+    assert cl[0]._seq.name == "c_root"
+    assert cl[1]._seq.name == "k_root"
     assert cl[:1].pop().seq.name == "c_root"
     assert len(list(iter(cl))) == 2
 
@@ -113,7 +113,7 @@ def test_objects_retrieval(sample_chain_list):
     assert len(l1) == 4
     assert len(l2) == 8
     assert len(l3) == 2
-    assert (l3[0].seq.name, l3[1].seq.name) == ("c1_2_1", "k1_2_1")
+    assert (l3[0]._seq.name, l3[1]._seq.name) == ("c1_2_1", "k1_2_1")
 
     assert len(cl.collapse_children()) == 14
 
@@ -161,7 +161,7 @@ def test_iter_children(sample_chain_list):
     assert len(l2) == 8
     l3 = next(it)
     assert len(l3) == 2
-    assert [x.seq.name for x in l3] == ["c1_2_1", "k1_2_1"]
+    assert [x._seq.name for x in l3] == ["c1_2_1", "k1_2_1"]
     with pytest.raises(StopIteration):
         next(it)
 

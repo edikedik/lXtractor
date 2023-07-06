@@ -29,10 +29,10 @@ from lXtractor.util.misc import is_valid_field_name
 if t.TYPE_CHECKING:
     from lXtractor.variables.base import Variables
 
-_S = t.TypeVar('_S', bound='Segment', contravariant=True)
-T = t.TypeVar('T')
+_S = t.TypeVar("_S", bound="Segment", contravariant=True)
+T = t.TypeVar("T")
 # _IterType = t.Union[abc.Iterator[tuple], abc.Iterator[namedtuple]]
-DATA_HANDLE_MODES = ('merge', 'self', 'other')
+DATA_HANDLE_MODES = ("merge", "self", "other")
 LOGGER = logging.getLogger(__name__)
 
 
@@ -47,7 +47,7 @@ def _check_boundary_change(x_orig: int, x_new: int):
     if x_orig == 0:
         raise IndexError("Can't change boundaries of an empty segment")
     if x_new < 0:
-        raise IndexError(f'Attempting to set a negative boundary {x_new}')
+        raise IndexError(f"Attempting to set a negative boundary {x_new}")
 
 
 class Segment(abc.Sequence[NamedTupleT]):
@@ -114,14 +114,15 @@ class Segment(abc.Sequence[NamedTupleT]):
     """
 
     __slots__ = (
-        '_start',
-        '_end',
-        'name',
-        'parent',
-        'children',
-        'meta',
-        '_seqs',
-        'variables',
+        "_start",
+        "_end",
+        "_name",
+        "_parent",
+        "_id",
+        "_seqs",
+        "children",
+        "meta",
+        "variables",
     )
 
     def __init__(
@@ -156,19 +157,33 @@ class Segment(abc.Sequence[NamedTupleT]):
             calculation for this segment.
         """
         if (start <= 0 or end <= 0) and start != end:
-            raise ValueError('Boundaries must start from 1')
+            raise ValueError("Boundaries must start from 1")
         self._start = start
         self._end = end
-        self.name = name
-        self.parent = parent
+        self._name = str(name)
+        self._parent = parent
         self.children = children or []
         self.meta: dict[str, t.Any] = meta or {}
         self._seqs: dict[str, abc.Sequence[t.Any]] = seqs or {}
 
+        self._id = self._make_id()
+
         from lXtractor.variables.base import Variables
+
         self.variables: Variables = variables or Variables()
 
         self._setup_and_validate()
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @name.setter
+    def name(self, value: str):
+        if not isinstance(value, str):
+            raise TypeError("Name must have the type `str`")
+        self._name = value
+        self._id = self._make_id()
 
     @property
     def start(self) -> int:
@@ -182,7 +197,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         _check_boundary_change(self.start, value)
         if value > self.end:
             raise IndexError(
-                f'Cannot start {value} further than the current end {self.end}'
+                f"Cannot start {value} further than the current end {self.end}"
             )
         if value > self.start:
             idx = _translate_idx(value, self.start)
@@ -195,9 +210,10 @@ class Segment(abc.Sequence[NamedTupleT]):
                     self._start = value
                 else:
                     raise IndexError(
-                        f'Cannot set start {self.start} to {value} with '
-                        'existing sequences'
+                        f"Cannot set start {self.start} to {value} with "
+                        "existing sequences"
                     )
+        self._id = self._make_id()
 
     @property
     def end(self) -> int:
@@ -207,11 +223,11 @@ class Segment(abc.Sequence[NamedTupleT]):
         return self._end
 
     @end.setter
-    def end(self, value):
+    def end(self, value: int):
         _check_boundary_change(self.end, value)
         if value < self.start:
             raise IndexError(
-                f'Cannot set end {value} lower than the current start {self.start}'
+                f"Cannot set end {value} lower than the current start {self.start}"
             )
         if value < self.end:
             idx = _translate_idx(value, self.start) + 1
@@ -224,8 +240,27 @@ class Segment(abc.Sequence[NamedTupleT]):
                     self._end = value
                 else:
                     raise IndexError(
-                        f'Cannot set end {self.end} to {value} with existing sequences'
+                        f"Cannot set end {self.end} to {value} with existing sequences"
                     )
+        self._id = self._make_id()
+
+    @property
+    def parent(self) -> Self | None:
+        return self._parent
+
+    @parent.setter
+    def parent(self, parent: Self | None):
+        if not isinstance(parent, (type(self), type(None))):
+            raise TypeError(
+                f"Parent must be of the same type {type(self)}. "
+                f"Got {type(parent)} instead"
+            )
+        self._parent = parent
+        self._id = self._make_id()
+
+    def _make_id(self):
+        parent = f"<-({self.parent.id})" if self.parent else ""
+        return f"{self.name}{Sep.start_end}{self.start}-{self.end}{parent}"
 
     @property
     def id(self) -> str:
@@ -239,8 +274,7 @@ class Segment(abc.Sequence[NamedTupleT]):
             would specify a segment `S` with boundaries ``[1, 2]``
             descended from `P`.
         """
-        parent = f'<-({self.parent.id})' if self.parent else ''
-        return f'{self.name}{Sep.start_end}{self.start}-{self.end}{parent}'
+        return self._id
 
     @property
     def item_type(self) -> _Item:
@@ -250,7 +284,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         for "i" -- an index. :return: `Item` namedtuple object.
         """
         # Returns Type[Tuple[Any, ...]]
-        return namedtuple('Item', ['i', *self._seqs.keys()])  # type: ignore
+        return namedtuple("Item", ["i", *self._seqs.keys()])  # type: ignore
 
     @property
     def is_empty(self) -> bool:
@@ -313,18 +347,18 @@ class Segment(abc.Sequence[NamedTupleT]):
             return self._seqs[idx]
         if isinstance(idx, (int, slice)):
             if self.is_empty:
-                raise IndexError('No slicing/indexing for an empty segment')
+                raise IndexError("No slicing/indexing for an empty segment")
         if isinstance(idx, int):
             if idx == 0:
                 raise IndexError(
-                    'Segment uses 1-based indexing, 0 is reserved for '
-                    'an empty segment'
+                    "Segment uses 1-based indexing, 0 is reserved for "
+                    "an empty segment"
                 )
             idx_py = _translate_idx(idx, self.start)
             it = nth(iter(self), idx_py, None)
             if it is None:
                 raise IndexError(
-                    f'Index {idx}->{idx_py} lies outside of [0, {len(self)}]'
+                    f"Index {idx}->{idx_py} lies outside of [0, {len(self)}]"
                 )
             return it
             # try:
@@ -335,13 +369,13 @@ class Segment(abc.Sequence[NamedTupleT]):
         if isinstance(idx, slice):
             if idx.start == 0 or idx.stop == 0:
                 raise IndexError(
-                    'Segment uses 1-based indexing, 0 is reserved for '
-                    'an empty segment'
+                    "Segment uses 1-based indexing, 0 is reserved for "
+                    "an empty segment"
                 )
             if idx.step is not None:
                 raise IndexError(
                     'Cannot create non-consecutive copy of segment => "step" '
-                    'is slicing-incompatible'
+                    "is slicing-incompatible"
                 )
             if (idx.start, idx.stop) in [
                 (None, None),
@@ -356,14 +390,14 @@ class Segment(abc.Sequence[NamedTupleT]):
             try:
                 seqs = {k: v[idx_py.start : idx_py.stop] for k, v in self._seqs.items()}
             except IndexError as e:
-                raise IndexError(f'Failed to index sequences using {idx}') from e
+                raise IndexError(f"Failed to index sequences using {idx}") from e
 
             start = idx.start or self.start
             end = idx.stop or self.end
 
             return self.__class__(start, end, self.name, seqs, parent=self)
         else:
-            raise TypeError(f'Cannot index with type {type(idx)}')
+            raise TypeError(f"Cannot index with type {type(idx)}")
 
     def __setitem__(self, key: str, value: abc.Sequence[t.Any]) -> None:
         self._validate_seq(key, value)
@@ -387,7 +421,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         return self.end - self.start + 1
 
     def __and__(self, other: Segment) -> Segment:
-        return self.overlap_with(other, True, 'self')
+        return self.overlap_with(other, True, "self")
 
     def __eq__(self, other: t.Any) -> bool:
         if not isinstance(other, self.__class__):
@@ -405,19 +439,19 @@ class Segment(abc.Sequence[NamedTupleT]):
 
     def __rshift__(self, idx: int) -> Segment:
         if self.is_empty:
-            raise ValueError('Cannot shift an empty segment')
+            raise ValueError("Cannot shift an empty segment")
         return Segment(self.start + idx, self.end + idx, self.name, seqs=self._seqs)
 
     def __lshift__(self, idx: int) -> Segment:
         if self.is_empty:
-            raise ValueError('Cannot shift an empty segment')
+            raise ValueError("Cannot shift an empty segment")
         return Segment(self.start - idx, self.end - idx, self.name, seqs=self._seqs)
 
     def _validate_seq(self, name: str, seq: abc.Sequence):
         if not is_valid_field_name(name):
             raise FormatError(
-                f'Invalid field name {name}. '
-                f'Please use a valid variable name starting with a letter'
+                f"Invalid field name {name}. "
+                f"Please use a valid variable name starting with a letter"
             )
         if len(seq) != len(self):
             raise LengthMismatch(
@@ -431,7 +465,7 @@ class Segment(abc.Sequence[NamedTupleT]):
 
     def _setup_and_validate(self):
         if self.start > self.end or self.start < 0 or self.end < 0:
-            raise FormatError(f'Invalid boundaries {self.start}, {self.end}')
+            raise FormatError(f"Invalid boundaries {self.start}, {self.end}")
         self._validate_seqs()
 
     def add_seq(self, name: str, seq: abc.Sequence[t.Any]):
@@ -447,15 +481,15 @@ class Segment(abc.Sequence[NamedTupleT]):
         """
         if not is_valid_field_name(name):
             raise ValueError(
-                f'Invalid field name {name}. '
-                f'Please use a valid variable name starting with a letter'
+                f"Invalid field name {name}. "
+                f"Please use a valid variable name starting with a letter"
             )
         if name not in self:
             self[name] = seq
         else:
             raise ValueError(
-                f'Segment already contains {name}. '
-                f'To overwrite existing sequences, use [] syntax'
+                f"Segment already contains {name}. "
+                f"To overwrite existing sequences, use [] syntax"
             )
 
     def bounds(self, other: Segment) -> bool:
@@ -503,8 +537,8 @@ class Segment(abc.Sequence[NamedTupleT]):
         self,
         other: Segment,
         deep_copy: bool = True,
-        handle_mode: str = 'merge',
-        sep: str = '&',
+        handle_mode: str = "merge",
+        sep: str = "&",
     ) -> Self:
         """
         Overlap this segment with other over common indices.
@@ -537,35 +571,35 @@ class Segment(abc.Sequence[NamedTupleT]):
             return {k: s[_start : _end + 1] for k, s in _seqs.items()}
 
         if not self.overlaps(other):
-            raise NoOverlap(f'Segments {self} and {other} do not overlap')
+            raise NoOverlap(f"Segments {self} and {other} do not overlap")
 
         if self.is_empty:
-            warnings.warn('Overlapping empty & non-empty always results in empty')
+            warnings.warn("Overlapping empty & non-empty always results in empty")
             return self
 
         if other.is_empty:
-            warnings.warn('Overlapping non-empty & empty always results in empty')
+            warnings.warn("Overlapping non-empty & empty always results in empty")
             return self.__class__(0, 0)
 
         start, end = max(self.start, other.start), min(self.end, other.end)
 
-        if handle_mode == 'merge':
+        if handle_mode == "merge":
             meta = {**self.meta, **other.meta}
             seqs = {
                 **subset_seqs(self._seqs, self.start, start, end),
                 **subset_seqs(other._seqs, other.start, start, end),
             }
             name: str | None = sep.join(map(str, [self.name, other.name]))
-        elif handle_mode == 'self':
+        elif handle_mode == "self":
             meta, name = self.meta, self.name
             seqs = subset_seqs(self._seqs, self.start, start, end)
-        elif handle_mode == 'other':
+        elif handle_mode == "other":
             meta, name = other.meta, other.name
             seqs = subset_seqs(other._seqs, other.start, start, end)
         else:
             raise ValueError(
-                f'Handle mode {handle_mode} is not supported. '
-                f'Supported modes are {DATA_HANDLE_MODES}'
+                f"Handle mode {handle_mode} is not supported. "
+                f"Supported modes are {DATA_HANDLE_MODES}"
             )
 
         meta = copy(meta)
@@ -587,7 +621,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         if not self.overlaps(other):
             raise NoOverlap
 
-        return self.overlap_with(other, True, 'self')
+        return self.overlap_with(other, True, "self")
 
     def sub_by(self, other: Segment, **kwargs) -> Self:
         """
@@ -605,8 +639,8 @@ class Segment(abc.Sequence[NamedTupleT]):
         """
         if not self.bounds(other):
             raise NoOverlap(
-                f'Provided ({other.start, other.end}) boundaries are not '
-                f'within the existing boundaries ({self.start, self.end})'
+                f"Provided ({other.start, other.end}) boundaries are not "
+                f"within the existing boundaries ({self.start, self.end})"
             )
 
         return self.overlap_with(other, **kwargs)
@@ -698,8 +732,8 @@ def resolve_overlaps(
     if verbose:
         ccs = list(ccs)
         LOGGER.info(
-            f'Found {len(ccs)} connected components with sizes: '
-            f'{list(map(len, ccs))}'
+            f"Found {len(ccs)} connected components with sizes: "
+            f"{list(map(len, ccs))}"
         )
     for i, cc in enumerate(nx.connected_components(g), start=1):
         if len(cc) == 1:
@@ -707,7 +741,7 @@ def resolve_overlaps(
         else:
             sets: abc.Iterable | list = powerset(cc)
             if verbose:
-                sets = tqdm(sets, desc=f'Resolving cc {i} with size: {len(cc)}')
+                sets = tqdm(sets, desc=f"Resolving cc {i} with size: {len(cc)}")
             if max_it is not None and max_it > 0:
                 sets = take(max_it, sets)
             overlapping_subsets = filterfalse(do_overlap, sets)
@@ -732,19 +766,19 @@ def map_segment_numbering(
         of the `segments_from`, values -- to numberings of `segments_to`.
     """
     if len(segments_to) != len(segments_from):
-        raise LengthMismatch('Segment collections must be of the same length')
+        raise LengthMismatch("Segment collections must be of the same length")
     for s1, s2 in zip(segments_from, segments_to):
         if len(s1) != len(s2):
             raise LengthMismatch(
-                f'Lengths of segments must match. '
-                f'Got len({s1})={len(s1)}, len({s2})={len(s2)}'
+                f"Lengths of segments must match. "
+                f"Got len({s1})={len(s1)}, len({s2})={len(s2)}"
             )
     for s1, s2 in zip(segments_from, segments_from[1:]):
         if s2.overlaps(s1):
-            raise OverlapError(f'Segments {s1},{s2} in `segments_from` overlap')
+            raise OverlapError(f"Segments {s1},{s2} in `segments_from` overlap")
     for s1, s2 in zip(segments_to, segments_to[1:]):
         if s2.overlaps(s1):
-            raise OverlapError(f'Segments {s1},{s2} in `segments_to` overlap')
+            raise OverlapError(f"Segments {s1},{s2} in `segments_to` overlap")
 
     hole_sizes = chain(
         ((s2.start - s1.end) for s1, s2 in zip(segments_to, segments_to[1:])), (0,)
@@ -761,5 +795,5 @@ def map_segment_numbering(
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError

@@ -72,7 +72,7 @@ def get_mapping(obj: t.Any, map_name: str | None, map_to: str | None) -> dict | 
     """
     Obtain mapping from a Chain*-type object.
 
-    >>> s = lxc.ChainSequence.from_string('ABCD', name='seq')
+    >>> s = lxc.ChainSequence.from_string('ABCD', name='_seq')
     >>> s.add_seq('some_map', [5, 6, 7, 8])
     >>> s.add_seq('another_map', ['D', 'B', 'C', 'A'])
     >>> get_mapping(s, 'some_map', None)
@@ -97,9 +97,9 @@ def get_mapping(obj: t.Any, map_name: str | None, map_to: str | None) -> dict | 
 
     if not isinstance(obj, lxc.ChainSequence):
         try:
-            seq = obj.seq
+            seq = obj._seq
         except AttributeError as e:
-            raise MissingData(f"Object {obj} is missing `seq` attribute") from e
+            raise MissingData(f"Object {obj} is missing `_seq` attribute") from e
     else:
         seq = obj
 
@@ -246,10 +246,10 @@ def find_structure(s: lxc.ChainStructure) -> GenericStructure | None:
     :param s: An arbitrary chain structure.
     :return: The first non-empty atom array up the parent chain.
     """
-    structure = s.pdb.structure
+    structure = s.structure
     parent = s.parent
     while structure is None and parent is not None:
-        structure = parent.pdb.structure
+        structure = parent.structure
         parent = parent.parent
     return None or structure
 
@@ -342,7 +342,7 @@ class Manager:
         provided chains.
 
         >>> from lXtractor.variables.sequential import SeqEl
-        >>> s = lxc.ChainSequence.from_string('abcd', name='seq')
+        >>> s = lxc.ChainSequence.from_string('abcd', name='_seq')
         >>> manager = Manager()
         >>> manager.assign([SeqEl(1)], [s])
         >>> df = manager.aggregate_from_chains([s])
@@ -439,13 +439,13 @@ class Manager:
             :meth:`calculate`
 
         >>> from lXtractor.variables.sequential import SeqEl
-        >>> s = lxc.ChainSequence.from_string('ABCD', name='seq')
+        >>> s = lxc.ChainSequence.from_string('ABCD', name='_seq')
         >>> m = Manager()
         >>> staged = list(m.stage([s], [SeqEl(1)]))
         >>> len(staged) == 1
         True
         >>> staged[0]
-        (seq|1-4, 'ABCD', [SeqEl(p=1,_rtype='str',seq_name='seq1')], None)
+        (_seq|1-4, 'ABCD', [SeqEl(p=1,_rtype='str',seq_name='seq1')], None)
 
         :param chains: An iterable over chain sequences/structures.
         :param vs: A sequence of variables. If not provided, will use assigned
@@ -478,11 +478,11 @@ class Manager:
 
         >>> from lXtractor.variables.calculator import GenericCalculator
         >>> from lXtractor.variables.sequential import SeqEl
-        >>> s = lxc.ChainSequence.from_string('ABCD', name='seq')
+        >>> s = lxc.ChainSequence.from_string('ABCD', name='_seq')
         >>> m = Manager()
         >>> c = GenericCalculator()
         >>> list(m.calculate([s],[SeqEl(1)],c))
-        [(seq|1-4, SeqEl(p=1,_rtype='str',seq_name='seq1'), True, 'A')]
+        [(_seq|1-4, SeqEl(p=1,_rtype='str',seq_name='seq1'), True, 'A')]
         >>> list(m.calculate([s],[SeqEl(5)],c))[0][-2:]
         (False, 'Missing index 4 in sequence')
 

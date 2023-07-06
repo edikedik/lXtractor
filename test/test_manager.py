@@ -16,8 +16,8 @@ def test_variables_modifications(sample_chain_list, simple_chain_variables):
     manager = Manager()
 
     manager.assign(vs, cl.iter_sequences())
-    assert all(c.seq.variables for c in cl)
-    assert all(not c.seq.variables for c in cl.collapse_children())
+    assert all(c._seq.variables for c in cl)
+    assert all(not c._seq.variables for c in cl.collapse_children())
     assert all(all(not s.variables for s in c.structures) for c in cl)
 
     structures = list(cl.collapse_children().iter_structures())
@@ -27,8 +27,8 @@ def test_variables_modifications(sample_chain_list, simple_chain_variables):
     manager.remove(structures)
     assert all(len(s.variables) == 0 for s in structures)
     manager.reset(cl.iter_sequences())
-    assert all(c.seq.variables for c in cl)
-    assert all((x is None for x in c.seq.variables.values()) for c in cl)
+    assert all(c._seq.variables for c in cl)
+    assert all((x is None for x in c._seq.variables.values()) for c in cl)
 
 
 def test_aggregate_from_chains(sample_chain_list, simple_chain_variables):
@@ -44,7 +44,7 @@ def test_staging(sample_chain_list, simple_chain_variables):
     manager = Manager()
 
     staged = list(manager.stage(cl.sequences, vs))
-    assert len(staged) == len(cl)  # number of seq vars x number of seqs
+    assert len(staged) == len(cl)  # number of _seq vars x number of seqs
     assert all(
         all(
             [
@@ -131,7 +131,7 @@ def test_aggregate_from_it(simple_chain_seq):
     ],
 )
 def test_common_pipeline(vs, num_expected, abl_str):
-    inputs = [abl_str, abl_str.seq, *((abl_str, x) for x in abl_str.ligands)]
+    inputs = [abl_str, abl_str._seq, *((abl_str, x) for x in abl_str.ligands)]
     manager = Manager(verbose=True)
     res = manager.aggregate_from_it(manager.calculate(inputs, vs, GenericCalculator()))
     assert isinstance(res, pd.DataFrame)

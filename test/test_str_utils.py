@@ -56,7 +56,7 @@ def test_common_atoms_filter(ala, gly, phe, abl_str, src_str):
     abl_hrd = abl_str.spawn_child(136, 140, "LHRDL")
     src_hrd = src_str.spawn_child(128, 132, "VHRDL")
 
-    assert len(abl_hrd.seq) == len(src_hrd.seq) == 5
+    assert len(abl_hrd._seq) == len(src_hrd._seq) == 5
 
     with pytest.raises(ValueError):
         filter_to_common_atoms(abl_hrd.array, src_hrd.array)

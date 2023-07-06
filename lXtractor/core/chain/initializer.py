@@ -94,17 +94,9 @@ def _read_path(
     if suffix in supported_str_ext:
         # Read initial structures, split by chains ant altloc
         # and wrap into a ChainStructure
-        return list(
-            map(
-                ChainStructure.from_structure,
-                (
-                    next(c.split_altloc())
-                    for c in GenericStructure.read(path, altloc=True).split_chains(
-                        polymer=True
-                    )
-                ),
-            )
-        )
+        chains = GenericStructure.read(path, altloc=True).split_chains(polymer=True)
+        chains = map(lambda x: next(x.split_altloc()), chains)
+        return list(map(ChainStructure, chains))
     if tolerate_failures:
         return None
     raise InitError(f"Suffix {suffix} of the path {path} is not supported")
@@ -129,10 +121,10 @@ def _init(
             structures = _read_path(
                 inp[0], tolerate_failures, supported_seq_ext, supported_str_ext
             )
-            structures = [s for s in structures if s.pdb.chain in xs]
+            structures = [s for s in structures if s.chain_id in xs]
             res = structures or None
         case GenericStructure():
-            res = ChainStructure.from_structure(inp)
+            res = ChainStructure(inp)
         case Path():
             res = _read_path(
                 inp, tolerate_failures, supported_seq_ext, supported_str_ext
@@ -317,7 +309,7 @@ class ChainInitializer:
                 1) Initialized objects (passed without any actions).
                 2) Path to a sequence or a structure file.
                 3) (Path to a structure file, list of target chains).
-                4) A pair (header, seq) to initialize a :class:`ChainSequence`.
+                4) A pair (header, _seq) to initialize a :class:`ChainSequence`.
                 5) A :class:`GenericStructure` with a single chain.
 
         :param num_proc: The number of processes to use.
@@ -370,7 +362,7 @@ class ChainInitializer:
         It will first initialize objects to which the elements of `m`
         refer (see below) and then create maps between each sequence and
         associated structures, saving these into structure
-        :attr:`ChainStructure.seq`'s.
+        :attr:`ChainStructure._seq`'s.
 
         .. note::
             ``key/value_callback`` are distributed to parser and applied right
@@ -379,11 +371,11 @@ class ChainInitializer:
             ``num_proc_read_str`` parameters.
 
         :param m:
-            A mapping of the form ``{seq => [structures]}``, where `seq`
+            A mapping of the form ``{_seq => [structures]}``, where `_seq`
             is one of:
 
                 1) Initialized :class:`ChainSequence`.
-                2) A pair (header, seq).
+                2) A pair (header, _seq).
                 3) A path to a **fasta** file containing a single sequence.
 
             While each structure is one of:
@@ -503,8 +495,8 @@ class ChainInitializer:
             # for each structure in values
             numbering_groups = list(
                 map_numbering_many2many(
-                    [x.seq for x, _ in items],
-                    [[x.seq for x in strs] for _, strs in items],
+                    [x._seq for x, _ in items],
+                    [[x._seq for x in strs] for _, strs in items],
                     num_proc=num_proc_map_numbering,
                     verbose=self.verbose,
                 )
@@ -539,7 +531,7 @@ def _add_structures(
     (c, ss), num_group = inp
     for s, n in zip(ss, num_group, strict=True):
         try:
-            s.seq.add_seq(map_name, n)
+            s._seq.add_seq(map_name, n)
             c.add_structure(s, map_to_seq=False, **kwargs)
         except Exception as e:
             LOGGER.warning(f"Failed to add structure {s} to chain {c} due to {e}")

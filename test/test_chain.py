@@ -12,10 +12,10 @@ def test_basic(four_chain_structure_seq_path, four_chain_structure):
     assert len(p.seq) == 1657
     assert p.id == f'Chain({p.seq.id})'
     chains = list(four_chain_structure.split_chains())
-    chain_a = ChainStructure.from_structure(chains[0], pdb_id='3i6x')
+    chain_a = ChainStructure(chains[0])
     p.add_structure(chain_a)
     assert len(p.structures) == 1
-    start, end = chain_a.seq.start, chain_a.seq.end
+    start, end = chain_a._seq.start, chain_a._seq.end
     assert f'3i6x{Sep.chain}A{Sep.start_end}{start}-{end}'
 
     with pytest.raises(ValueError):
@@ -44,7 +44,7 @@ def test_add_structure(chicken_src_seq, src_str):
 def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     p = Chain.from_seq(chicken_src_seq)
     chains = chicken_src_str.split_chains()
-    chain_a = ChainStructure.from_structure(next(chains))
+    chain_a = ChainStructure(next(chains))
     p.add_structure(chain_a, map_name=SeqNames.map_canonical)
 
     # should work on any full protein chain
@@ -65,12 +65,11 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     assert len(child.structures[0].seq) == 260
     assert 'child' in [c.seq.name for c in p.children]
 
-    # Using canonical seq numbering
+    # Using canonical _seq numbering
     # +-----------------------|----|------------+
     # 1                       256  260
     #                         +----|------------+
     #                         1    5
-    print(p)
     child = p.spawn_child(
         1, 260, str_map_from=SeqNames.map_canonical, str_map_closest=True
     )
@@ -97,7 +96,7 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
 
 def test_iter(chicken_src_str):
     def get_name(_c):
-        return _c.seq.name
+        return _c._seq.name
 
     c = sample_chain()
 
@@ -112,10 +111,10 @@ def test_filter_children(src_chain):
     c = src_chain
     c.spawn_child(270, 300, str_map_from='map_canonical', subset_structures=False)
     assert len(c.children) == 1 and len(c.children[0].seq) == 31
-    c_new = c.filter_children(lambda x: len(x.seq) > 31)
+    c_new = c.filter_children(lambda x: len(x._seq) > 31)
     assert len(c_new.children) == 0
     assert len(c.children) == 1
-    c.filter_children(lambda x: len(x.seq) > 31, inplace=True)
+    c.filter_children(lambda x: len(x._seq) > 31, inplace=True)
     assert len(c.children) == 0
 
 
@@ -137,10 +136,10 @@ def test_apply_children(src_chain):
 def test_filter_structures(src_chain):
     c = src_chain
     s0len = len(c.structures[0].seq)
-    c_new = c.filter_structures(lambda x: len(x.seq) == s0len)
+    c_new = c.filter_structures(lambda x: len(x._seq) == s0len)
     assert len(c.structures) == 2 and len(c_new.structures) == 1
     assert c_new.structures[0].id == c.structures[0].id
-    c.filter_structures(lambda x: len(x.seq) == s0len, inplace=True)
+    c.filter_structures(lambda x: len(x._seq) == s0len, inplace=True)
     assert len(c.structures) == 1
 
 

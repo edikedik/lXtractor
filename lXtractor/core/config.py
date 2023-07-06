@@ -12,7 +12,7 @@ Separators = namedtuple(
     "Separators", ["list", "chain", "dom", "uni_pdb", "str", "start_end"]
 )
 Sep = Separators(",", ":", "::", "_", "--", "|")
-EMPTY_PDB_ID: str = "XXXX"
+EMPTY_STRUCTURE_ID: str = "XXXX"
 EMPTY_CHAIN_ID: str = "X"
 UNK_NAME: str = "Unk"
 STRUCTURE_EXT = (".cif", ".pdb", ".mmtf")
@@ -93,6 +93,7 @@ SOLVENTS = (
     "P4G",
     "P6G",
     "PEG",
+    "PE4",
     "PG0",
     "PGO",
     "PG4",
@@ -289,8 +290,8 @@ class _MetaNames:
     id: str = "id"
     name: str = "name"
     variables: str = "variables"
-    pdb_id: str = "pdb_id"
-    pdb_chain: str = "pdb_chain"
+    structure_id: str = "structure_id"
+    structure_chain_id: str = "structure_chain_id"
     category: str = "category"
     res_id: str = "res_id"
     res_name: str = "res_name"

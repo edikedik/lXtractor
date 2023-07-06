@@ -52,7 +52,7 @@ def test_indexing(simple_fasta_path):
     with pytest.raises(IndexError):
         _ = aln[3]
     with pytest.raises(KeyError):
-        _ = aln['seq']
+        _ = aln['_seq']
 
 
 def test_modifying(simple_fasta_path):

@@ -4,7 +4,6 @@ import logging
 import typing as t
 from collections import abc
 from dataclasses import dataclass
-from itertools import starmap
 from pathlib import Path
 
 import numpy as np
@@ -24,7 +23,7 @@ from lXtractor.core.config import (
     MetaNames,
     DumpNames,
     _DumpNames,
-    EMPTY_PDB_ID,
+    EMPTY_STRUCTURE_ID,
     EMPTY_CHAIN_ID,
     UNK_NAME,
     ColNames,
@@ -32,7 +31,7 @@ from lXtractor.core.config import (
 from lXtractor.core.exceptions import LengthMismatch, InitError, MissingData
 from lXtractor.core.structure import GenericStructure
 from lXtractor.util.io import get_files, get_dirs
-from lXtractor.util.structure import filter_selection, filter_solvent_extended
+from lXtractor.util.structure import filter_selection
 
 if t.TYPE_CHECKING:
     from lXtractor.variables import Variables
@@ -56,34 +55,69 @@ class PDB_Chain:
     structure: GenericStructure | None
 
 
-def _validate_chain(pdb: PDB_Chain):
-    if pdb.structure.is_empty or pdb.structure.is_singleton:
+def _validate_chain(structure: GenericStructure):
+    if structure.is_empty or structure.is_singleton:
         return
-    chains = pdb.structure.chain_ids_polymer
+    chains = structure.chain_ids_polymer
     if len(chains) > 1:
         raise InitError(
-            f"Invalid chain {pdb}: the structure must contain a single "
+            f"The structure {structure} must contain a single "
             f"polymeric chain. Got {len(chains)}: {chains}"
         )
-    try:
-        chain_id = (
-            pdb.structure.chain_ids_polymer.pop()
-            if pdb.structure.chain_ids_polymer
-            else pdb.structure.chain_ids.pop()
-        )
-    except KeyError as e:
-        raise InitError(f"No chains for {pdb}") from e
-    if chain_id != pdb.chain:
-        raise InitError(
-            f"Invalid chain {pdb}. Actual chain {chain_id} does not match "
-            f"chain attribute {pdb.chain}"
-        )
-    alt_loc = list(filter(lambda x: x != "", pdb.structure.altloc_ids))
+    # try:
+    #     chain_id = (
+    #         pdb.structure.chain_ids_polymer.pop()
+    #         if pdb.structure.chain_ids_polymer
+    #         else pdb.structure.chain_ids.pop()
+    #     )
+    # except KeyError as e:
+    #     raise InitError(f"No chains for {pdb}") from e
+    # if chain_id != pdb.chain:
+    #     raise InitError(
+    #         f"Invalid chain {pdb}. Actual chain {chain_id} does not match "
+    #         f"chain attribute {pdb.chain}"
+    #     )
+    alt_loc = list(filter(lambda x: x != "", structure.altloc_ids))
     if len(alt_loc) > 1:
         raise InitError(
-            f"Invalid chain {pdb}: the structure must contain a single alt loc; "
+            f"The structure {structure} must contain a single alt loc; "
             f"found {len(alt_loc)} {alt_loc}"
         )
+
+
+def _validate_chain_seq(structure: GenericStructure, seq: ChainSequence):
+    str_seq = _str2seq(structure)
+    if not seq.seq1 == str_seq.seq1:
+        raise InitError("Primary sequences mismatch")
+
+
+def _get_chain_id(structure: GenericStructure):
+    if structure.is_empty:
+        return EMPTY_CHAIN_ID
+    if structure.is_singleton or len(structure) == 2:
+        return structure.array.chain_id[0]
+    return structure.chain_ids_polymer.pop()
+
+
+def _str2seq(structure: GenericStructure):
+    if len(structure.array) > 0:
+        str_seq = list(structure.get_sequence())
+    else:
+        str_seq = []
+    if not str_seq:
+        return ChainSequence.make_empty()
+
+    seq1, seq3, num = map(list, unzip(str_seq))
+    seqs: dict[str, list[int] | list[str]] = {
+        SeqNames.seq3: seq3,
+        SeqNames.enum: num,
+    }
+    chain_id = _get_chain_id(structure)
+    return ChainSequence.from_string(
+        "".join(seq1),
+        name=f"{structure.structure_id}{Sep.chain}{chain_id}",
+        **seqs,  # type: ignore  # Fails to recognize kwargs
+    )
 
 
 class ChainStructure:
@@ -108,7 +142,7 @@ class ChainStructure:
 
     Two main containers are:
 
-    1) :attr:`seq` -- a :class:`ChainSequence` of this structure,
+    1) :attr:`_seq` -- a :class:`ChainSequence` of this structure,
         also containing meta info.
     2) :attr:`pdb` -- a container with pdb id, pdb chain id,
         and the structure itself.
@@ -116,26 +150,31 @@ class ChainStructure:
     A unique structure is defined by
     """
 
-    __slots__ = ("pdb", "seq", "parent", "variables", "children")
+    __slots__ = (
+        "_id",
+        "_structure",
+        "_chain_id",
+        "_seq",
+        "_parent",
+        "variables",
+        "children",
+    )
 
     def __init__(
         self,
-        pdb_id: str,
-        pdb_chain: str,
-        pdb_structure: GenericStructure | None,
+        structure: GenericStructure | bst.AtomArray | None,
+        chain_id: str | None = None,
+        structure_id: str | None = None,
         seq: ChainSequence | None = None,
         parent: ChainStructure | None = None,
         children: abc.Iterable[ChainStructure] | None = None,
         variables: Variables | None = None,
-        skip_validation: bool = False,
     ):
         """
-        `pdb_id`, `pdb_chain`, and `pdb_structure` are wrapped into a
-        :attr:`pdb`: -- a :class:`PDB_Chain` container.
 
-        :param pdb_id: Four-letter PDB code.
-        :param pdb_chain: PDB Chain code.
-        :param pdb_structure: Parsed generic structure with a single chain.
+        :param structure_id: An ID for the structure the chain was taken from.
+        :param chain_id: A chain ID (e.g., "A", "B", etc.)
+        :param structure: Parsed generic structure with a single chain.
         :param seq: Chain sequence of a structure. If not provided, will use
             :meth:`get_sequence <lXtractor.core.structure.
             GenericStructure.get_sequence>`.
@@ -144,25 +183,21 @@ class ChainStructure:
             This contained is used to record sub-structures obtained via
             :meth:`spawn_child`.
         :param variables: Variables associated with this structure.
-        :param skip_validation: Skip validating that only a single chain is
-            present. This might be useful when there is a need to initialize
-            chain structure from a peculiar subset of atoms.
         :raise InitError: If invalid (e.g., multi-chain structure) is provided.
         """
         from lXtractor.variables import Variables
 
-        #: A container with PDB ID, PDB Chain, and parsed structure.
-        if pdb_structure is None:
-            pdb_structure = GenericStructure.make_empty(pdb_id)
-        self.pdb: PDB_Chain = PDB_Chain(pdb_id, pdb_chain, pdb_structure)
-        if not skip_validation:
-            _validate_chain(self.pdb)
+        if isinstance(structure, bst.AtomArray):
+            structure = GenericStructure(structure, structure_id or EMPTY_STRUCTURE_ID)
 
-        #: Sequence of this structure.
-        self.seq: ChainSequence
+        if structure is None:
+            structure = GenericStructure.make_empty(structure_id)
+            self._chain_id = chain_id or EMPTY_CHAIN_ID
+        else:
+            _validate_chain(structure)
+            self._chain_id = _get_chain_id(structure)
 
-        #: Parent of this structure.
-        self.parent: ChainStructure | None = parent
+        self._structure = structure
 
         #: Variables assigned to this structure. Each should be of a
         #: :class:`lXtractor.variables.base.StructureVariable`.
@@ -173,27 +208,18 @@ class ChainStructure:
         self.children: ChainList[ChainStructure] = _wrap_children(children)
 
         if seq is None:
-            if len(self.pdb.structure.array) > 0:
-                str_seq = list(self.pdb.structure.get_sequence())
-            else:
-                str_seq = []
-            seq1: list[str] = [x[0] for x in str_seq]
-            seq3: list[str] = [x[1] for x in str_seq]
-            num: list[int] = [x[2] for x in str_seq]
-            seqs: dict[str, list[int] | list[str]] = {
-                SeqNames.seq3: seq3,
-                SeqNames.enum: num,
-            }
-            self.seq = ChainSequence.from_string(
-                "".join(seq1),
-                name=f"{pdb_id}{Sep.chain}{pdb_chain}",
-                **seqs,  # type: ignore  # Fails to recognize kwargs
-            )
+            self._seq = _str2seq(structure)
         else:
-            self.seq = seq
+            if not structure.is_empty:
+                _validate_chain_seq(structure, seq)
+            self._seq = seq
 
-        self.seq.meta[MetaNames.pdb_id] = pdb_id
-        self.seq.meta[MetaNames.pdb_chain] = pdb_chain
+        self._parent: ChainStructure | None = parent
+
+        self._id = self._make_id()
+
+        self.seq.meta[MetaNames.structure_id] = structure.structure_id
+        self.seq.meta[MetaNames.structure_chain_id] = chain_id
         self.seq.meta[MetaNames.altloc] = self.altloc
 
     def __str__(self) -> str:
@@ -203,32 +229,85 @@ class ChainStructure:
         return self.id
 
     def __len__(self) -> int:
-        if self.pdb.structure is None:
+        if self.structure is None or self.structure.is_empty:
             return 0
         return len(self.array)
 
     def __eq__(self, other: t.Any) -> bool:
         if isinstance(other, ChainStructure):
-            return self.pdb == other.pdb and self.seq == other.seq
+            return (
+                self.id == other.id
+                and self.structure == other.structure
+                and self.seq == other.seq
+            )
         return False
 
     def __hash__(self) -> int:
-        return (
-            hash(self.seq)
-            + hash(self.pdb.id)
-            + hash(self.pdb.chain)
-            + hash(self.pdb.structure)
-        )
+        return hash(self.seq) + hash(self.structure)
+
+    @property
+    def chain_id(self) -> str:
+        return self._chain_id
+
+    @chain_id.setter
+    def chain_id(self, value: str):
+        if not isinstance(value, str):
+            raise TypeError(f"Chain ID must be of type str; got {type(value)}")
+        self._chain_id = value
+        self._id = self._make_id()
+
+    @property
+    def structure(self) -> GenericStructure:
+        return self._structure
+
+    @structure.setter
+    def structure(self, value: GenericStructure):
+        if not isinstance(value, GenericStructure):
+            raise TypeError(
+                f"Invalid type {type(value)} to set the structure attribute"
+            )
+        _validate_chain_seq(value, self.seq)
+        self._structure = value
+        self._chain_id = _get_chain_id(value)
+        self._id = self._make_id()
+
+    @property
+    def seq(self) -> ChainSequence:
+        return self._seq
+
+    @seq.setter
+    def seq(self, value: ChainSequence):
+        if not isinstance(value, ChainSequence):
+            raise TypeError(f"Invalid value type {type(value)}")
+        _validate_chain_seq(self.structure, value)
+        self._seq = value
+        self._id = self._make_id()
+
+    @property
+    def parent(self) -> Self | None:
+        return self._parent
+
+    @parent.setter
+    def parent(self, value: Self | None):
+        if not isinstance(value, (type(self), type(None))):
+            raise TypeError(
+                f"Parent must be of the same type {type(self)}. " f"Got {type(value)}"
+            )
+        self._parent = value
+        self._id = self._make_id()
+
+    def _make_id(self) -> str:
+        alt_locs = self.structure.id.split("|")[-1]
+        parent = "" if self.parent is None else f"<-({self.parent.id})"
+        return f"ChainStructure({self.seq.id}|{alt_locs}){parent}"
 
     @property
     def id(self) -> str:
         """
         :return: ChainStructure identifier in the format
-            "ChainStructure({seq.id}|{alt_locs})<-(parent.id)".
+            "ChainStructure({_seq.id}|{alt_locs})<-(parent.id)".
         """
-        alt_locs = self.pdb.structure.id.split("|")[-1]
-        parent = "" if self.parent is None else f"<-({self.parent.id})"
-        return f"ChainStructure({self.seq.id}|{alt_locs}){parent}"
+        return self._id
 
     @property
     def array(self) -> bst.AtomArray:
@@ -236,12 +315,12 @@ class ChainStructure:
         :return: The ``AtomArray`` object (a shortcut for
             ``.pdb.structure.array``).
         """
-        return self.pdb.structure.array
+        return self.structure.array
 
     @property
     def meta(self) -> dict[str, str]:
         """
-        :return: Meta info of a :attr:`seq`.
+        :return: Meta info of a :attr:`_seq`.
         """
         return self.seq.meta
 
@@ -289,82 +368,75 @@ class ChainStructure:
         """
         :return: A list of connected ligands.
         """
-        return self.pdb.structure.ligands
+        return self.structure.ligands
 
     @property
     def altloc(self) -> str:
         """
         :return: An altloc ID.
         """
-        return self.pdb.structure.altloc_ids[0]
+        return self.structure.altloc_ids[0]
+
+    # @classmethod
+    # def from_structure(
+    #     cls,
+    #     structure: bst.AtomArray | GenericStructure,
+    #     structure_id: str | None = None,
+    #     chain_id: str | None = None,
+    #     **kwargs,
+    # ) -> ChainStructure:
+    #     # TODO: should deprecate
+    #     """
+    #     :param structure: An `AtomArray` or `GenericStructure`,
+    #         corresponding to a single protein chain.
+    #     :param structure_id: ID of the provided structure.
+    #     :param chain_id: Chain identifier. If not provided, will take the first
+    #         atom's chain ID from the provided structure.
+    #     :param kwargs: Passed to initializer. Avoid using `_structure_id`, `chain_id`,
+    #         or `structure` since they are supplied internally within this
+    #         method.
+    #     :return: Initialized chain structure.
+    #     """
+    #     if isinstance(structure, bst.AtomArray):
+    #         structure = GenericStructure(structure, )
+    #
+    #     if structure.is_empty:
+    #         return cls(None)
+    #
+    #     chain_id = chain_id or (
+    #         structure.chain_ids_polymer.pop()
+    #         if structure.chain_ids_polymer
+    #         else structure.chain_ids.pop()
+    #     )
+    #
+    #     return cls(pdb_id, chain_id, structure, **kwargs)
 
     @classmethod
-    def from_structure(
-        cls,
-        structure: bst.AtomArray | GenericStructure,
-        pdb_id: str | None = None,
-        chain_id: str | None = None,
-        **kwargs,
-    ) -> ChainStructure:
-        """
-        :param structure: An `AtomArray` or `GenericStructure`,
-            corresponding to a single protein chain.
-        :param pdb_id: PDB identifier of a structure
-            (Chain ID will be inferred from the `AtomArray`).
-        :param chain_id: Chain identifier. If not provided, will take the first
-            atom's chain ID from the provided structure.
-        :param kwargs: Passed to initializer. Avoid using `pdb_id`, `chain_id`,
-            or `structure` since they are supplied internally within this
-            method.
-        :return: Initialized chain structure.
-        """
-        if isinstance(structure, bst.AtomArray):
-            structure = GenericStructure(structure, pdb_id)
-
-        pdb_id = pdb_id or structure.pdb_id or EMPTY_PDB_ID
-
-        if structure.is_empty:
-            return cls(pdb_id, chain_id or EMPTY_CHAIN_ID, structure)
-
-        chain_id = chain_id or (
-            structure.chain_ids_polymer.pop()
-            if structure.chain_ids_polymer
-            else structure.chain_ids.pop()
-        )
-
-        return cls(pdb_id, chain_id, structure, **kwargs)
-
-    @classmethod
-    def make_empty(
-        cls, pdb_id: str = EMPTY_PDB_ID, pdb_chain: str = EMPTY_CHAIN_ID, **kwargs
-    ) -> ChainStructure:
+    def make_empty(cls) -> ChainStructure:
         """
         Create an empty chain structure.
 
-        :param pdb_id: PDB ID.
-        :param pdb_chain: Chain ID.
-        :param kwargs: Passed to initializer. Avoid using `pdb_id`, `chain_id`,
-            or `structure` since they are supplied internally within this
-            method.
         :return: An empty chain structure.
         """
-        return cls(pdb_id, pdb_chain, GenericStructure.make_empty(pdb_id), **kwargs)
+        return cls(None)
 
-    def rm_solvent(self) -> Self:
+    def rm_solvent(self, copy: bool = False) -> Self:
         """
         Remove solvent "residues" from this structure.
 
+        :param copy: Copy an atom array that results from solvent removal.
         :return: A new instance without solvent molecules.
         """
         if self.is_empty:
             return self
 
-        return self.__class__.from_structure(
-            GenericStructure(
-                self.array[~filter_solvent_extended(self.array)], self.pdb.id
-            ),
-            self.pdb.id,
-            self.pdb.chain,
+        return self.__class__(
+            self.structure.rm_solvent(copy=copy),
+            self.chain_id,
+            seq=self.seq,
+            parent=self.parent,
+            children=self.children,
+            variables=self.variables,
         )
 
     def superpose(
@@ -459,21 +531,21 @@ class ChainStructure:
         if mask_other is None:
             mask_other = _get_mask(other, map_name_other, atom_names)
 
-        superposed, rmsd, transformation = self.pdb.structure.superpose(
-            other.pdb.structure, mask_self=mask_self, mask_other=mask_other
+        superposed, rmsd, transformation = self.structure.superpose(
+            other.structure, mask_self=mask_self, mask_other=mask_other
         )
 
         if inplace:
-            other.pdb.structure = superposed
+            other.structure = superposed
         else:
             other = ChainStructure(
-                other.pdb.id,
-                other.pdb.chain,
-                superposed,
+                other.structure,
+                other.chain_id,
+                other.structure.structure_id,
                 other.seq,
-                parent=other.parent,
-                children=other.children,
-                variables=other.variables,
+                other.parent,
+                other.children,
+                other.variables,
             )
 
         if rmsd_to_meta:
@@ -534,9 +606,11 @@ class ChainStructure:
 
         enum_field = seq.field_names().enum
         start, end = seq[enum_field][0], seq[enum_field][-1]
-        structure = self.pdb.structure.extract_segment(start, end)
+        structure = self.structure.extract_segment(start, end)
 
-        child = ChainStructure(self.pdb.id, self.pdb.chain, structure, seq, self)
+        child = ChainStructure(
+            structure, self.chain_id, self.structure.structure_id, seq=seq, parent=self
+        )
         if keep:
             self.children.append(child)
         return child
@@ -564,9 +638,8 @@ class ChainStructure:
             self.children = children
             return self
         return self.__class__(
-            self.pdb.id,
-            self.pdb.chain,
-            self.pdb.structure,
+            self.structure,
+            self.chain_id,
             seq=self.seq,
             children=children,
             parent=self.parent,
@@ -590,9 +663,8 @@ class ChainStructure:
             self.children = children
             return self
         return self.__class__(
-            self.pdb.id,
-            self.pdb.chain,
-            self.pdb.structure,
+            self.structure,
+            self.chain_id,
             seq=self.seq,
             children=children,
             parent=self.parent,
@@ -635,22 +707,20 @@ class ChainStructure:
             )
 
         seq = ChainSequence.read(base_dir, dump_names=dump_names, search_children=False)
-        pdb_id = seq.meta.get(MetaNames.pdb_id, EMPTY_PDB_ID)
-        chain_id = seq.meta.get(MetaNames.pdb_chain, EMPTY_CHAIN_ID)
+        s_id = seq.meta.get(MetaNames.structure_id, EMPTY_STRUCTURE_ID)
+        chain_id = seq.meta.get(MetaNames.structure_chain_id, EMPTY_CHAIN_ID)
 
-        structure = GenericStructure.read(
-            base_dir / stems[bname], structure_id=pdb_id, **kwargs
-        )
+        if "structure_id" not in kwargs:
+            kwargs["structure_id"] = s_id
 
-        if structure.pdb_id == EMPTY_PDB_ID:
-            structure.pdb_id = pdb_id
+        structure = GenericStructure.read(base_dir / stems[bname], **kwargs)
 
         if dump_names.variables in files:
             from lXtractor.variables import Variables
 
             variables = Variables.read(files[dump_names.variables]).structure
 
-        cs = cls(pdb_id, chain_id, structure, seq, variables=variables)
+        cs = cls(structure, chain_id, seq=seq, variables=variables)
 
         if search_children and dump_names.segments_dir in dirs:
             for path in (base_dir / dump_names.segments_dir).iterdir():
@@ -692,7 +762,7 @@ class ChainStructure:
         base_dir.mkdir(exist_ok=True, parents=True)
 
         self.seq.write(base_dir)
-        self.pdb.structure.write(base_dir / f"{dump_names.structure_base_name}.{fmt}")
+        self.structure.write(base_dir / f"{dump_names.structure_base_name}.{fmt}")
         if self.variables:
             self.variables.write(base_dir / dump_names.variables)
 
@@ -731,7 +801,7 @@ def filter_selection_extended(
     Get mask for certain positions and atoms of a chain structure.
 
     .. seealso:
-        :func:`lXtractor.util.seq.filter_selection`
+        :func:`lXtractor.util._seq.filter_selection`
 
     :param c: Arbitrary chain structure.
     :param pos: A sequence of positions.
@@ -820,14 +890,12 @@ def subset_to_matching(
     _pos1, _pos2 = unzip(pos_pairs)
     _pos1, _pos2 = map(list, [_pos1, _pos2])
 
-    c1_new, c2_new = starmap(
-        lambda s, pos: ChainStructure.from_structure(
-            s.pdb.structure.extract_positions(pos, s.pdb.chain)
-        ),
-        [(reference, _pos1), (c, _pos2)],
+    ref_new = ChainStructure(
+        reference.structure.extract_positions(_pos1), reference.chain_id
     )
+    c_new = ChainStructure(c.structure.extract_positions(_pos2), c.chain_id)
 
-    return c1_new, c2_new
+    return ref_new, c_new
 
 
 if __name__ == "__main__":

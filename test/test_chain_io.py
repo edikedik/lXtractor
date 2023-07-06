@@ -14,12 +14,12 @@ T = t.TypeVar("T")
 
 def test_chainio(simple_structure, simple_chain_seq):
     fields, seq = simple_chain_seq
-    struc = ChainStructure.from_structure(simple_structure)
+    struc = ChainStructure(simple_structure)
     seq_child = seq.spawn_child(1, 2)
     ch = Chain(seq, [struc], children=[Chain(seq_child)])
     io = ChainIO(tolerate_failures=False)
 
-    # chain seq io
+    # chain _seq io
     with TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         consume(io.write(seq, tmp))
@@ -53,10 +53,10 @@ def test_chainio(simple_structure, simple_chain_seq):
         assert len(objs) == 1
         s_r = objs.pop()
         assert s_r.id == struc.id
-        assert s_r.pdb.id == struc.pdb.id
-        assert s_r.pdb.chain == struc.pdb.chain
-        assert s_r.pdb.structure is not None
-        assert s_r.seq.seq1 == struc.seq.seq1
+        assert s_r.structure.structure_id == struc.structure.structure_id
+        assert s_r.chain_id == struc.chain_id
+        assert s_r.structure is not None
+        assert s_r.seq.seq1 == struc._seq.seq1
 
     # chain io
     with TemporaryDirectory() as tmp:
@@ -128,7 +128,7 @@ def change_name(obj: T) -> T:
 
 def test_read_chains(simple_structure, simple_chain_seq):
     fields, seq = simple_chain_seq
-    cs = ChainStructure.from_structure(simple_structure)
+    cs = ChainStructure(simple_structure)
     c = Chain(seq, structures=[cs])
     child1 = c.spawn_child(1, 3, name="C1")
     _ = child1.spawn_child(1, 2, name="C2")

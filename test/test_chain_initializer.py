@@ -68,7 +68,7 @@ def test_mapping(mapping, assert_children, num_proc):
     assert len(chains[1].structures) == 1
     if assert_children:
         assert all(
-            SeqNames.map_canonical in x.seq
+            SeqNames.map_canonical in x._seq
             for x in chain.from_iterable(c.structures for c in chains)
         )
         children = chains.collapse_children().structures
@@ -79,7 +79,7 @@ def test_mapping(mapping, assert_children, num_proc):
         )
     else:
         assert all(
-            SeqNames.map_canonical not in x.seq
+            SeqNames.map_canonical not in x._seq
             for x in chain.from_iterable(c.structures for c in chains)
         )
 
@@ -134,7 +134,7 @@ def test_callbacks(items, mapping, num_proc):
     # an empty mapping
     chains = io.from_mapping(mapping, item_callbacks=[empty_structures])
     assert len(chains) == 0
-    # Another callback spawning a seq child in parallel preserves this child
+    # Another callback spawning a _seq child in parallel preserves this child
     chains = io.from_mapping(
         mapping,
         item_callbacks=[spawn_child],

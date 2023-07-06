@@ -218,8 +218,8 @@ LOGGER = logging.getLogger(__name__)
 #         :param proteins: A collection of ``Protein`` objects.
 #         """
 #
-#         def get_id(seq: SeqRec) -> str:
-#             return seq.id.split('|')[1]
+#         def get_id(_seq: SeqRec) -> str:
+#             return _seq.id.split('|')[1]
 #
 #         def fetcher(acc: t.Iterable[str]) -> t.List:
 #             res = fetch_uniprot(acc, num_threads=self.num_threads, chunk_size=self.chunk_size)

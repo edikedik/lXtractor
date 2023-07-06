@@ -57,7 +57,7 @@ def _stage_inp(
 ) -> _InpSuperpose | _InpAlignSuperpose:
     def init_sub_chain(a):
         try:
-            return ChainStructure.from_structure(a, c.pdb.id, c.pdb.chain)
+            return ChainStructure(a, c.chain_id)
         except Exception as e:
             raise InitError(
                 f"Failed to create ChainStructure from array {a} for {c}"
@@ -254,7 +254,7 @@ def superpose_pairwise(
         for superposition, which is controlled via `selection_dist`.
     :param map_name: Mapping for positions in both selection arguments.
         If used, must exist within :attr:`Seq <lXtractor.core.chain.
-        ChainStructure.seq>` of each fixed and mobile structure.
+        ChainStructure._seq>` of each fixed and mobile structure.
         A good candidate is a mapping to a reference sequence or
         :class:`Alignment <lXtractor.core.alignment.Alignment>`.
     :param exclude_hydrogen: Exclude all hydrogen atoms during selection.

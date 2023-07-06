@@ -17,7 +17,7 @@ from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
 from lXtractor.core.base import AminoAcidDict
-from lXtractor.core.config import LigandConfig
+from lXtractor.core.config import LigandConfig, EMPTY_STRUCTURE_ID
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
 from lXtractor.core.ligand import find_ligands, Ligand
 from lXtractor.util.structure import (
@@ -25,10 +25,10 @@ from lXtractor.util.structure import (
     filter_any_polymer,
     load_structure,
     save_structure,
+    filter_solvent_extended,
 )
 
 LOGGER = logging.getLogger(__name__)
-EMPTY = "Unk"
 EMPTY_ALTLOC = ("", " ", ".")
 
 
@@ -38,27 +38,37 @@ class GenericStructure:
     a single :class:`biotite.structure.AtomArray` instance.
 
     Methods ``__repr__`` and ``__str__`` output a string in the format:
-    ``{pdb_id}:{polymer_chain_ids};{ligand_chain_ids}|{altloc_ids}``
+    ``{_structure_id}:{polymer_chain_ids};{ligand_chain_ids}|{altloc_ids}``
     where ``*ids`` are ","-separated.
     """
 
-    __slots__ = ("_array", "pdb_id", "_ligands", "_array_polymer_mask")
+    __slots__ = (
+        "_array",
+        "_structure_id",
+        "_ligands",
+        "_array_polymer_mask",
+        "_id",
+        "_ligand_cfg",
+    )
 
     def __init__(
         self,
         array: bst.AtomArray,
-        pdb_id: str | None = None,
+        structure_id: str,
         ligands: bool | list[Ligand] = True,
+        ligand_cfg: LigandConfig = LigandConfig(),
     ):
         """
         :param array: Atom array object.
-        :param pdb_id: PDB ID of a structure in `array`.
-        :param ligands: A list of ligands or flag indicating to
+        :param structure_id: ID of a structure in `array`.
+        :param ligands: A list of ligands or flag indicating to extract ligands
+            during initialization.
+        :param ligand_cfg: A config for ligand discovery and annotation.
         """
         #: Atom array object.
         self._array: bst.AtomArray = array
-        #: PDB ID of a structure in `array`.
-        self.pdb_id: str | None = pdb_id
+        #: ID of a structure in `array`.
+        self._structure_id: str = structure_id
 
         if isinstance(ligands, bool):
             _ligands = list(find_ligands(self)) if ligands else []
@@ -66,8 +76,12 @@ class GenericStructure:
             _ligands = ligands
         #: A list of ligands
         self._ligands = _ligands
+        #: A config for ligand discovery
+        self._ligand_cfg = ligand_cfg
 
         self._array_polymer_mask = None
+
+        self._id = self._make_id()
 
     def __len__(self) -> int:
         return len(self.array)
@@ -75,7 +89,7 @@ class GenericStructure:
     def __eq__(self, other: t.Any) -> bool:
         if isinstance(other, GenericStructure):
             return (
-                self.pdb_id == other.pdb_id
+                self._structure_id == other._structure_id
                 and len(self) == len(other)
                 and np.all(self.array == other.array)
             )
@@ -86,7 +100,7 @@ class GenericStructure:
             (a.chain_id, a.res_id, a.res_name, a.atom_name, tuple(a.coord))
             for a in self.array
         )
-        return hash(self.pdb_id) + hash(atoms)
+        return hash(self._structure_id) + hash(atoms)
 
     def __str__(self) -> str:
         return self.id
@@ -94,12 +108,26 @@ class GenericStructure:
     def __repr__(self) -> str:
         return self.id
 
-    @property
-    def id(self) -> str:
+    def _make_id(self) -> str:
         chains_pol = ",".join(sorted(self.chain_ids_polymer))
         chains_lig = ",".join(sorted(self.chain_ids_ligand))
         altloc_ids = ",".join(filter(lambda x: x not in EMPTY_ALTLOC, self.altloc_ids))
-        return f"{self.pdb_id}:{chains_pol};{chains_lig}|{altloc_ids}"
+        return f"{self._structure_id}:{chains_pol};{chains_lig}|{altloc_ids}"
+
+    @property
+    def id(self) -> str:
+        return self._id
+
+    @property
+    def structure_id(self) -> str:
+        return self._structure_id
+
+    @structure_id.setter
+    def structure_id(self, value: str):
+        if not isinstance(value, str):
+            raise TypeError(f'New ID must have the `str` type. Got {type(value)}')
+        self._structure_id = value
+        self._id = self._make_id()
 
     @property
     def array(self) -> bst.AtomArray:
@@ -107,6 +135,10 @@ class GenericStructure:
         :return: Atom array object.
         """
         return self._array
+
+    @array.setter
+    def array(self, _: t.Any) -> None:
+        raise RuntimeError("Array cannot be set. Please initialize a new structure")
 
     @property
     def array_polymer(self) -> bst.AtomArray:
@@ -165,6 +197,14 @@ class GenericStructure:
         """
         return self._ligands
 
+    @ligands.setter
+    def ligands(self, _):
+        raise RuntimeError("Cannot set ligands")
+
+    @property
+    def ligand_cfg(self) -> LigandConfig:
+        return self._ligand_cfg
+
     @property
     def ligand_mask(self) -> np.ndarray:
         """
@@ -202,8 +242,9 @@ class GenericStructure:
         cls,
         inp: IOBase | Path | str | bytes,
         path2id: abc.Callable[[Path], str] = lambda p: p.name.split(".")[0],
-        structure_id: str = EMPTY,
+        structure_id: str = EMPTY_STRUCTURE_ID,
         ligands: bool = True,
+        ligand_cfg: LigandConfig = LigandConfig(),
         altloc: bool = False,
         **kwargs,
     ) -> Self:
@@ -225,6 +266,7 @@ class GenericStructure:
             not provided and the input is ``Path``, will use ``path2id`` to
             infer the ID. Otherwise, will use a constant placeholder.
         :param ligands: Search for ligands.
+        :param ligand_cfg: Parameters for ligand discovery.
         :param altloc: Parse alternative locations and populate
             ``array.altloc_id`` attribute.
         :param kwargs: Passed to ``load_structure``.
@@ -235,22 +277,22 @@ class GenericStructure:
         array = load_structure(inp, **kwargs)
         if hasattr(array, "altloc_id"):
             array.altloc_id[np.isin(array.altloc_id, EMPTY_ALTLOC)] = ""
-        if isinstance(inp, Path) and structure_id == EMPTY:
+        if isinstance(inp, Path) and structure_id == EMPTY_STRUCTURE_ID:
             structure_id = path2id(inp)
         if isinstance(array, bst.AtomArrayStack):
             raise InitError(
                 f"{inp} is likely an NMR structure. "
                 f"NMR structures are not supported."
             )
-        return cls(array, structure_id, ligands)
+        return cls(array, structure_id, ligands, ligand_cfg)
 
     @classmethod
-    def make_empty(cls, pdb_id: str | None = None) -> Self:
+    def make_empty(cls, structure_id: str = EMPTY_STRUCTURE_ID) -> Self:
         """
-        :param pdb_id: (Optional) PDB ID of the created array.
+        :param structure_id: (Optional) ID of the created array.
         :return: An instance with empty :meth:`array`.
         """
-        return cls(bst.AtomArray(0), pdb_id, False)
+        return cls(bst.AtomArray(0), structure_id, False)
 
     def write(self, path: Path) -> Path:
         """
@@ -261,12 +303,26 @@ class GenericStructure:
         """
         return save_structure(self.array, path)
 
+    def rm_solvent(self, copy: bool = False):
+        """
+        :param copy: Copy the resulting substructure.
+        :return: A substructure with solvent molecules removed.
+        """
+        array = self.array[~filter_solvent_extended(self.array)]
+
+        if copy:
+            array = array.copy()
+
+        return self.__class__(
+            array, self.structure_id, len(self.ligands) > 0, self.ligand_cfg
+        )
+
     def get_sequence(self) -> abc.Generator[tuple[str, str, int]]:
         """
         :return: A tuple with (1) one-letter code, (2) three-letter code,
             (3) residue number of each residue in :meth:`array_polymer`.
         """
-        # TODO: rm specialization towards protein seq
+        # TODO: rm specialization towards protein _seq
         if self.is_empty:
             return []
 
@@ -280,16 +336,12 @@ class GenericStructure:
                 one_letter_code = "X"
             yield one_letter_code, atom.res_name, atom.res_id
 
-    def subset_with_ligands(
-        self, mask: np.ndarray, cfg=LigandConfig(), transfer_meta: bool = True
-    ) -> Self:
+    def subset_with_ligands(self, mask: np.ndarray, transfer_meta: bool = True) -> Self:
         """
         Create a sub-structure preserving connected :attr:`ligands`.
 
         :param mask: Boolean mask, ``True`` for atoms in :meth:`array`, used
             to create a sub-structure.
-        :param cfg: Settings defining when a ligand is treated as "connected"
-            to a subset of atoms defined by `mask`.
         :param transfer_meta: Transfer a copy of existing metadata for
             connected ligands.
         :return: A new instance with atoms defined by `mask` and connected
@@ -298,7 +350,7 @@ class GenericStructure:
         # Filter connected ligands
         ligands = list(
             filter(
-                lambda lig: lig.is_locally_connected(mask, cfg),
+                lambda lig: lig.is_locally_connected(mask, self._ligand_cfg),
                 self.ligands,
             )
         )
@@ -310,7 +362,7 @@ class GenericStructure:
         )
         m = mask | ligands_mask
         # Create a new instance
-        new = self.__class__(self.array[m], self.pdb_id, False)
+        new = self.__class__(self.array[m], self._structure_id, False)
         # Populate its ligands by subsetting the existing ones.
         for lig in ligands:
             meta = lig.meta.copy() if transfer_meta else None
@@ -333,7 +385,6 @@ class GenericStructure:
         copy: bool = False,
         polymer: bool = False,
         ligands: bool = True,
-        ligand_cfg: LigandConfig = LigandConfig(),
     ) -> abc.Iterator[Self]:
         """
         Split into separate chains. Splitting is done using
@@ -346,8 +397,6 @@ class GenericStructure:
             chain annotation.
         :param polymer: Use only polymer chains for splitting.
         :param ligands: A flag indicating whether to preserve connected ligands.
-        :param ligand_cfg: Settings defining when a ligand is treated as "connected"
-            to a subset of chain atoms.
         :return: An iterable over chains found in :attr:`array`.
         """
         # TODO: the chains are subsetted from copy and are not copies themselves
@@ -357,9 +406,9 @@ class GenericStructure:
         for chain_id in sorted(chain_ids):
             mask = a.chain_id == chain_id
             if ligands:
-                yield self.subset_with_ligands(mask, ligand_cfg)
+                yield self.subset_with_ligands(mask)
             else:
-                yield self.__class__(a[mask], self.pdb_id)
+                yield self.__class__(a[mask], self._structure_id)
 
     def split_altloc(self, *, copy: bool = True) -> abc.Iterator[Self]:
         """
@@ -386,14 +435,13 @@ class GenericStructure:
             a = self.array[no_alt_mask | (self.array.altloc_id == altloc)]
             if copy:
                 a = a.copy()
-            yield self.__class__(a, self.pdb_id, ligands=bool(self.ligands))
+            yield self.__class__(a, self._structure_id, ligands=bool(self.ligands))
 
     def extract_segment(
         self,
         start: int,
         end: int,
         ligands: bool = True,
-        ligand_cfg: LigandConfig = LigandConfig(),
     ) -> Self:
         """
         Create a sub-structure encompassing some continuous segment bounded by
@@ -402,8 +450,6 @@ class GenericStructure:
         :param start: Residue number to start from (inclusive).
         :param end: Residue number to stop at (inclusive).
         :param ligands: A flag indicating whether to preserve connected ligands.
-        :param ligand_cfg: Settings defining when a ligand is treated as "connected"
-            to a subset of chain atoms.
         :return: A new Generic structure with residues in ``[start, end]``.
         """
         if self.is_empty:
@@ -438,29 +484,24 @@ class GenericStructure:
             )
         mask = (self.array.res_id >= start) & (self.array.res_id <= end)
         if ligands:
-            return self.subset_with_ligands(mask, ligand_cfg)
-        return self.__class__(self.array[mask], self.pdb_id)
+            return self.subset_with_ligands(mask)
+        return self.__class__(self.array[mask], self._structure_id)
 
     def extract_positions(
         self,
         pos: abc.Sequence[int],
         chain_ids: abc.Sequence[str] | str | None = None,
-        ligands: bool = True,
-        ligand_cfg: LigandConfig = LigandConfig(),
     ) -> Self:
         """
         Extract specific positions from this structure.
 
         :param pos: A sequence of positions (res_id) to extract.
         :param chain_ids: Optionally, a single chain ID or a sequence of such.
-        :param ligands: A flag indicating whether to preserve connected ligands.
-        :param ligand_cfg: Settings defining when a ligand is treated as "connected"
-            to a subset of chain atoms.
         :return: A new instance with extracted residues.
         """
 
         if self.is_empty:
-            return self.make_empty(self.pdb_id)
+            return self.make_empty(self._structure_id)
 
         a = self.array
 
@@ -469,9 +510,9 @@ class GenericStructure:
             if isinstance(chain_ids, str):
                 chain_ids = [chain_ids]
             mask &= np.isin(a.chain_id, chain_ids)
-        if ligands:
-            return self.subset_with_ligands(mask, ligand_cfg)
-        return self.__class__(a[mask], self.pdb_id)
+        if len(self.ligands) > 0:
+            return self.subset_with_ligands(mask)
+        return self.__class__(a[mask], self._structure_id)
 
     def superpose(
         self,
@@ -548,7 +589,7 @@ class GenericStructure:
         rmsd_target = bst.rmsd(self.array[mask_self], superposed)
 
         return (
-            GenericStructure(other_transformed, other.pdb_id),
+            GenericStructure(other_transformed, other._structure_id),
             rmsd_target,
             transformation,
         )
