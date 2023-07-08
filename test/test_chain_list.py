@@ -1,5 +1,5 @@
 import pytest
-from toolz import curry
+from toolz import curry, identity
 
 from lXtractor.core.chain import ChainList, ChainSequence, ChainStructure, Chain
 from lXtractor.core.config import ColNames
@@ -219,3 +219,15 @@ def test_apply():
     assert all([len(c.children) == 1 for c in cl_new])
     # original states mutated
     assert all([len(c.children) == 1 for c in cl])
+
+
+def test_drop_duplicates():
+    s1 = ChainSequence.from_string('XXX', name='S')
+    s2 = ChainSequence.from_string('YYY', name='S')
+    cl = ChainList([s1, s2])
+    cl_ = cl.drop_duplicates()
+    assert len(cl_) == 1
+    assert cl_[0].seq1 == 'XXX'
+    cl_ = cl.drop_duplicates(key=identity)
+    assert len(cl_) == 2
+    assert cl_ == cl

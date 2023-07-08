@@ -12,7 +12,8 @@ from functools import partial
 from itertools import chain, zip_longest, tee
 
 import pandas as pd
-from more_itertools import nth, peekable
+from more_itertools import nth, peekable, unique_everseen
+from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
 from lXtractor.core.base import Ord, ApplyT
@@ -33,7 +34,7 @@ else:
 
 T = t.TypeVar("T")
 
-__all__ = ('ChainList', "add_category")
+__all__ = ("ChainList", "add_category")
 
 
 def add_category(c: t.Any, cat: str):
@@ -591,6 +592,17 @@ class ChainList(abc.MutableSequence[CT]):
         :return: A new chain list with application results.
         """
         return ChainList(apply(fn, self._chains, verbose, desc, num_proc))
+
+    def drop_duplicates(
+        self, key: abc.Callable[[CT], t.Hashable] | None = lambda x: x.id
+    ) -> Self:
+        """
+        :param key: A callable accepting the single element and returning some
+            hashable object associated with that element.
+        :return: A new list with unique elements as judged by the `key`.
+        """
+
+        return self.__class__(unique_everseen(self._chains, key=key))
 
     def summary(self, **kwargs) -> pd.DataFrame:
         return pd.concat([c.summary(**kwargs) for c in self])
