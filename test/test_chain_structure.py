@@ -6,7 +6,7 @@ import biotite.structure as bst
 import pandas as pd
 import pytest
 
-from lXtractor.core.chain import ChainStructure
+from lXtractor.core.chain import ChainStructure, ChainSequence
 from lXtractor.core.config import DumpNames, MetaNames
 from lXtractor.core.exceptions import InitError, NoOverlap, LengthMismatch, MissingData
 from lXtractor.util.io import get_files, get_dirs
@@ -68,6 +68,10 @@ def test_degenerate(test_structure):
         cs.spawn_child(1, 1)
     with pytest.raises(MissingData):
         cs.write(Path("./anywhere"))
+
+    seq = ChainSequence.make_empty()
+    s = ChainStructure(None, seq=seq)
+    assert len(s) == 0 and len(s.seq) == 0
 
 
 def test_spawn(test_structure):

@@ -32,9 +32,8 @@ DATA = Path(__file__).parent / "data"
 )
 def test_find_ligands(path, expected):
     s = GenericStructure.read(path)
-    ligands = s.ligands
     d = defaultdict(set)
-    for lig in ligands:
+    for lig in s.ligands:
         d[lig.res_name] |= lig.parent_contact_chains
     d = valmap(lambda x: tuple(sorted(x)), d)
     assert set(d.items()) == expected
@@ -64,6 +63,15 @@ def test_find_ligands(path, expected):
                 ("D", "UXA", "D"),
             },
         ),
+        (
+            DATA / '4TWC.mmtf.gz',
+            {
+                ("A", "37J", "A"),
+                ("B", "37J", "B"),
+                ("A", "BOG", "A"),
+                ("B", "BOG", "A"),
+            }
+        )
     ],
 )
 def test_split_chains(path, expected):

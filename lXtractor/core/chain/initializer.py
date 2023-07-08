@@ -94,9 +94,8 @@ def _read_path(
     if suffix in supported_str_ext:
         # Read initial structures, split by chains ant altloc
         # and wrap into a ChainStructure
-        chains = GenericStructure.read(path, altloc=True).split_chains(polymer=True)
-        chains = map(lambda x: next(x.split_altloc()), chains)
-        return list(map(ChainStructure, chains))
+        structure = next(GenericStructure.read(path, altloc=True).split_altloc())
+        return list(map(ChainStructure, structure.split_chains(polymer=True)))
     if tolerate_failures:
         return None
     raise InitError(f"Suffix {suffix} of the path {path} is not supported")

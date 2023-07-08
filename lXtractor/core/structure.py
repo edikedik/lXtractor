@@ -13,6 +13,7 @@ from pathlib import Path
 
 import biotite.structure as bst
 import numpy as np
+from more_itertools import unique_everseen
 from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
@@ -26,6 +27,7 @@ from lXtractor.util.structure import (
     load_structure,
     save_structure,
     filter_solvent_extended,
+    filter_polymer,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -33,6 +35,7 @@ EMPTY_ALTLOC = ("", " ", ".")
 
 
 class GenericStructure:
+    # TODO: make truly immutable
     """
     A generic macromolecular structure with possibly many chains holding
     a single :class:`biotite.structure.AtomArray` instance.
@@ -47,6 +50,10 @@ class GenericStructure:
         "_structure_id",
         "_ligands",
         "_array_polymer_mask",
+        "_array_solvent_mask",
+        "_array_pep_mask",
+        "_array_nuc_mask",
+        "_array_car_mask",
         "_id",
         "_ligand_cfg",
     )
@@ -80,6 +87,10 @@ class GenericStructure:
         self._ligand_cfg = ligand_cfg
 
         self._array_polymer_mask = None
+        self._array_solvent_mask = None
+        self._array_pep_mask = None
+        self._array_nuc_mask = None
+        self._array_car_mask = None
 
         self._id = self._make_id()
 
@@ -125,7 +136,7 @@ class GenericStructure:
     @structure_id.setter
     def structure_id(self, value: str):
         if not isinstance(value, str):
-            raise TypeError(f'New ID must have the `str` type. Got {type(value)}')
+            raise TypeError(f"New ID must have the `str` type. Got {type(value)}")
         self._structure_id = value
         self._id = self._make_id()
 
@@ -148,7 +159,19 @@ class GenericStructure:
 
         :return: An atom array comprising all polymer atoms.
         """
-        return self.array[self.polymer_mask]
+        return self.array[self.mask_polymer & ~self.mask_solvent]
+
+    @property
+    def array_poly_peptide(self) -> bst.AtomArray:
+        return self.array[self.mask_poly_peptide]
+
+    @property
+    def array_poly_nucleotide(self) -> bst.AtomArray:
+        return self.array[self.mask_poly_nucleotide]
+
+    @property
+    def array_poly_carbohydrate(self) -> bst.AtomArray:
+        return self.array[self.mask_poly_carbohydrate]
 
     @property
     def array_ligand(self) -> bst.AtomArray:
@@ -158,7 +181,11 @@ class GenericStructure:
 
         :return: An atom array comprising all ligand atoms.
         """
-        return self.array[self.ligand_mask]
+        return self.array[self.mask_ligands]
+
+    @property
+    def array_solvent(self) -> bst.AtomArray:
+        return self.array[self.mask_solvent]
 
     @property
     def altloc_ids(self) -> list[str]:
@@ -170,25 +197,46 @@ class GenericStructure:
         return [""]
 
     @property
-    def chain_ids(self) -> set[str]:
+    def chain_ids(self) -> list[str]:
         """
-        :return: A set of chain IDs this structure encompasses.
+        :return: A list of chain IDs this structure encompasses.
         """
-        return set(self.array.chain_id)
+        return list(unique_everseen(self.array.chain_id))
 
     @property
-    def chain_ids_polymer(self) -> set[str]:
+    def chain_ids_polymer(self) -> list[str]:
         """
-        :return: A set of non-ligand chain IDs.
+        :return: A list of polymer chain IDs.
         """
-        return set(self.array_polymer.chain_id)
+        return list(unique_everseen(self.array_polymer.chain_id))
 
     @property
-    def chain_ids_ligand(self) -> set[str]:
+    def chain_ids_poly_peptide(self) -> list[str]:
+        """
+        :return: A list of polymeric peptide chain IDs.
+        """
+        return list(unique_everseen(self.array_poly_peptide.chain_id))
+
+    @property
+    def chain_ids_poly_nucleotide(self) -> list[str]:
+        """
+        :return: A list of polymeric nucleotide chain IDs.
+        """
+        return list(unique_everseen(self.array_poly_nucleotide.chain_id))
+
+    @property
+    def chain_ids_poly_carbohydrate(self) -> list[str]:
+        """
+        :return: A list of polymeric carbohydrate chain IDs.
+        """
+        return list(unique_everseen(self.array_poly_carbohydrate.chain_id))
+
+    @property
+    def chain_ids_ligand(self) -> list[str]:
         """
         :return: A set of ligand chain IDs.
         """
-        return {lig.chain_id for lig in self.ligands}
+        return list(unique_everseen(lig.chain_id for lig in self.ligands))
 
     @property
     def ligands(self) -> list[Ligand]:
@@ -206,7 +254,7 @@ class GenericStructure:
         return self._ligand_cfg
 
     @property
-    def ligand_mask(self) -> np.ndarray:
+    def mask_ligands(self) -> np.ndarray:
         """
         :return: A boolean mask where ``True`` points to all :meth:`ligand`
             atoms.
@@ -218,10 +266,40 @@ class GenericStructure:
         )
 
     @property
-    def polymer_mask(self) -> np.ndarray:
+    def mask_polymer(self) -> np.ndarray:
         if self._array_polymer_mask is None:
             self._array_polymer_mask = filter_any_polymer(self.array)
         return self._array_polymer_mask
+
+    @property
+    def mask_poly_peptide(self):
+        if self._array_pep_mask is None:
+            self._array_pep_mask = filter_polymer(self.array, pol_type="p")
+        return self._array_pep_mask
+
+    @property
+    def mask_poly_nucleotide(self):
+        if self._array_nuc_mask is None:
+            self._array_nuc_mask = filter_polymer(self.array, pol_type="n")
+        return self._array_nuc_mask
+
+    @property
+    def mask_poly_carbohydrate(self):
+        if self._array_car_mask is None:
+            self._array_car_mask = filter_polymer(self.array, pol_type="c")
+        return self._array_car_mask
+
+    @property
+    def mask_solvent(self) -> np.ndarray:
+        if self._array_solvent_mask is None:
+            self._array_solvent_mask = filter_solvent_extended(self.array)
+        return self._array_solvent_mask
+
+    @property
+    def mask_unclassified(self):
+        return ~reduce(
+            op.or_, (self.mask_polymer, self.mask_solvent, self.mask_ligands)
+        )
 
     @property
     def is_empty(self) -> bool:
@@ -308,7 +386,7 @@ class GenericStructure:
         :param copy: Copy the resulting substructure.
         :return: A substructure with solvent molecules removed.
         """
-        array = self.array[~filter_solvent_extended(self.array)]
+        array = self.array[~self.mask_solvent]
 
         if copy:
             array = array.copy()
@@ -317,7 +395,7 @@ class GenericStructure:
             array, self.structure_id, len(self.ligands) > 0, self.ligand_cfg
         )
 
-    def get_sequence(self) -> abc.Generator[tuple[str, str, int]]:
+    def get_protein_sequence(self) -> abc.Generator[tuple[str, str, int]]:
         """
         :return: A tuple with (1) one-letter code, (2) three-letter code,
             (3) residue number of each residue in :meth:`array_polymer`.
@@ -327,7 +405,7 @@ class GenericStructure:
             return []
 
         mapping = AminoAcidDict()
-        a = self.array if len(self.array_polymer) == 0 else self.array_polymer
+        a = self.array if len(self.array_poly_peptide) == 0 else self.array_poly_peptide
         for r in bst.residue_iter(a):
             atom = r[0]
             try:
@@ -336,7 +414,9 @@ class GenericStructure:
                 one_letter_code = "X"
             yield one_letter_code, atom.res_name, atom.res_id
 
-    def subset_with_ligands(self, mask: np.ndarray, transfer_meta: bool = True) -> Self:
+    def subset_with_ligands(
+        self, mask: np.ndarray, transfer_meta: bool = True, copy: bool = False
+    ) -> Self:
         """
         Create a sub-structure preserving connected :attr:`ligands`.
 
@@ -344,6 +424,8 @@ class GenericStructure:
             to create a sub-structure.
         :param transfer_meta: Transfer a copy of existing metadata for
             connected ligands.
+        :param copy: Copy the atom array resulting from subsetting the original
+            one.
         :return: A new instance with atoms defined by `mask` and connected
             ligands.
         """
@@ -362,7 +444,10 @@ class GenericStructure:
         )
         m = mask | ligands_mask
         # Create a new instance
-        new = self.__class__(self.array[m], self._structure_id, False)
+        a = self.array[m]
+        if copy:
+            a = a.copy()
+        new = self.__class__(a, self._structure_id, False)
         # Populate its ligands by subsetting the existing ones.
         for lig in ligands:
             meta = lig.meta.copy() if transfer_meta else None
@@ -377,6 +462,8 @@ class GenericStructure:
             )
             new._ligands.append(lig_)
 
+        new._id = new._make_id()
+
         return new
 
     def split_chains(
@@ -384,6 +471,7 @@ class GenericStructure:
         *,
         copy: bool = False,
         polymer: bool = False,
+        polymer_type: str = "all",
         ligands: bool = True,
     ) -> abc.Iterator[Self]:
         """
@@ -396,19 +484,38 @@ class GenericStructure:
         :param copy: Copy atom arrays resulting from subsetting based on
             chain annotation.
         :param polymer: Use only polymer chains for splitting.
+        :param polymer_type: If `polymer` is ``True``, specify polymer type.
+            Options: "all", "peptide", "nucleotide", "carbohydrate".
+            Abbreviations, e.g., "a", "pep", "c", are supported.
         :param ligands: A flag indicating whether to preserve connected ligands.
         :return: An iterable over chains found in :attr:`array`.
         """
         # TODO: the chains are subsetted from copy and are not copies themselves
 
+        if polymer:
+            if polymer_type.startswith("a"):
+                chain_ids = self.chain_ids_polymer
+            elif polymer_type.startswith("p"):
+                chain_ids = self.chain_ids_poly_peptide
+            elif polymer_type.startswith("n"):
+                chain_ids = self.chain_ids_poly_nucleotide
+            elif polymer_type.startswith("c"):
+                chain_ids = self.chain_ids_poly_carbohydrate
+            else:
+                raise ValueError(f"Invalid polymer type {polymer_type}")
+        else:
+            chain_ids = self.chain_ids
+
         a = self.array.copy() if copy else self.array
-        chain_ids = self.chain_ids_polymer if polymer else self.chain_ids
         for chain_id in sorted(chain_ids):
             mask = a.chain_id == chain_id
             if ligands:
-                yield self.subset_with_ligands(mask)
+                yield self.subset_with_ligands(mask, copy=copy)
             else:
-                yield self.__class__(a[mask], self._structure_id)
+                a_sub = a[mask]
+                if copy:
+                    a_sub = a_sub.copy()
+                yield self.__class__(a_sub, self.structure_id)
 
     def split_altloc(self, *, copy: bool = True) -> abc.Iterator[Self]:
         """

@@ -23,8 +23,21 @@ def test_degenerate(simple_structure):
     assert s.is_empty
     assert s._structure_id == EMPTY_STRUCTURE_ID
 
-    assert len(list(s.get_sequence())) == 0
+    assert len(list(s.get_protein_sequence())) == 0
     assert len(list(s.split_chains())) == 0
+    assert len(list(s.split_altloc())) == 1
+
+    assert len(s.array) == 0
+    assert len(s.array_poly_peptide) == 0
+    assert len(s.array_poly_nucleotide) == 0
+    assert len(s.array_poly_carbohydrate) == 0
+
+    assert len(s.mask_polymer) == 0
+    assert len(s.mask_poly_peptide) == 0
+    assert len(s.mask_poly_nucleotide) == 0
+    assert len(s.mask_unclassified) == 0
+    assert len(s.mask_ligands) == 0
+    assert len(s.mask_solvent) == 0
 
     with pytest.raises(NoOverlap):
         s.extract_segment(1, 1)
@@ -67,14 +80,14 @@ def test_split_altloc(inp):
 
 
 def test_sequence(simple_structure):
-    seq = list(simple_structure.get_sequence())
+    seq = list(simple_structure.get_protein_sequence())
     seq_, _ = bst.get_residues(simple_structure.array_polymer)
     assert len(seq) == len(seq_) == 129
 
 
 def test_subsetting(simple_structure):
     sub = simple_structure.extract_segment(1, 2)
-    seq = list(sub.get_sequence())
+    seq = list(sub.get_protein_sequence())
     assert len(seq) == 2
 
 

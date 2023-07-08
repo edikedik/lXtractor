@@ -85,6 +85,21 @@ def check_het_continuity(array: bst.AtomArray):
     return np.where(diff != 0)[0] + 1
 
 
+def check_polymer_continuity(array: bst.AtomArray, pol_type: str = "p"):
+    if pol_type.startswith("p"):
+        filt_fn = bst.filter_amino_acids
+    elif pol_type.startswith("n"):
+        filt_fn = bst.filter_nucleotides
+    elif pol_type.startswith("c"):
+        filt_fn = bst.filter_carbohydrates
+    else:
+        raise ValueError(f"Unsupported polymer type {pol_type}")
+
+    mask = filt_fn(array)
+    diff = np.diff(mask)
+    return np.where(diff != 0)[0] + 1
+
+
 def filter_selection(
     array: bst.AtomArray,
     res_id: abc.Sequence[int] | None,
@@ -224,11 +239,17 @@ def filter_polymer(a, min_size=2, pol_type="peptide"):
     res_breaks = bst.check_res_id_continuity(a)
     bb_breaks = bst.check_backbone_continuity(a)
     het_breaks = check_het_continuity(a)
+    pep_breaks = check_polymer_continuity(a, "p")
+    nuc_breaks = check_polymer_continuity(a, "n")
+    car_breaks = check_polymer_continuity(a, "c")
     if len(het_breaks) != 0:
         # take only het tail to avoid including modified residues
         het_breaks = het_breaks[-1:]
 
-    split_idx = np.sort(np.unique(np.concatenate([res_breaks, bb_breaks, het_breaks])))
+    breaks = np.concatenate(
+        [res_breaks, bb_breaks, het_breaks, pep_breaks, nuc_breaks, car_breaks]
+    )
+    split_idx = np.sort(np.unique(breaks))
 
     check_pol = partial(_is_polymer, min_size=min_size, pol_type=pol_type)
     bool_idx = map(
@@ -261,7 +282,13 @@ def filter_solvent_extended(a: bst.AtomArray) -> np.ndarray:
     :return: A boolean mask ``True`` for solvent atoms.
     """
     # TODO: should use size threshold to automatically exclude small ligands
-    return np.isin(a.res_name, SOLVENTS)
+    if len(a) == 0:
+        return np.empty(shape=0, dtype=bool)
+    return (
+        np.isin(a.res_name, SOLVENTS)
+        | (np.vectorize(len)(a.res_name) != 3)
+        # | (np.vectorize(len)(a.res_name) == 1)
+    )
 
 
 def filter_ligand(a: bst.AtomArray) -> np.ndarray:
@@ -274,9 +301,8 @@ def filter_ligand(a: bst.AtomArray) -> np.ndarray:
     :param a: Atom array.
     :return: A boolean mask ``True`` for ligand atoms.
     """
-    is_polymer = filter_any_polymer(a)
-    is_solvent = filter_solvent_extended(a) | (np.vectorize(len)(a.res_name) == 2)
-    return ~(is_polymer | is_solvent) & a.hetero
+    # return ~(is_polymer | is_solvent) & a.hetero
+    return ~(filter_any_polymer(a) | filter_solvent_extended(a))
 
 
 def find_contacts(

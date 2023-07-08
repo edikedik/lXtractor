@@ -30,6 +30,7 @@ from lXtractor.core.config import (
 )
 from lXtractor.core.exceptions import LengthMismatch, InitError, MissingData
 from lXtractor.core.structure import GenericStructure
+from lXtractor.util import biotite_align
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.structure import filter_selection
 
@@ -58,11 +59,11 @@ class PDB_Chain:
 def _validate_chain(structure: GenericStructure):
     if structure.is_empty or structure.is_singleton:
         return
-    chains = structure.chain_ids_polymer
+    chains = structure.chain_ids_poly_peptide
     if len(chains) > 1:
         raise InitError(
             f"The structure {structure} must contain a single "
-            f"polymeric chain. Got {len(chains)}: {chains}"
+            f"protein chain. Got {len(chains)}: {chains}"
         )
     # try:
     #     chain_id = (
@@ -85,10 +86,21 @@ def _validate_chain(structure: GenericStructure):
         )
 
 
-def _validate_chain_seq(structure: GenericStructure, seq: ChainSequence):
+def _validate_chain_seq(
+    structure: GenericStructure, seq: ChainSequence, report_aln: bool = True
+):
     str_seq = _str2seq(structure)
     if not seq.seq1 == str_seq.seq1:
-        raise InitError("Primary sequences mismatch")
+        msg = (
+            f"Primary sequences of structure's {structure} sequence "
+            f"and sequence {seq} mismatch."
+        )
+        if report_aln:
+            (_, s1), (_, s2) = biotite_align(
+                [(structure.id, str_seq.seq1), (seq.id, seq.seq1)]
+            )
+            msg += f"\n>{structure.id}\n{s1}\n{seq.id}\n{s2}"
+        raise InitError(msg)
 
 
 def _get_chain_id(structure: GenericStructure):
@@ -100,10 +112,7 @@ def _get_chain_id(structure: GenericStructure):
 
 
 def _str2seq(structure: GenericStructure):
-    if len(structure.array) > 0:
-        str_seq = list(structure.get_sequence())
-    else:
-        str_seq = []
+    str_seq = list(structure.get_protein_sequence())
     if not str_seq:
         return ChainSequence.make_empty()
 
@@ -607,6 +616,31 @@ class ChainStructure:
         enum_field = seq.field_names().enum
         start, end = seq[enum_field][0], seq[enum_field][-1]
         structure = self.structure.extract_segment(start, end)
+
+        if structure.is_empty:
+            raise LOGGER.warning(
+                f'Extracting structure segment using boundaries ({start}, {end}) '
+                f'yielded an empty structure.'
+            )
+        else:
+            # In some cases the extracted structure sequence is slightly different
+            # from the spawned segment (e.g., when the segment's end is a single
+            # disjoint residue and therefore not treated as a part of a polymer).
+            # To be safe, we adjust spawned segment boundaries to avoid mismatched
+            # primary sequences in polymeric peptide and extracted segment.
+            a = structure.array_poly_peptide
+            if len(a) == 0:
+                a = structure.array
+            enum2segment = seq.get_map(enum_field, "i")
+            try:
+                seq_start = enum2segment[a.res_id[0]]
+                seq_end = enum2segment[a.res_id[-1]]
+            except (KeyError, IndexError) as e:
+                raise MissingData(
+                    f"Failed to adjust extracted sequence boundaries for spawned "
+                    f"child sequence {seq}."
+                ) from e
+            seq = seq[seq_start:seq_end]
 
         child = ChainStructure(
             structure, self.chain_id, self.structure.structure_id, seq=seq, parent=self
