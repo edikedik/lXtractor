@@ -405,9 +405,12 @@ class Manager:
         """
 
         # TODO: this is a bottleneck that desperately needs a speedup
+        # I could accept `vs` optional param and split the iterable into
+        # `len(vs)` chunks where each chunk has the same list of objects
+        # ordered the same => aggregate
 
         if self.verbose:
-            results = tqdm(results, "Aggregating variables")
+            results = tqdm(results, "Accumulating calculations")
 
         colnames = ["Object", "Variable", "VariableCalculated", "VariableResult"]
         df = pd.DataFrame(dict(zip(colnames, map(list, unzip(results)))))
@@ -416,11 +419,13 @@ class Manager:
             df.loc[~df["VariableCalculated"], "VariableResult"] = replace_errors_with
 
         if vs_to_cols:
+            LOGGER.info("Obtaining ID attributes.")
             df["VariableID"] = df["Variable"].map(lambda x: x.id)
             df["ObjectID"] = df["Object"].map(
                 lambda x: x[1].id if isinstance(x, tuple) else x.id
             )
-            df = df.pivot(
+            LOGGER.info("Pivoting the table.")
+            df = df.pivot_table(
                 columns="VariableID", index="ObjectID", values="VariableResult"
             )
 

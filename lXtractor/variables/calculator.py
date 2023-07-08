@@ -43,7 +43,7 @@ def _calc_on_object(
     vs: abc.Iterable[VT],
     m: MappingT | None,
     valid_exceptions: abc.Sequence[t.Type[Exception]] | None,
-) -> abc.Iterator[ERT]:
+) -> list[ERT]:
     return [_try_calculate(o, v, m, valid_exceptions) for v in vs]
 
 
