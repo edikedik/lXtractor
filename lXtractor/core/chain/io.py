@@ -77,7 +77,7 @@ def _read_objs(
     cfg: ChainIOConfig,
     callbacks: abc.Sequence[_CB],
     kwargs: dict[str, t.Any] | None,
-):
+) -> dict[Path, CT]:
     io = ChainIO(**asdict(cfg))
     if kwargs is None:
         kwargs = {}

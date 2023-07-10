@@ -337,9 +337,10 @@ class ChainSequence(lxs.Segment):
 
         Thus, one would use::
 
-            this.transfer_to(
+            this.relate(
                 other, map_name=aln_map,
-                link_name=map_canonical, link_name_points_to="i")
+                link_name=map_canonical, link_name_points_to="i"
+            )
 
         In the example below, we transfer `map_some` sequence from
         `s` to `o` via sequence `L` pointing to the primary sequence of `s`::
@@ -371,10 +372,14 @@ class ChainSequence(lxs.Segment):
         :return: The mapped sequence.
         """
         mapping = self.get_map(link_points_to)
+        if link_name == 'i':
+            other_seq = range(other.start, other.end + 1)
+        else:
+            other_seq = other[link_name]
         mapped = list(
             map(
                 lambda x: x if x is None else x._asdict()[map_name],
-                (mapping.get(x) for x in other[link_name]),
+                (mapping.get(x) for x in other_seq),
             )
         )
         if save:
