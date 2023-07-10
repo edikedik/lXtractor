@@ -49,7 +49,13 @@ CT = t.TypeVar("CT", bound=t.Union[ChainSequence, ChainStructure, Chain])
 
 
 # TODO: verify non-domain HMM types (e.g., Motif, Family) yield valid Domain hits
-def _iter_hmm(hmm: _HmmInpT) -> abc.Generator[HMM]:
+def iter_hmm(hmm: _HmmInpT) -> abc.Generator[HMM]:
+    """
+    Iterate over HMM models.
+
+    :param hmm: A path to an HMM file, opened ``HMMFile`` or a stream.
+    :return: An iterator over individual HMM models.
+    """
     match hmm:
         case HMMFile():
             yield from hmm
@@ -88,7 +94,7 @@ class PyHMMer:
         """
         try:
             #: HMM instance
-            self.hmm = next(_iter_hmm(hmm))
+            self.hmm = next(iter_hmm(hmm))
         except (StopIteration, EOFError) as e:
             raise MissingData(f"Invalid input {hmm}") from e
         #: Pipeline to use for HMM searches
@@ -106,7 +112,7 @@ class PyHMMer:
         :param kwargs: Passed to the class constructor.
         :return:
         """
-        yield from (cls(inp, **kwargs) for inp in _iter_hmm(hmm))
+        yield from (cls(inp, **kwargs) for inp in iter_hmm(hmm))
 
     def init_pipeline(self, **kwargs) -> Pipeline:
         """
@@ -134,7 +140,7 @@ class PyHMMer:
             case ChainSequence():
                 accession, name, text = obj.id, obj.name, obj.seq1
             case ChainStructure() | Chain():
-                accession, name, text = obj.id, obj.id, obj._seq.seq1
+                accession, name, text = obj.id, obj.id, obj.seq1
             case _:
                 raise TypeError(f"Unsupported sequence type {type(obj)}")
         return TextSequence(
@@ -492,7 +498,7 @@ class Pfam(AbstractResource):
 
     @staticmethod
     def _parse_hmm(path: Path) -> pd.DataFrame:
-        df = pd.DataFrame({"HMM": list(map(PyHMMer, _iter_hmm(path)))})
+        df = pd.DataFrame({"HMM": list(map(PyHMMer, iter_hmm(path)))})
         df["Accession"] = df["HMM"].map(
             lambda x: x.hmm.accession.decode("utf-8").split(".")[0]
         )
