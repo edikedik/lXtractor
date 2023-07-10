@@ -1,13 +1,16 @@
 """
 Wrappers around PyHMMer for convenient annotation of domains and families.
 """
+import gzip
 import logging
 import typing as t
 from collections import abc
 from itertools import count
 from pathlib import Path
+from shutil import rmtree
 
-from more_itertools import peekable
+import pandas as pd
+from more_itertools import peekable, split_at
 from pyhmmer.easel import (
     DigitalSequence,
     TextSequence,
@@ -24,19 +27,47 @@ from pyhmmer.plan7 import (
     TraceAligner,
 )
 
+from lXtractor.core.base import AbstractResource
 from lXtractor.core.chain import ChainSequence, ChainStructure, Chain
 from lXtractor.core.exceptions import MissingData
+from lXtractor.util import fetch_to_file
 
 LOGGER = logging.getLogger(__name__)
 
-HMM_DEFAULT_NAME = 'HMM'
+HMM_DEFAULT_NAME = "HMM"
+PFAM_HMM_NAME = "Pfam-A.hmm.gz"
+PFAM_DAT_NAME = "Pfam-A.hmm.dat.gz"
+PFAM_HMM_URL = "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz"
+PFAM_DAT_URL = (
+    "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.dat.gz"
+)
+PFAM_LOC = Path(__file__).parent.parent / "resources" / "Pfam"
 _ChainT: t.TypeAlias = Chain | ChainStructure | ChainSequence
 _SeqT: t.TypeAlias = _ChainT | str | tuple[str, str] | DigitalSequence
 _HmmInpT: t.TypeAlias = HMM | HMMFile | Path | str
-CT = t.TypeVar('CT', bound=t.Union[ChainSequence, ChainStructure, Chain])
+CT = t.TypeVar("CT", bound=t.Union[ChainSequence, ChainStructure, Chain])
 
 
 # TODO: verify non-domain HMM types (e.g., Motif, Family) yield valid Domain hits
+def _iter_hmm(hmm: _HmmInpT) -> abc.Generator[HMM]:
+    match hmm:
+        case HMMFile():
+            yield from hmm
+        case HMM():
+            yield hmm
+        case _:
+            with HMMFile(hmm) as f:
+                yield from f
+
+
+def _enumerate_numbering(
+    a: Alignment,
+) -> abc.Generator[tuple[int | None, int | None], None, None]:
+    hmm_pool, seq_pool = count(a.hmm_from), count(a.target_from)
+    for hmm_c, seq_c in zip(a.hmm_sequence, a.target_sequence):
+        hmm_i = None if hmm_c == "." else next(hmm_pool)
+        seq_i = None if seq_c == "-" else next(seq_pool)
+        yield seq_i, hmm_i
 
 
 class PyHMMer:
@@ -59,14 +90,14 @@ class PyHMMer:
             #: HMM instance
             self.hmm = next(_iter_hmm(hmm))
         except (StopIteration, EOFError) as e:
-            raise MissingData(f'Invalid input {hmm}') from e
+            raise MissingData(f"Invalid input {hmm}") from e
         #: Pipeline to use for HMM searches
         self.pipeline: Pipeline = self.init_pipeline(**kwargs)
         #: Hits resulting from the most recent HMM search
         self.hits_: TopHits | None = None
 
     @classmethod
-    def from_multiple(cls, hmm: _HmmInpT, **kwargs) -> abc.Generator['PyHMMer']:
+    def from_multiple(cls, hmm: _HmmInpT, **kwargs) -> abc.Generator["PyHMMer"]:
         """
         Split HMM collection and initialize a :class:`PyHMMer` instance from
         each HMM model.
@@ -105,11 +136,11 @@ class PyHMMer:
             case ChainStructure() | Chain():
                 accession, name, text = obj.id, obj.id, obj._seq.seq1
             case _:
-                raise TypeError(f'Unsupported sequence type {type(obj)}')
+                raise TypeError(f"Unsupported sequence type {type(obj)}")
         return TextSequence(
             sequence=text,
-            name=bytes(name, encoding='utf-8'),
-            accession=bytes(accession, encoding='utf-8'),
+            name=bytes(name, encoding="utf-8"),
+            accession=bytes(accession, encoding="utf-8"),
         ).digitize(self.hmm.alphabet)
 
     def _convert_to_seq_block(self, seqs: abc.Iterable[_SeqT]) -> DigitalSequenceBlock:
@@ -141,7 +172,7 @@ class PyHMMer:
         aligner = TraceAligner()
         traces = aligner.compute_traces(self.hmm, block)
         msa = aligner.align_traces(self.hmm, block, traces)
-        assert isinstance(msa, TextMSA), 'Unexpected MSA type returned'
+        assert isinstance(msa, TextMSA), "Unexpected MSA type returned"
         return msa
 
     def annotate(
@@ -194,25 +225,25 @@ class PyHMMer:
             peeking = peekable(objs)
             fst = peeking.peek(False)
             if not fst:
-                raise MissingData('No sequences provided')
+                raise MissingData("No sequences provided")
             if not isinstance(fst, _ChainT):
-                raise TypeError(f'Unsupported type {fst}')
+                raise TypeError(f"Unsupported type {fst}")
 
         if new_map_name is None:
             try:
-                new_map_name = self.hmm.accession.decode('utf-8').split('.')[0]
+                new_map_name = self.hmm.accession.decode("utf-8").split(".")[0]
             except ValueError:
                 try:
                     new_map_name = (
-                        self.hmm.name.decode('utr-8')
-                        .replace(' ', '_')
-                        .replace('-', '_')
+                        self.hmm.name.decode("utr-8")
+                        .replace(" ", "_")
+                        .replace("-", "_")
                     )
                 except ValueError:
                     LOGGER.warning(
-                        '`new_map_name` was not provided, and neither `accession` '
-                        'nor `name` attribute exist: falling back to default '
-                        f'name: {HMM_DEFAULT_NAME}'
+                        "`new_map_name` was not provided, and neither `accession` "
+                        "nor `name` attribute exist: falling back to default "
+                        f"name: {HMM_DEFAULT_NAME}"
                     )
                     new_map_name = HMM_DEFAULT_NAME
 
@@ -221,7 +252,7 @@ class PyHMMer:
         self.search(objs_by_id.values())
 
         for hit in self.hits_:
-            obj = objs_by_id[hit.accession.decode('utf-8')]
+            obj = objs_by_id[hit.accession.decode("utf-8")]
 
             for dom_i, dom in enumerate(hit.domains, start=1):
                 aln = dom.alignment
@@ -248,39 +279,195 @@ class PyHMMer:
                 if domain_filter and not domain_filter(dom):
                     continue
 
-                name = f'{new_map_name}_{dom_i}'
+                name = f"{new_map_name}_{dom_i}"
                 sub = obj.spawn_child(aln.target_from, aln.target_to, name, **kwargs)
 
                 seq = sub.seq if isinstance(obj, (Chain, ChainStructure)) else sub
                 seq.add_seq(new_map_name, num)
-                seq.meta[f'{new_map_name}_pvalue'] = dom.pvalue
-                seq.meta[f'{new_map_name}_score'] = dom.score
-                seq.meta[f'{new_map_name}_bias'] = dom.bias
-                seq.meta[f'{new_map_name}_cov_seq'] = str(cov_seq)
-                seq.meta[f'{new_map_name}_cov_hmm'] = str(cov_hmm)
+                seq.meta[f"{new_map_name}_pvalue"] = dom.pvalue
+                seq.meta[f"{new_map_name}_score"] = dom.score
+                seq.meta[f"{new_map_name}_bias"] = dom.bias
+                seq.meta[f"{new_map_name}_cov_seq"] = str(cov_seq)
+                seq.meta[f"{new_map_name}_cov_hmm"] = str(cov_hmm)
                 yield sub
 
 
-def _iter_hmm(hmm: _HmmInpT) -> abc.Generator[HMM]:
-    match hmm:
-        case HMMFile():
-            yield from hmm
-        case HMM():
-            yield hmm
-        case _:
-            with HMMFile(hmm) as f:
-                yield from f
+class Pfam(AbstractResource):
+    """
+    A minimalistic Pfam interface.
+
+        * :meth:`fetch` fetches Pfam raw HMM models and associated metadata.
+        * :meth:`parse` prepares these data for later usage and stores
+            to the filesystem.
+        * :meth:`read` loads parsed files.
+
+    Parsed Pfam data is represented as a Pandas DataFrame accessible via
+    :meth:`df` with columns: "ID", "Accession", "Description", "Category",
+    and "HMM". Each row corresponds to a single model from Pfam-A collection
+    and associated metadata taken from the Pfam-A.dat file. HMM models are
+    wrapped into a :class:`PyHMMer` instance.
+    """
+
+    def __init__(
+        self,
+        resource_path: Path = PFAM_LOC,
+        resource_name: str = "Pfam",
+    ):
+        super().__init__(resource_path, resource_name)
+        self._df = None
+
+    @property
+    def df(self) -> pd.DataFrame | None:
+        """
+        :return: Parsed Pfam if :meth:`read` or :meth:`parse` were called.
+            Otherwise, returns ``None``.
+        """
+        return self._df
+
+    def fetch(
+        self,
+        url_hmm: str = PFAM_HMM_URL,
+        url_dat: str = PFAM_DAT_URL,
+    ) -> tuple[Path, Path]:
+        """
+        Fetch Pfam-A data from InterPro.
+
+        :param url_hmm: URL to "Pfam-A.hmm.gz".
+        :param url_dat: URL to "Pfam-A.hmm.dat.gz"
+        :return: A pair of filepaths for fetched HMM and dat files.
+        """
+        base = self.path / "raw"
+        base.mkdir(exist_ok=True, parents=True)
+        return (
+            fetch_to_file(url_hmm, base / PFAM_HMM_NAME),
+            fetch_to_file(url_dat, base / PFAM_DAT_NAME),
+        )
+
+    def parse(
+        self,
+        dump: bool = True,
+        rm_raw: bool = True,
+    ):
+        """
+        Parse fetched raw data into a single pandas :class:`DataFrame`.
+
+        :param dump: Dump parsed files to :attr:`path` / "raw" dir.
+        :param rm_raw: Clean up the raw data once parsing is done.
+        :return: A parsed Pfam :class:`DataFrame`. See the class's docs for
+            a list of columns.
+        """
+        path_hmm = self.path / "raw" / PFAM_HMM_NAME
+        path_dat = self.path / "raw" / PFAM_DAT_NAME
+        if not path_hmm.exists():
+            raise FileNotFoundError(f"Missing raw HMM data in {path_hmm}")
+        if not path_dat.exists():
+            raise FileNotFoundError(f"Missing raw dat file in {path_dat}")
+        df_hmm = self._parse_hmm(path_hmm)
+        df_dat = self._parse_dat(path_dat)
+        self._df = df_dat.merge(df_hmm, on="Accession")
+        if dump:
+            self.dump()
+        if rm_raw:
+            self.clean(raw=True)
+        return self._df
+
+    def read(
+        self,
+        path: Path | None = None,
+        accessions: abc.Container[str] | None = None,
+        categories: abc.Container[str] | None = None,
+    ):
+        """
+        Read parsed Pfam data.
+
+        First it reads the "dat" file and filters to relevant accessions and/or
+        categories. Then it loads each model and wraps into an :class:`PyHMMer`
+        instance.
+
+        :param path: A path to the dir with layout similar to what :meth:`dump`
+            creates.
+        :param accessions: A list of Pfam accessions following the ".", e.g.,
+            ``["PF00069", ]``.
+        :param categories: A list of Pfam categories to filter the accessions to.
+        :return: A parsed Pfam :class:`DataFrame`.
+        """
+        base = path or self.path / "parsed"
+        df = pd.read_csv(base / "dat.csv")
+        if accessions:
+            df = df[df["Accession"].isin(accessions)]
+        if categories:
+            df = df[df["Category"].isin(categories)]
+        df["PyHMMer"] = [
+            PyHMMer(base / "hmm" / f"{acc}.hmm.gz") for acc in df["Accession"]
+        ]
+        self._df = df
+        return df
+
+    def dump(self, path: Path | None = None) -> Path:
+        """
+        Store parsed data to the filesystem.
+
+        This function will store the HMM metadata to attr:`path` / "parsed"
+        / "dat.csv" and separate gzip-compressed HMM models into :attr:`path`
+        / "parsed" / "hmm".
+
+        :param path: Use this path instead of the :attr:`path` as a base dir.
+        :return: The path :attr:`path` / "parsed".
+        """
+        base = path or self.path / "parsed"
+        (base / "hmm").mkdir(exist_ok=True, parents=True)
+        if self._df is None:
+            raise MissingData("Missing parsed data to dump")
+
+        for _, row in self._df.iterrows():
+            hmm_path = base / "hmm" / f"{row.Accession}.hmm.gz"
+            with gzip.open(hmm_path, "wb") as f:
+                row.HMM.hmm.write(f)
+
+        self._df[["ID", "Accession", "Description", "Category"]].to_csv(
+            base / "dat.csv"
+        )
+        return base
+
+    def clean(self, raw: bool = True, parsed: bool = False) -> None:
+        """
+        Remove Pfam data. If `raw` and `parsed` are both ``False``, removes
+        the :attr:`path` with all stored data.
+
+        :param raw: Remove raw fetched files.
+        :param parsed: Remove parsed files.
+        :return: Nothing.
+        """
+        if raw:
+            rmtree(self.path / "raw")
+        elif parsed:
+            rmtree(self.path / "parsed")
+        else:
+            rmtree(self.path)
+
+    @staticmethod
+    def _parse_dat(path: Path) -> pd.DataFrame:
+        def wrap_chunk(xs: list[str]):
+            _id, _acc, _desc, _, _type = map(lambda x: x.split("   ")[-1], xs[:5])
+            _acc = _acc.split(".")[0]
+            return _id, _acc, _desc, _type
+
+        with gzip.open(path, "rt") as f:
+            lines = filter(bool, map(lambda x: x.rstrip(), f))
+            chunks = filter(bool, split_at(lines, lambda x: x.startswith("# ")))
+            return pd.DataFrame(
+                map(wrap_chunk, chunks),
+                columns=["ID", "Accession", "Description", "Category"],
+            )
+
+    @staticmethod
+    def _parse_hmm(path: Path) -> pd.DataFrame:
+        df = pd.DataFrame({"HMM": list(map(PyHMMer, _iter_hmm(path)))})
+        df["Accession"] = df["HMM"].map(
+            lambda x: x.hmm.accession.decode("utf-8").split(".")[0]
+        )
+        return df
 
 
-def _enumerate_numbering(
-    a: Alignment,
-) -> abc.Generator[tuple[int | None, int | None], None, None]:
-    hmm_pool, seq_pool = count(a.hmm_from), count(a.target_from)
-    for hmm_c, seq_c in zip(a.hmm_sequence, a.target_sequence):
-        hmm_i = None if hmm_c == '.' else next(hmm_pool)
-        seq_i = None if seq_c == '-' else next(seq_pool)
-        yield seq_i, hmm_i
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError
