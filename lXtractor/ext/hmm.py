@@ -193,7 +193,7 @@ class PyHMMer:
         **kwargs,
     ) -> abc.Generator[CT, None, None]:
         """
-        Annotate provided objects by domain hits resulting from the HMM search.
+        Annotate provided objects by hits resulting from the HMM search.
 
         An annotation is the creation of a child object via :meth:`spawn_child`
         method (e.g., :meth:`lXtractor.core.chain.ChainSequence.spawn_child`).
@@ -286,7 +286,13 @@ class PyHMMer:
                     continue
 
                 name = f"{new_map_name}_{dom_i}"
-                sub = obj.spawn_child(aln.target_from, aln.target_to, name, **kwargs)
+                offset = obj.start - 1
+                sub = obj.spawn_child(
+                    aln.target_from + offset,
+                    aln.target_to + offset,
+                    name,
+                    **kwargs,
+                )
 
                 seq = sub.seq if isinstance(obj, (Chain, ChainStructure)) else sub
                 seq.add_seq(new_map_name, num)
