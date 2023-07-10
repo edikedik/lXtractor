@@ -324,6 +324,15 @@ class Pfam(AbstractResource):
         """
         return self._df
 
+    @property
+    def dat_columns(self) -> tuple[str, ...]:
+        return "ID", "Accession", "Description", "Category"
+
+    @df.setter
+    def df(self, value: pd.DataFrame):
+        self._validate_frame(value)
+        self._df = value
+
     def fetch(
         self,
         url_hmm: str = PFAM_HMM_URL,
@@ -376,19 +385,23 @@ class Pfam(AbstractResource):
         path: Path | None = None,
         accessions: abc.Container[str] | None = None,
         categories: abc.Container[str] | None = None,
+        hmm: bool = True,
     ):
         """
         Read parsed Pfam data.
 
         First it reads the "dat" file and filters to relevant accessions and/or
-        categories. Then it loads each model and wraps into an :class:`PyHMMer`
-        instance.
+        categories. Then, if `hmm` is ``True``, it loads each model and wraps
+        into an :class:`PyHMMer` instance. Otherwise, it loads the HMM metadata.
+        One can explore and filter these data, then load the desired HMM models
+        via :meth:`load_hmm`.
 
         :param path: A path to the dir with layout similar to what :meth:`dump`
             creates.
         :param accessions: A list of Pfam accessions following the ".", e.g.,
             ``["PF00069", ]``.
         :param categories: A list of Pfam categories to filter the accessions to.
+        :param hmm: Load HMM models.
         :return: A parsed Pfam :class:`DataFrame`.
         """
         base = path or self.path / "parsed"
@@ -397,10 +410,28 @@ class Pfam(AbstractResource):
             df = df[df["Accession"].isin(accessions)]
         if categories:
             df = df[df["Category"].isin(categories)]
+        if hmm:
+            df = self.load_hmm(df)
+        self._df = df
+        return df
+
+    def load_hmm(self, df: pd.DataFrame | None = None, path: Path | None = None):
+        """
+        Load HMM models according to accessions in passed `df` and create a
+        column "PyHMMer" with loaded models.
+
+        :param df: A :class:`DataFrame` having all the :meth:`dat_columns.
+        :param path: A custom path to the parsed data with an "hmm" subdir.
+        :return: A copy of the original :class:`DataFrame` with loaded models.
+        """
+        base = path or self.path / "parsed"
+        df = self._df if df is None else df
+        if df is None:
+            raise MissingData("No parsed data. Use `read` or `parse` first.")
+        df = df.copy()
         df["PyHMMer"] = [
             PyHMMer(base / "hmm" / f"{acc}.hmm.gz") for acc in df["Accession"]
         ]
-        self._df = df
         return df
 
     def dump(self, path: Path | None = None) -> Path:
@@ -425,7 +456,7 @@ class Pfam(AbstractResource):
                 row.HMM.hmm.write(f)
 
         self._df[["ID", "Accession", "Description", "Category"]].to_csv(
-            base / "dat.csv"
+            base / "dat.csv", index=False
         )
         return base
 
@@ -445,8 +476,7 @@ class Pfam(AbstractResource):
         else:
             rmtree(self.path)
 
-    @staticmethod
-    def _parse_dat(path: Path) -> pd.DataFrame:
+    def _parse_dat(self, path: Path) -> pd.DataFrame:
         def wrap_chunk(xs: list[str]):
             _id, _acc, _desc, _, _type = map(lambda x: x.split("   ")[-1], xs[:5])
             _acc = _acc.split(".")[0]
@@ -457,7 +487,7 @@ class Pfam(AbstractResource):
             chunks = filter(bool, split_at(lines, lambda x: x.startswith("# ")))
             return pd.DataFrame(
                 map(wrap_chunk, chunks),
-                columns=["ID", "Accession", "Description", "Category"],
+                columns=list(self.dat_columns),
             )
 
     @staticmethod
@@ -467,6 +497,11 @@ class Pfam(AbstractResource):
             lambda x: x.hmm.accession.decode("utf-8").split(".")[0]
         )
         return df
+
+    def _validate_frame(self, df: pd.DataFrame):
+        for c in self.dat_columns:
+            if c not in df.columns:
+                raise MissingData(f"Missing required column {c}")
 
 
 if __name__ == "__main__":
