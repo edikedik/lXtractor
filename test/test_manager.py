@@ -1,5 +1,6 @@
 import pandas as pd
 import pytest
+from pandas.errors import InvalidIndexError
 
 from lXtractor.core.chain import ChainSequence, ChainStructure, ChainList
 from lXtractor.core.structure import GenericStructure
@@ -100,7 +101,7 @@ def test_aggregate_from_it(simple_chain_seq):
 
     df = manager.aggregate_from_it(res)
     assert isinstance(df, pd.DataFrame)
-    assert df.shape == (2, 3)
+    assert df.shape == (2, 4)
     assert len(df.dropna()) == 0
 
     df = manager.aggregate_from_it(res, replace_errors=False)
@@ -115,7 +116,7 @@ def test_aggregate_from_it(simple_chain_seq):
         )
     )
     # sequences aren't unique -- conversions to df fails
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, InvalidIndexError)):
         manager.aggregate_from_it(res)
     df = manager.aggregate_from_it(res, vs_to_cols=False)
     assert isinstance(df, pd.DataFrame) and df.shape == (6, 4)

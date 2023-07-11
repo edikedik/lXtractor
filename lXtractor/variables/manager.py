@@ -17,7 +17,7 @@ from itertools import chain, repeat, tee
 
 import numpy as np
 import pandas as pd
-from more_itertools import unzip, peekable
+from more_itertools import unzip, peekable, split_when
 from toolz import curry
 from tqdm.auto import tqdm
 
@@ -397,37 +397,40 @@ class Manager:
             results with certain value.
         :param replace_errors_with: Use this value to replace erroneous
             calculation results.
-        :return: A table with results in long or short format. If the
-            conversion to the DataFrame fails, will output a default dictionary
-            holding aggregated results. It's a good idea to inspect this
-            dict to find values (lists) with unexpected lengths diverging from
-            the rest.
+        :return: A table with results in long or short format.
         """
 
-        # TODO: this is a bottleneck that desperately needs a speedup
-        # I could accept `vs` optional param and split the iterable into
-        # `len(vs)` chunks where each chunk has the same list of objects
-        # ordered the same => aggregate
+        def substitute_error(res):
+            if res[2]:
+                return res
+            return res[0], res[1], res[2], replace_errors_with
+
+        def substitute_ids(res):
+            if isinstance(res[0], tuple):
+                obj_id = res[0][1].id
+            else:
+                obj_id = res[0]
+            return obj_id, res[1].id, res[2], res[3]
+
+        def wrap_into_series(res_chunk):
+            idx = chain(['ObjectID'], (res[1] for res in res_chunk))
+            vs = chain([res_chunk[0][0]], (res[-1] for res in res_chunk))
+            return pd.Series(vs, idx)
 
         if self.verbose:
             results = tqdm(results, "Accumulating calculations")
 
-        colnames = ["Object", "Variable", "VariableCalculated", "VariableResult"]
-        df = pd.DataFrame(dict(zip(colnames, map(list, unzip(results)))))
-
         if replace_errors:
-            df.loc[~df["VariableCalculated"], "VariableResult"] = replace_errors_with
+            results = map(substitute_error, results)
 
         if vs_to_cols:
-            LOGGER.info("Obtaining ID attributes.")
-            df["VariableID"] = df["Variable"].map(lambda x: x.id)
-            df["ObjectID"] = df["Object"].map(
-                lambda x: x[1].id if isinstance(x, tuple) else x.id
-            )
-            LOGGER.info("Pivoting the table.")
-            df = df.pivot_table(
-                columns="VariableID", index="ObjectID", values="VariableResult"
-            )
+            results = map(substitute_ids, results)
+            chunked = split_when(results, lambda x, y: x[0] != y[0])
+            wrapped = map(wrap_into_series, chunked)
+            df = pd.DataFrame(wrapped)
+        else:
+            colnames = ["Object", "Variable", "VariableCalculated", "VariableResult"]
+            df = pd.DataFrame(dict(zip(colnames, map(list, unzip(results)))))
 
         return df
 
