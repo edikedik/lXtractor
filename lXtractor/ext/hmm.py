@@ -140,7 +140,7 @@ class PyHMMer:
             case ChainSequence():
                 accession, name, text = obj.id, obj.name, obj.seq1
             case ChainStructure() | Chain():
-                accession, name, text = obj.id, obj.id, obj.seq1
+                accession, name, text = obj.id, obj.id, obj.seq.seq1
             case _:
                 raise TypeError(f"Unsupported sequence type {type(obj)}")
         return TextSequence(
