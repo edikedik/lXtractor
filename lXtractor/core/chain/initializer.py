@@ -8,19 +8,18 @@ from __future__ import annotations
 import logging
 import typing as t
 from collections import abc
-from concurrent.futures import ProcessPoolExecutor, Future
-from itertools import repeat, chain
+from concurrent.futures import Future
+from itertools import chain
 from pathlib import Path
 
 from biotite import structure as bst
-from more_itertools import unzip, split_into, collapse, ilen
+from more_itertools import split_into, collapse, ilen
 from toolz import curry, compose_left
 from tqdm.auto import tqdm
 
-from lXtractor.core.alignment import Alignment
-from lXtractor.core.chain import ChainList
+from lXtractor.core.chain import ChainList, map_numbering_many2many
 from lXtractor.core.config import SeqNames, STRUCTURE_EXT
-from lXtractor.core.exceptions import InitError, LengthMismatch
+from lXtractor.core.exceptions import InitError
 from lXtractor.core.structure import GenericStructure
 from lXtractor.util.io import parse_suffix
 from lXtractor.util.misc import apply
@@ -38,8 +37,6 @@ __all__ = (
     "SingletonCallback",
     "ItemCallback",
     "ChainInitializer",
-    "map_numbering_12many",
-    "map_numbering_many2many",
 )
 
 
@@ -138,10 +135,6 @@ def _init(
     return res
 
 
-def _map_numbering(seq1: ChainSequence, seq2: ChainSequence) -> list[None | int]:
-    return seq1.map_numbering(seq2, save=False, align_method=biotite_align)
-
-
 def _try_fn(inp, fn, tolerate_failures):
     try:
         return fn(inp)
@@ -150,103 +143,6 @@ def _try_fn(inp, fn, tolerate_failures):
         if not tolerate_failures:
             raise e
         return None
-
-
-def map_numbering_12many(
-    obj_to_map: str | tuple[str, str] | ChainSequence | Alignment,
-    seqs: abc.Iterable[ChainSequence],
-    num_proc: t.Optional[int] = None,
-) -> abc.Iterator[list[int | None]]:
-    """
-    Map numbering of a single sequence to many other sequences.
-
-    **This function does not save mapped numberings.**
-
-    .. seealso::
-        :meth:`ChainSequence.map_numbering`.
-
-    :param obj_to_map: Object whose numbering should be mapped to `seqs`.
-    :param seqs: Chain sequences to map the numbering to.
-    :param num_proc: A number of parallel processes to use.
-        If ``None``, run sequentially.
-    :return: An iterator over the mapped numberings.
-    """
-    if num_proc:
-        with ProcessPoolExecutor(num_proc) as executor:
-            yield from executor.map(_map_numbering, seqs, repeat(obj_to_map))
-    else:
-        yield from (x.map_numbering(obj_to_map, save=False) for x in seqs)
-
-
-def map_numbering_many2many(
-    objs_to_map: abc.Sequence[str | tuple[str, str] | ChainSequence | Alignment],
-    seq_groups: abc.Sequence[abc.Sequence[ChainSequence]],
-    num_proc: t.Optional[int] = None,
-    verbose: bool = False,
-) -> abc.Iterator[list[list[int | None]]]:
-    """
-    Map numbering of each object `o` in `objs_to_map` to each sequence
-    in each group of the `seq_groups` ::
-
-        o1 -> s1_1 s1_1 s1_3 ...
-        o2 -> s2_1 s2_1 s2_3 ...
-                  ...
-
-    **This function does not save mapped numberings.**
-
-    For a single object-group pair, it's the same as
-    :func:`map_numbering_12many`. The benefit comes from parallelization
-    of this functionality.
-
-    .. seealso::
-        :meth:`ChainSequence.map_numbering`.
-        :func:`map_numbering_12many`
-
-    :param objs_to_map: An iterable over objects whose numbering to map.
-    :param seq_groups: Group of objects to map numbering to.
-    :param num_proc: A number of processes to use. If ``None``,
-        run sequentially.
-    :param verbose: Output a progress bar.
-    :return: An iterator over lists of lists with numeric mappings
-
-    ::
-
-         [[s1_1 map, s1_2 map, ...]
-          [s2_1 map, s2_2 map, ...]
-                    ...
-          ]
-
-    """
-    # TODO: refactor using _apply
-
-    if len(objs_to_map) != len(seq_groups):
-        raise LengthMismatch(
-            f"The number of objects to map {len(objs_to_map)} != "
-            f"the number of sequence groups {len(seq_groups)}"
-        )
-    staged = chain.from_iterable(
-        ((obj, s) for s in g) for obj, g in zip(objs_to_map, seq_groups)
-    )
-    group_sizes = map(len, seq_groups)
-    if num_proc:
-        objs, seqs = unzip(staged)
-        with ProcessPoolExecutor(num_proc) as executor:
-            results = executor.map(_map_numbering, seqs, objs, chunksize=1)
-            if verbose:
-                yield from split_into(
-                    tqdm(results, desc="Mapping numberings"), group_sizes
-                )
-            else:
-                yield from split_into(results, group_sizes)
-    else:
-        results = (
-            s.map_numbering(o, save=False, align_method=biotite_align)
-            for o, s in staged
-        )
-        if verbose:
-            yield from split_into(tqdm(results, desc="Mapping numberings"), group_sizes)
-        else:
-            yield from split_into(results, group_sizes)
 
 
 class ChainInitializer:
@@ -494,8 +390,8 @@ class ChainInitializer:
             # for each structure in values
             numbering_groups = list(
                 map_numbering_many2many(
-                    [x._seq for x, _ in items],
-                    [[x._seq for x in strs] for _, strs in items],
+                    [x.seq for x, _ in items],
+                    [[x.seq for x in strs] for _, strs in items],
                     num_proc=num_proc_map_numbering,
                     verbose=self.verbose,
                 )
@@ -530,7 +426,7 @@ def _add_structures(
     (c, ss), num_group = inp
     for s, n in zip(ss, num_group, strict=True):
         try:
-            s._seq.add_seq(map_name, n)
+            s.seq.add_seq(map_name, n)
             c.add_structure(s, map_to_seq=False, **kwargs)
         except Exception as e:
             LOGGER.warning(f"Failed to add structure {s} to chain {c} due to {e}")

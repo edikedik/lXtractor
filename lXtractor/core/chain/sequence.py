@@ -5,12 +5,12 @@ import warnings
 from collections import abc
 from copy import copy
 from io import TextIOBase
-from itertools import filterfalse, starmap
+from itertools import filterfalse, starmap, repeat, chain
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from more_itertools import first_true, always_reversible
+from more_itertools import first_true, always_reversible, split_into
 from toolz import valmap, valfilter, keyfilter
 from typing_extensions import Self
 
@@ -37,14 +37,16 @@ from lXtractor.core.config import (
     UNK_NAME,
     ColNames,
 )
-from lXtractor.core.exceptions import MissingData, InitError, AmbiguousMapping
+from lXtractor.core.exceptions import (
+    MissingData,
+    InitError,
+    AmbiguousMapping,
+    LengthMismatch,
+)
+from lXtractor.util import biotite_align, apply
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.misc import is_empty
-from lXtractor.util.seq import (
-    mafft_align,
-    map_pairs_numbering,
-    read_fasta,
-)
+from lXtractor.util.seq import mafft_align, map_pairs_numbering, read_fasta
 
 if t.TYPE_CHECKING:
     from lXtractor.core.chain import Chain, ChainStructure
@@ -54,7 +56,7 @@ if t.TYPE_CHECKING:
 # and may keep an existing numbering
 
 
-__all__ = ("ChainSequence",)
+__all__ = ("ChainSequence", "map_numbering_12many", "map_numbering_many2many")
 
 
 class ChainSequence(lxs.Segment):
@@ -372,7 +374,7 @@ class ChainSequence(lxs.Segment):
         :return: The mapped sequence.
         """
         mapping = self.get_map(link_points_to)
-        if link_name == 'i':
+        if link_name == "i":
             other_seq = range(other.start, other.end + 1)
         else:
             other_seq = other[link_name]
@@ -1007,6 +1009,93 @@ class ChainSequence(lxs.Segment):
             rows += [c.summary(meta=meta, children=children) for c in self.children]
 
         return pd.DataFrame(rows)
+
+
+def _map_numbering(
+    pair: tuple[ChainSequence, str | tuple[str, str] | ChainSequence | Alignment]
+) -> list[None | int]:
+    seq, obj = pair
+    return seq.map_numbering(obj, save=False, align_method=biotite_align)
+
+
+def map_numbering_12many(
+    obj_to_map: str | tuple[str, str] | ChainSequence | Alignment,
+    seqs: abc.Iterable[ChainSequence],
+    num_proc: int = 1,
+    verbose: bool = False,
+) -> abc.Iterator[list[int | None]]:
+    """
+    Map numbering of a single sequence to many other sequences.
+
+    **This function does not save mapped numberings.**
+
+    .. seealso::
+        :meth:`ChainSequence.map_numbering`.
+
+    :param obj_to_map: Object whose numbering should be mapped to `seqs`.
+    :param seqs: Chain sequences to map the numbering to.
+    :param num_proc: A number of parallel processes to use.
+    :param verbose: Output progress bar.
+    :return: An iterator over the mapped numberings.
+    """
+    staged = zip(seqs, repeat(obj_to_map))
+    total = len(seqs) if isinstance(seqs, abc.Sized) else None
+    yield from apply(
+        _map_numbering, staged, verbose, "Mapping numberings", num_proc, total
+    )
+
+
+def map_numbering_many2many(
+    objs_to_map: abc.Sequence[str | tuple[str, str] | ChainSequence | Alignment],
+    seq_groups: abc.Sequence[abc.Sequence[ChainSequence]],
+    num_proc: int = 1,
+    verbose: bool = False,
+) -> abc.Iterator[list[list[int | None]]]:
+    """
+    Map numbering of each object `o` in `objs_to_map` to each sequence
+    in each group of the `seq_groups` ::
+
+        o1 -> s1_1 s1_1 s1_3 ...
+        o2 -> s2_1 s2_1 s2_3 ...
+                  ...
+
+    **This function does not save mapped numberings.**
+
+    For a single object-group pair, it's the same as
+    :func:`map_numbering_12many`. The benefit comes from parallelization
+    of this functionality.
+
+    .. seealso::
+        :meth:`ChainSequence.map_numbering`.
+        :func:`map_numbering_12many`
+
+    :param objs_to_map: An iterable over objects whose numbering to map.
+    :param seq_groups: Group of objects to map numbering to.
+    :param num_proc: A number of processes to use.
+    :param verbose: Output a progress bar.
+    :return: An iterator over lists of lists with numeric mappings
+
+    ::
+
+         [[s1_1 map, s1_2 map, ...]
+          [s2_1 map, s2_2 map, ...]
+                    ...
+          ]
+
+    """
+    # TODO: refactor using _apply
+
+    if len(objs_to_map) != len(seq_groups):
+        raise LengthMismatch(
+            f"The number of objects to map {len(objs_to_map)} != "
+            f"the number of sequence groups {len(seq_groups)}"
+        )
+    staged = chain.from_iterable(
+        ((s, obj) for s in g) for obj, g in zip(objs_to_map, seq_groups)
+    )
+    group_sizes = map(len, seq_groups)
+    results = apply(_map_numbering, staged, verbose, "Mapping numberings", num_proc)
+    yield from split_into(results, group_sizes)
 
 
 if __name__ == "__main__":
