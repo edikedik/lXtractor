@@ -78,7 +78,7 @@ def get_obj(is_seq_str, chain_structure_seq, chain_structure):
 
 
 @pytest.mark.parametrize('v,res', TEST_SINGLES)
-@pytest.mark.parametrize('num_proc', [None, 2])
+@pytest.mark.parametrize('num_proc', [1, 2])
 def test_call_singles(v, res, chain_structure, chain_structure_seq, num_proc):
     calc = GenericCalculator(num_proc=num_proc)
     o, m = get_obj(
@@ -90,7 +90,7 @@ def test_call_singles(v, res, chain_structure, chain_structure_seq, num_proc):
 
 
 @pytest.mark.parametrize('is_seq,v,res', TEST_ITERABLES)
-@pytest.mark.parametrize('num_proc', [None, 2])
+@pytest.mark.parametrize('num_proc', [1, 2])
 def test_call_iterables(is_seq, v, res, num_proc, chain_structure_seq, chain_structure):
     calc = GenericCalculator(num_proc=num_proc)
     inputs = [get_obj(x, chain_structure_seq, chain_structure) for x in is_seq]
@@ -104,7 +104,7 @@ def test_call_iterables(is_seq, v, res, num_proc, chain_structure_seq, chain_str
 
 
 @pytest.mark.parametrize('v,res', TEST_MAP)
-@pytest.mark.parametrize('num_proc', [None, 2])
+@pytest.mark.parametrize('num_proc', [1, 2])
 def test_map(v, res, num_proc, chain_structure_seq):
     calc = GenericCalculator(num_proc=num_proc)
     o, m = chain_structure_seq
@@ -112,7 +112,7 @@ def test_map(v, res, num_proc, chain_structure_seq):
     assert calc_res == res
 
 
-@pytest.mark.parametrize('num_proc', [None, 2])
+@pytest.mark.parametrize('num_proc', [1, 2])
 def test_vmap(num_proc, chain_structure_seq):
     calc = GenericCalculator(num_proc=num_proc)
     o, m = chain_structure_seq
