@@ -17,7 +17,7 @@ from itertools import chain, repeat, tee
 
 import numpy as np
 import pandas as pd
-from more_itertools import unzip, peekable, split_when
+from more_itertools import unzip, peekable, split_when, chunked
 from toolz import curry
 from tqdm.auto import tqdm
 
@@ -382,6 +382,7 @@ class Manager:
         vs_to_cols: bool = True,
         replace_errors: bool = True,
         replace_errors_with: t.Any = np.NaN,
+        num_vs: int | None = None,
     ) -> pd.DataFrame | dict[str, list]:
         """
         Aggregate calculation results directly from :meth:`calculate` output.
@@ -391,12 +392,14 @@ class Manager:
             the final results with variables as columns. Otherwise, will use
             the long format with fixed columns: "ObjectID", "VariableID",
             "VariableCalculated", and "VariableResult". Note that for the wide
-            format to work, all objects variables were calculated on must have
+            format to work, all objects and their variables must have
             unique IDs.
         :param replace_errors: When calculation failed, replace the calculation
             results with certain value.
         :param replace_errors_with: Use this value to replace erroneous
             calculation results.
+        :param num_vs: The number of variables per object. Providing this will
+            significantly increase the aggregation speed.
         :return: A table with results in long or short format.
         """
 
@@ -409,11 +412,11 @@ class Manager:
             if isinstance(res[0], tuple):
                 obj_id = res[0][1].id
             else:
-                obj_id = res[0]
+                obj_id = res[0].id
             return obj_id, res[1].id, res[2], res[3]
 
         def wrap_into_series(res_chunk):
-            idx = chain(['ObjectID'], (res[1] for res in res_chunk))
+            idx = chain(["ObjectID"], (res[1] for res in res_chunk))
             vs = chain([res_chunk[0][0]], (res[-1] for res in res_chunk))
             return pd.Series(vs, idx)
 
@@ -425,8 +428,11 @@ class Manager:
 
         if vs_to_cols:
             results = map(substitute_ids, results)
-            chunked = split_when(results, lambda x, y: x[0] != y[0])
-            wrapped = map(wrap_into_series, chunked)
+            if num_vs is not None:
+                chunks = chunked(results, num_vs)
+            else:
+                chunks = split_when(results, lambda x, y: x[0] != y[0])
+            wrapped = map(wrap_into_series, chunks)
             df = pd.DataFrame(wrapped)
         else:
             colnames = ["Object", "Variable", "VariableCalculated", "VariableResult"]
@@ -512,9 +518,6 @@ class Manager:
         objs, targets, variables, mappings = unzip(self.stage(objs, vs, **kwargs))
         variables1, variables2 = tee(variables)
         calculated = calculator(targets, variables1, mappings)
-
-        if self.verbose:
-            calculated = tqdm(calculated, desc="Calculating variables")
 
         for obj, _vs, results in zip(objs, variables2, calculated, strict=True):
             for v, (is_calculated, res) in zip(_vs, results, strict=True):
