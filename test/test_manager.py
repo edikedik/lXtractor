@@ -98,17 +98,20 @@ def test_aggregate_from_it(simple_chain_seq):
         )
     )
     assert len(res) == 6
+    assert [x[0] for x in res] == [cseq1] * 3 + [cseq2] * 3
 
     df = manager.aggregate_from_it(res)
     assert isinstance(df, pd.DataFrame)
     assert df.shape == (2, 4)
     assert len(df.dropna()) == 0
+    assert df['ObjectID'].tolist() == [cseq1, cseq2]
 
     df = manager.aggregate_from_it(res, replace_errors=False)
     assert len(df.dropna()) == 2
 
     df = manager.aggregate_from_it(res, vs_to_cols=False)
     assert df.shape == (6, 4)
+    assert df['Object'].tolist() == [cseq1] * 3 + [cseq2] * 3
 
     res = list(
         manager.calculate(
