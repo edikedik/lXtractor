@@ -133,6 +133,15 @@ class ChainSequence(lxs.Segment):
         return list(range(self.start, self.end + 1))
 
     @property
+    def seq(self) -> Self:
+        """
+        This property exists for functionality relying on the `.seq` attribute.
+
+        :return: This object.
+        """
+        return self
+
+    @property
     def seq1(self) -> str:
         """
         :return: the primary sequence.
