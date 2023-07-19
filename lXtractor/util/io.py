@@ -36,6 +36,7 @@ __all__ = (
     "fetch_to_file",
     "fetch_files",
     "fetch_iterable",
+    "fetch_chunks",
     "setup_logger",
     "get_files",
     "get_dirs",

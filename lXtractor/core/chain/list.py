@@ -9,7 +9,7 @@ import operator as op
 import typing as t
 from collections import abc
 from functools import partial
-from itertools import chain, zip_longest, tee
+from itertools import chain, zip_longest, tee, groupby
 
 import pandas as pd
 from more_itertools import nth, peekable, unique_everseen
@@ -606,6 +606,10 @@ class ChainList(abc.MutableSequence[CT]):
 
     def summary(self, **kwargs) -> pd.DataFrame:
         return pd.concat([c.summary(**kwargs) for c in self])
+
+    def groupby(self, key: abc.Callable[[CT], T]) -> abc.Iterator[tuple[T, Self]]:
+        for g, gg in groupby(self._chains, key):
+            yield g, self.__class__([x[1] for x in gg])
 
 
 def _wrap_children(children: abc.Iterable[CT] | None) -> ChainList[CT]:
