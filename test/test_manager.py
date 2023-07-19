@@ -104,7 +104,7 @@ def test_aggregate_from_it(simple_chain_seq):
     assert isinstance(df, pd.DataFrame)
     assert df.shape == (2, 4)
     assert len(df.dropna()) == 0
-    assert df['ObjectID'].tolist() == [cseq1, cseq2]
+    assert df['ObjectID'].tolist() == [cseq1.id, cseq2.id]
 
     df = manager.aggregate_from_it(res, replace_errors=False)
     assert len(df.dropna()) == 2
