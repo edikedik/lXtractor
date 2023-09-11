@@ -309,6 +309,16 @@ class GenericStructure:
         return len(self) == 0
 
     @property
+    def is_empty_polymer(self) -> bool:
+        """
+        Check if there are any polymer atoms.
+
+        :return: ``True`` if there are >=1 polymer atoms and ``False``
+            otherwise.
+        """
+        return self.mask_polymer.sum() == 0
+
+    @property
     def is_singleton(self) -> bool:
         """
         :return: ``True`` if the structure contains a single residue.
