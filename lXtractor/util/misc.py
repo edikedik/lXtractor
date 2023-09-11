@@ -12,11 +12,18 @@ from itertools import groupby
 import joblib
 import numpy as np
 import pandas as pd
+from toolz import valmap, compose_left
 from tqdm.auto import tqdm
 
 from lXtractor.core.exceptions import FormatError
 
-__all__ = ("is_valid_field_name", "apply", "is_empty", "col2col", )
+__all__ = (
+    "is_valid_field_name",
+    "apply",
+    "is_empty",
+    "col2col",
+    "valgroup",
+)
 
 T = t.TypeVar("T")
 R = t.TypeVar("R")
@@ -102,7 +109,10 @@ def _apply_sequentially(fn, it, verbose, desc, total):
 
 @contextlib.contextmanager
 def tqdm_joblib(tqdm_object):
-    """Context manager to patch joblib to report into tqdm progress bar given as argument"""
+    """
+    Context manager to patch joblib to report into tqdm progress
+    bar given as argument
+    """
 
     class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
         def __call__(self, *args, **kwargs):
@@ -179,6 +189,43 @@ def apply(
         yield from f(fn, it, verbose, desc, num_proc, total, **kwargs)
     else:
         yield from _apply_sequentially(fn, it, verbose, desc, total)
+
+
+def valgroup(m: abc.Mapping[str, list[str]], sep: str = ":"):
+    """
+    Reformat a mapping from the format::
+
+        X => [Y{sep}Z, ...]
+
+    To a format::
+
+        X => [(Y, [Z, ...]), ...]
+
+    >>> mapping = {'X': ['C:A', 'C:B', 'Y:Z']}
+    >>> valgroup(mapping)
+    {'X': [('X', ['A', 'B']), ('Y', ['Z'])]}
+
+    .. hint::
+        This method is useful for converting the sequence-to-structure mapping
+        outputted by :class:`lXtractor.ext.sifts.SIFTS` to a format accepted by
+        the :method:`lXtractor.core.chain.initializer.ChainInitializer.from_mapping`
+        to initialize :class:`lXtractor.core.chain.Chain` objects
+
+    :param m: A mapping from strings to a list of strings.
+    :param sep: A separator of each mapped string in the list.
+    :return: A reformatted mapping.
+    """
+
+    def group(xs):
+        for k, vs in groupby(sorted(xs), key=lambda x: x.split(":")[0]):
+            try:
+                yield k, [":".join(x.split(":")[1:]) for x in vs]
+            except IndexError as e:
+                raise FormatError(
+                    f"Separator {sep} is absent in item with key {k}"
+                ) from e
+
+    return valmap(compose_left(group, list), m)
 
 
 if __name__ == "__main__":
