@@ -485,6 +485,7 @@ class Chain:
         *,
         subset_structures: bool = True,
         tolerate_failure: bool = False,
+        silent: bool = False,
         keep: bool = True,
         seq_deep_copy: bool = False,
         seq_map_from: str | None = None,
@@ -508,6 +509,8 @@ class Chain:
             :attr:`structures`. If ``False``, structures are not inherited.
         :param tolerate_failure: If ``True``, a failure to subset a structure
             doesn't raise an error.
+        :param silent: Supress warnings for errors when `tolerate_failure` is
+            ``True``.
         :param keep: Save created child to :attr:`children`.
         :param seq_deep_copy: Deep copy potentially mutable sequences within
             :attr:`_seq`.
@@ -557,11 +560,12 @@ class Chain:
             ) as e:
                 msg = (
                     f"Failed to spawn substructure from {structure} using boundaries "
-                    f"[{start, end}] due to {e}"
+                    f"[{start, end}]"
                 )
-                # logging.warning(msg)
-                LOGGER.warning(msg)
-                if not tolerate_failure:
+                if tolerate_failure:
+                    if not silent:
+                        LOGGER.warning(msg)
+                else:
                     raise InitError(msg) from e
                 return None
 

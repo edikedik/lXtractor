@@ -575,7 +575,8 @@ class ChainStructure:
         keep_seq_child: bool = False,
         keep: bool = True,
         deep_copy: bool = False,
-        error_if_empty: bool = True,
+        tolerate_failure: bool = False,
+        silent: bool = False
     ) -> ChainStructure:
         """
         Create a sub-structure from this one.
@@ -593,8 +594,9 @@ class ChainStructure:
             to avoid duplicating information.
         :param keep: Keep spawned substructure in :attr:`children`.
         :param deep_copy: Deep copy spawned sub-sequence and sub-structure.
-        :param error_if_empty: If the resulting structure subset is empty, raise
-            an ``InitError``.
+        :param tolerate_failure: Do not raise the ``InitError` if the resulting
+            structure subset is empty,
+        :param silent: Do not display warnings if `tolerate_failure` is ``True``.
         :return: New chain structure -- a sub-structure of the current one.
         """
 
@@ -621,11 +623,13 @@ class ChainStructure:
         structure = self.structure.extract_segment(start, end)
 
         if structure.is_empty or structure.is_empty_polymer:
-            LOGGER.warning(
-                f"Extracting structure segment using boundaries ({start}, {end}) "
-                f"yielded an empty structure."
-            )
-            if error_if_empty:
+            if tolerate_failure:
+                if not silent:
+                    LOGGER.warning(
+                        f"Extracting structure segment using boundaries ({start}, {end}) "
+                        f"yielded an empty structure."
+                    )
+            else:
                 raise InitError("The resulting substructure is empty")
         else:
             # In some cases the extracted structure sequence is slightly different
