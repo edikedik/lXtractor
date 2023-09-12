@@ -49,7 +49,7 @@ class Ligand:
         contact_mask: np.ndarray,
         parent_contacts: np.ndarray,
         ligand_idx: np.ndarray,
-        dist: np.ndaray,
+        dist: np.ndarray,
         meta: dict[str, str] | None = None,
     ):
         if not len(parent) == len(mask) == len(contact_mask):
