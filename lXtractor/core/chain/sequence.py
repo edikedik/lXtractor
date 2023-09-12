@@ -197,6 +197,21 @@ class ChainSequence(lxs.Segment):
         self.meta[MetaNames.name] = self.name
         self.children: ChainList[ChainSequence] = _wrap_children(self.children)
 
+    def rename(self, name: str) -> Self:
+        """
+        Rename this sequence by modifying the :attr:`name`.
+
+        .. note::
+            This is a mutable operation. Returning a copy of this sequence upon
+            renaming will create two identical sequences with different IDs,
+            which is discouraged.
+
+        :param name: New name.
+        :return: The same sequence with a new name.
+        """
+        self.name = name
+        return self
+
     def map_numbering(
             self,
             other: str | tuple[str, str] | ChainSequence | Alignment,
