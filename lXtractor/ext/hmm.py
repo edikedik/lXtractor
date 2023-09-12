@@ -318,6 +318,10 @@ class Pfam(AbstractResource):
     and "HMM". Each row corresponds to a single model from Pfam-A collection
     and associated metadata taken from the Pfam-A.dat file. HMM models are
     wrapped into a :class:`PyHMMer` instance.
+
+    For quick access to a single HMM model parsed into :class:`PyHMMer`,
+    use ``Pfam()[hmm_id]``.
+
     """
 
     def __init__(
@@ -344,6 +348,13 @@ class Pfam(AbstractResource):
     def df(self, value: pd.DataFrame):
         self._validate_frame(value)
         self._df = value
+
+    def __getitem__(self, item: str) -> PyHMMer:
+        path = self.path / "parsed" / "hmm" / f"{item}.hmm.gz"
+        try:
+            return PyHMMer(path)
+        except FileNotFoundError:
+            raise KeyError(f"No HMM with ID {item} found in {path}")
 
     def fetch(
         self,
