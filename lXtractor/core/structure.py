@@ -18,7 +18,7 @@ from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
 from lXtractor.core.base import AminoAcidDict
-from lXtractor.core.config import LigandConfig, EMPTY_STRUCTURE_ID
+from lXtractor.core.config import LigandConfig, EMPTY_STRUCTURE_ID, StructureConfig
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
 from lXtractor.core.ligand import find_ligands, Ligand
 from lXtractor.util.structure import (
@@ -55,7 +55,7 @@ class GenericStructure:
         "_array_nuc_mask",
         "_array_car_mask",
         "_id",
-        "_ligand_cfg",
+        "_cfg",
     )
 
     def __init__(
@@ -63,7 +63,7 @@ class GenericStructure:
         array: bst.AtomArray,
         structure_id: str,
         ligands: bool | list[Ligand] = True,
-        ligand_cfg: LigandConfig = LigandConfig(),
+        cfg: StructureConfig = StructureConfig(),
     ):
         """
         :param array: Atom array object.
@@ -77,14 +77,14 @@ class GenericStructure:
         #: ID of a structure in `array`.
         self._structure_id: str = structure_id
 
+        self._cfg = cfg
+
         if isinstance(ligands, bool):
             _ligands = list(find_ligands(self)) if ligands else []
         else:
             _ligands = ligands
         #: A list of ligands
         self._ligands = _ligands
-        #: A config for ligand discovery
-        self._ligand_cfg = ligand_cfg
 
         self._array_polymer_mask = None
         self._array_solvent_mask = None
@@ -139,6 +139,10 @@ class GenericStructure:
             raise TypeError(f"New ID must have the `str` type. Got {type(value)}")
         self._structure_id = value
         self._id = self._make_id()
+
+    @property
+    def cfg(self) -> StructureConfig:
+        return self._cfg
 
     @property
     def array(self) -> bst.AtomArray:
@@ -251,7 +255,7 @@ class GenericStructure:
 
     @property
     def ligand_cfg(self) -> LigandConfig:
-        return self._ligand_cfg
+        return self._cfg.ligand_config
 
     @property
     def mask_ligands(self) -> np.ndarray:
@@ -332,7 +336,7 @@ class GenericStructure:
         path2id: abc.Callable[[Path], str] = lambda p: p.name.split(".")[0],
         structure_id: str = EMPTY_STRUCTURE_ID,
         ligands: bool = True,
-        ligand_cfg: LigandConfig = LigandConfig(),
+        cfg: StructureConfig = StructureConfig(),
         altloc: bool = False,
         **kwargs,
     ) -> Self:
@@ -354,7 +358,7 @@ class GenericStructure:
             not provided and the input is ``Path``, will use ``path2id`` to
             infer the ID. Otherwise, will use a constant placeholder.
         :param ligands: Search for ligands.
-        :param ligand_cfg: Parameters for ligand discovery.
+        :param cfg: General structure settings.
         :param altloc: Parse alternative locations and populate
             ``array.altloc_id`` attribute.
         :param kwargs: Passed to ``load_structure``.
@@ -372,7 +376,7 @@ class GenericStructure:
                 f"{inp} is likely an NMR structure. "
                 f"NMR structures are not supported."
             )
-        return cls(array, structure_id, ligands, ligand_cfg)
+        return cls(array, structure_id, ligands, cfg)
 
     @classmethod
     def make_empty(cls, structure_id: str = EMPTY_STRUCTURE_ID) -> Self:
@@ -402,7 +406,7 @@ class GenericStructure:
             array = array.copy()
 
         return self.__class__(
-            array, self.structure_id, len(self.ligands) > 0, self.ligand_cfg
+            array, self.structure_id, len(self.ligands) > 0, self.cfg
         )
 
     def get_protein_sequence(self) -> abc.Generator[tuple[str, str, int]]:
@@ -442,7 +446,7 @@ class GenericStructure:
         # Filter connected ligands
         ligands = list(
             filter(
-                lambda lig: lig.is_locally_connected(mask, self._ligand_cfg),
+                lambda lig: lig.is_locally_connected(mask, self.ligand_cfg),
                 self.ligands,
             )
         )

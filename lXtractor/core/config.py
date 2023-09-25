@@ -259,8 +259,6 @@ class _DumpNames:
     sequence: str = "sequence.tsv"
     meta: str = "meta.tsv"
     variables: str = "variables.tsv"
-    pdist_base_dir: str = "PDIST"
-    pdist_base_name: str = "pdist"
     segments_dir: str = "segments"
     structures_dir: str = "structures"
     structure_base_name: str = "structure"
@@ -322,7 +320,7 @@ class LigandConfig:
     """
 
     #: The distance thresholds for various bond types.
-    bond_thresholds = BondThresholds()
+    bond_thresholds: BondThresholds = BondThresholds()
     #: The min number of a ligand's atoms.
     min_atoms: int = 5
     #: The min number of a structure's atoms forming at least bonds
@@ -330,6 +328,15 @@ class LigandConfig:
     min_atom_connections: int = 5
     #: The min number of a structure's residues forming contact with a ligand.
     min_res_connections: int = 3
+
+
+@dataclass(frozen=True)
+class StructureConfig:
+    primary_pol_type: str = "peptide"
+    secondary_pol_types: tuple[str, ...] = ("pep", "nuc", "carb")
+    n_monomers: int = 3
+    ligand_config: LigandConfig = LigandConfig()
+    solvents: tuple[str, ...] = SOLVENTS
 
 
 DumpNames = _DumpNames()
