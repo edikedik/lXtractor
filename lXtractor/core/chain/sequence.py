@@ -213,12 +213,12 @@ class ChainSequence(lxs.Segment):
         return self
 
     def map_numbering(
-            self,
-            other: str | tuple[str, str] | ChainSequence | Alignment,
-            align_method: AlignMethod = mafft_align,
-            save: bool = True,
-            name: t.Optional[str] = None,
-            **kwargs,
+        self,
+        other: str | tuple[str, str] | ChainSequence | Alignment,
+        align_method: AlignMethod = mafft_align,
+        save: bool = True,
+        name: t.Optional[str] = None,
+        **kwargs,
     ) -> list[None | int]:
         """
         Map the :meth:`numbering`: of another sequence onto this one.
@@ -297,7 +297,7 @@ class ChainSequence(lxs.Segment):
         return mapped_numbering
 
     def map_boundaries(
-            self, start: Ord, end: Ord, map_name: str, closest: bool = False
+        self, start: Ord, end: Ord, map_name: str, closest: bool = False
     ) -> tuple[NamedTupleT, NamedTupleT]:
         """
         Map the provided boundaries onto sequence.
@@ -341,13 +341,13 @@ class ChainSequence(lxs.Segment):
         return _start, _end
 
     def relate(
-            self,
-            other: ChainSequence,
-            map_name: str,
-            link_name: str,
-            link_points_to: str = "i",
-            save: bool = True,
-            map_name_in_other: str | None = None,
+        self,
+        other: ChainSequence,
+        map_name: str,
+        link_name: str,
+        link_points_to: str = "i",
+        save: bool = True,
+        map_name_in_other: str | None = None,
     ) -> list[t.Any]:
         """
         Relate mapping from this sequence with `other` via some common
@@ -413,10 +413,10 @@ class ChainSequence(lxs.Segment):
         return mapped
 
     def coverage(
-            self,
-            map_names: abc.Sequence[str] | None = None,
-            save: bool = True,
-            prefix: str = "cov",
+        self,
+        map_names: abc.Sequence[str] | None = None,
+        save: bool = True,
+        prefix: str = "cov",
     ) -> dict[str, float]:
         """
         Calculate maps' coverage, i.e., the number of non-empty elements.
@@ -437,11 +437,11 @@ class ChainSequence(lxs.Segment):
         return cov
 
     def match(
-            self,
-            map_name1: str,
-            map_name2: str,
-            as_fraction: bool = True,
-            save: bool = True,
+        self,
+        map_name1: str,
+        map_name2: str,
+        as_fraction: bool = True,
+        save: bool = True,
     ) -> float:
         """
         :param map_name1: Mapping name 1.
@@ -458,7 +458,7 @@ class ChainSequence(lxs.Segment):
         return res
 
     def get_map(
-            self, key: str, to: str | None = None, rm_empty: bool = False
+        self, key: str, to: str | None = None, rm_empty: bool = False
     ) -> dict[t.Hashable, NamedTupleT]:
         """
         Obtain the mapping of the form "key->item(seq_name=*,...)".
@@ -507,7 +507,7 @@ class ChainSequence(lxs.Segment):
         return self.get_map(key)[value]
 
     def get_closest(
-            self, key: str, value: Ord, *, reverse: bool = False
+        self, key: str, value: Ord, *, reverse: bool = False
     ) -> t.Optional[NamedTupleT]:
         """
         Find the closest item for which item.key ``>=/<=`` value.
@@ -562,10 +562,10 @@ class ChainSequence(lxs.Segment):
         return self.as_df().values
 
     def as_chain(
-            self,
-            transfer_children: bool = True,
-            structures: abc.Sequence[ChainStructure] | None = None,
-            **kwargs,
+        self,
+        transfer_children: bool = True,
+        structures: abc.Sequence[ChainStructure] | None = None,
+        **kwargs,
     ) -> Chain:
         """
         Convert this chain sequence to chain.
@@ -594,16 +594,16 @@ class ChainSequence(lxs.Segment):
 
     # @lru_cache
     def spawn_child(
-            self,
-            start: int,
-            end: int,
-            name: str | None = None,
-            category: str | None = None,
-            *,
-            map_from: t.Optional[str] = None,
-            map_closest: bool = False,
-            deep_copy: bool = False,
-            keep: bool = True,
+        self,
+        start: int,
+        end: int,
+        name: str | None = None,
+        category: str | None = None,
+        *,
+        map_from: t.Optional[str] = None,
+        map_closest: bool = False,
+        deep_copy: bool = False,
+        keep: bool = True,
     ) -> ChainSequence:
         """
         Spawn the sub-sequence from the current instance.
@@ -700,7 +700,7 @@ class ChainSequence(lxs.Segment):
         )
 
     def filter_children(
-            self, pred: FilterT[ChainSequence], inplace: bool = False
+        self, pred: FilterT[ChainSequence], inplace: bool = False
     ) -> Self:
         """
         Filter children using some predicate.
@@ -726,12 +726,12 @@ class ChainSequence(lxs.Segment):
         )
 
     def apply_to_map(
-            self,
-            map_name: str,
-            fn: ApplyT[abc.Sequence],
-            inplace: bool = False,
-            preserve_children: bool = False,
-            apply_to_children: bool = False,
+        self,
+        map_name: str,
+        fn: ApplyT[abc.Sequence],
+        inplace: bool = False,
+        preserve_children: bool = False,
+        apply_to_children: bool = False,
     ) -> Self:
         """
         Apply some function to map/sequence in this chain sequence.
@@ -799,14 +799,14 @@ class ChainSequence(lxs.Segment):
 
     @classmethod
     def from_file(
-            cls,
-            inp: Path | TextIOBase | abc.Iterable[str],
-            reader: SeqReader = read_fasta,
-            start: t.Optional[int] = None,
-            end: t.Optional[int] = None,
-            name: t.Optional[str] = None,
-            meta: dict[str, t.Any] | None = None,
-            **kwargs,
+        cls,
+        inp: Path | TextIOBase | abc.Iterable[str],
+        reader: SeqReader = read_fasta,
+        start: t.Optional[int] = None,
+        end: t.Optional[int] = None,
+        name: t.Optional[str] = None,
+        meta: dict[str, t.Any] | None = None,
+        **kwargs,
     ) -> ChainSequence:
         """
         Initialize chain sequence from file.
@@ -842,13 +842,13 @@ class ChainSequence(lxs.Segment):
 
     @classmethod
     def from_string(
-            cls,
-            s: str,
-            start: t.Optional[int] = None,
-            end: t.Optional[int] = None,
-            name: t.Optional[str] = None,
-            meta: dict[str, t.Any] | None = None,
-            **kwargs,
+        cls,
+        s: str,
+        start: t.Optional[int] = None,
+        end: t.Optional[int] = None,
+        name: t.Optional[str] = None,
+        meta: dict[str, t.Any] | None = None,
+        **kwargs,
     ) -> ChainSequence:
         """
         Initialize chain sequence from string.
@@ -872,6 +872,25 @@ class ChainSequence(lxs.Segment):
         return cls(start, end, name, meta=meta, seqs={SeqNames.seq1: s, **kwargs})
 
     @classmethod
+    def from_tuple(
+        cls,
+        inp: tuple[str, str],
+        start: int | None = None,
+        end: int | None = None,
+        meta: dict[str, t.Any] | None = None,
+        **kwargs,
+    ):
+        name, s = inp
+        if len(s) == 0:
+            start = start or 0
+            end = end or 0
+            assert start == end
+        else:
+            start = start or 1
+            end = end or start + len(s) - 1
+        return cls(start, end, name, meta=meta, seqs={SeqNames.seq1: s, **kwargs})
+
+    @classmethod
     def make_empty(cls) -> ChainSequence:
         """
         :return: An empty chain sequence.
@@ -880,10 +899,10 @@ class ChainSequence(lxs.Segment):
 
     @classmethod
     def from_df(
-            cls,
-            df: Path | pd.DataFrame,
-            name: t.Optional[str] = None,
-            meta: dict[str, t.Any] | None = None,
+        cls,
+        df: Path | pd.DataFrame,
+        name: t.Optional[str] = None,
+        meta: dict[str, t.Any] | None = None,
     ) -> Self:
         """
         Init sequence from a data frame.
@@ -906,11 +925,11 @@ class ChainSequence(lxs.Segment):
 
     @classmethod
     def read(
-            cls,
-            base_dir: Path,
-            *,
-            dump_names: _DumpNames = DumpNames,
-            search_children: bool = False,
+        cls,
+        base_dir: Path,
+        *,
+        dump_names: _DumpNames = DumpNames,
+        search_children: bool = False,
     ) -> Self:
         """
         Initialize chain sequence from dump created using :meth:`write`.
@@ -988,11 +1007,11 @@ class ChainSequence(lxs.Segment):
         path.write_text("\n".join(items))
 
     def write(
-            self,
-            base_dir: Path,
-            *,
-            dump_names: _DumpNames = DumpNames,
-            write_children: bool = False,
+        self,
+        base_dir: Path,
+        *,
+        dump_names: _DumpNames = DumpNames,
+        write_children: bool = False,
     ):
         """
         Dump this chain sequence. Creates `sequence.tsv` and `meta.tsv`
@@ -1012,7 +1031,7 @@ class ChainSequence(lxs.Segment):
         if write_children:
             for child in self.children:
                 child_dir = (
-                        base_dir / dump_names.segments_dir / (child.name or UNK_NAME)
+                    base_dir / dump_names.segments_dir / (child.name or UNK_NAME)
                 )
                 child.write(
                     child_dir, dump_names=dump_names, write_children=write_children
@@ -1036,18 +1055,18 @@ class ChainSequence(lxs.Segment):
 
 
 def _map_numbering(
-        pair: tuple[ChainSequence, str | tuple[str, str] | ChainSequence | Alignment]
+    pair: tuple[ChainSequence, str | tuple[str, str] | ChainSequence | Alignment]
 ) -> list[None | int]:
     seq, obj = pair
     return seq.map_numbering(obj, save=False, align_method=biotite_align)
 
 
 def map_numbering_12many(
-        obj_to_map: str | tuple[str, str] | ChainSequence | Alignment,
-        seqs: abc.Iterable[ChainSequence],
-        num_proc: int = 1,
-        verbose: bool = False,
-        **kwargs
+    obj_to_map: str | tuple[str, str] | ChainSequence | Alignment,
+    seqs: abc.Iterable[ChainSequence],
+    num_proc: int = 1,
+    verbose: bool = False,
+    **kwargs,
 ) -> abc.Iterator[list[int | None]]:
     """
     Map numbering of a single sequence to many other sequences.
@@ -1072,11 +1091,11 @@ def map_numbering_12many(
 
 
 def map_numbering_many2many(
-        objs_to_map: abc.Sequence[str | tuple[str, str] | ChainSequence | Alignment],
-        seq_groups: abc.Sequence[abc.Sequence[ChainSequence]],
-        num_proc: int = 1,
-        verbose: bool = False,
-        **kwargs,
+    objs_to_map: abc.Sequence[str | tuple[str, str] | ChainSequence | Alignment],
+    seq_groups: abc.Sequence[abc.Sequence[ChainSequence]],
+    num_proc: int = 1,
+    verbose: bool = False,
+    **kwargs,
 ) -> abc.Iterator[list[list[int | None]]]:
     """
     Map numbering of each object `o` in `objs_to_map` to each sequence

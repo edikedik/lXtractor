@@ -460,8 +460,8 @@ class ClosestLigandContactsCount(StructureVariable):
                 lig_contacts = lig.parent_contacts[mask]
             except IndexError as e:
                 raise FailedCalculation(
-                    f"Failed to apply obtained position mask derived from {obj._structure_id} "
-                    f"to a ligand {lig.res_name} ({lig.parent._structure_id}) parent contacts"
+                    f"Failed to apply obtained position mask derived from {obj._name} "
+                    f"to a ligand {lig.res_name} ({lig.parent._name}) parent contacts"
                 ) from e
             n_contacts += np.sum(lig_contacts != 0)
         return n_contacts
@@ -499,8 +499,8 @@ class ClosestLigandNames(StructureVariable):
                     names.append(lig.res_name)
             except IndexError as e:
                 raise FailedCalculation(
-                    f"Failed to apply obtained position mask derived from {obj._structure_id} "
-                    f"to a ligand {lig.res_name} ({lig.parent._structure_id}) parent contacts"
+                    f"Failed to apply obtained position mask derived from {obj._name} "
+                    f"to a ligand {lig.res_name} ({lig.parent._name}) parent contacts"
                 ) from e
         return ",".join(names)
 

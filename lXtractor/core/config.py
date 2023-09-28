@@ -6,6 +6,7 @@ from __future__ import annotations
 import typing as t
 from collections import namedtuple
 from dataclasses import dataclass
+from enum import IntFlag
 
 Bounds = t.NamedTuple("Bounds", [("lower", float), ("upper", float)])
 Separators = namedtuple(
@@ -114,6 +115,9 @@ SOLVENTS = (
     "TMA",
     "TRS",
     "UNX",
+)
+NUCLEOTIDES = (
+    'DA', 'DT', 'DC', 'DG', 'A', 'C', 'T', 'G', 'U'
 )
 MetaColumns = (
     # Taken from https://bioservices.readthedocs.io/en/main/_modules/bioservices/uniprot.html#UniProt
@@ -330,13 +334,48 @@ class LigandConfig:
     min_res_connections: int = 3
 
 
-@dataclass(frozen=True)
+class AtomMark(IntFlag):
+    """
+    The atom categories. Some categories may be combined, e.g., LIGAND | PEP
+    is another valid category denoting ligand peptide atoms.
+    """
+    #: Unknown atom.
+    UNK: int = 1
+    #: Solvent atom.
+    SOLVENT: int = 2
+    #: Ligand atom. If not combined with PEP, NUC, or CARB, this category
+    #: denotes non-polymer (small molecule) single-residue ligands.
+    LIGAND: int = 4
+    #: Peptide polymer atoms.
+    PEP: int = 8
+    #: Nucleotide polymer atoms.
+    NUC: int = 16
+    #: Carbohydrate polymer atoms.
+    CARB: int = 32
+
+
+@dataclass(frozen=False)
 class StructureConfig:
-    primary_pol_type: str = "peptide"
-    secondary_pol_types: tuple[str, ...] = ("pep", "nuc", "carb")
-    n_monomers: int = 3
+    """
+    Structure configuration parameters. Needed to initialize
+    :class:`lXtractor.core.structure.GenericStructure` objects.
+
+    """
+    #: A primary polymer type. "auto" will determine the primary polymer type
+    #: as the one having the most atoms. Other valid values are "carbohydrate",
+    #: "nucleotide", or "peptide". Abbreviations ("c", "n", or "p") are
+    #: supported.
+    primary_pol_type: str = "auto"
+    #: Which polymer types can also be ligands.
+    ligand_pol_types: tuple[str, ...] = ("c", "n", "p")
+    #: The number of monomers to consider a polymeric entity a polymer.
+    n_monomers: int = 2
+    #: The ligand configuration parameters.
     ligand_config: LigandConfig = LigandConfig()
+    #: The list of solvent three-letter codes.
     solvents: tuple[str, ...] = SOLVENTS
+    #: Atom marks (types/categories).
+    marks: AtomMark = AtomMark
 
 
 DumpNames = _DumpNames()

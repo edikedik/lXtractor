@@ -59,7 +59,7 @@ class PDB_Chain:
 def _validate_chain(structure: GenericStructure):
     if structure.is_empty or structure.is_singleton:
         return
-    chains = structure.chain_ids_poly_peptide
+    chains = structure.chain_ids_polymer
     if len(chains) > 1:
         raise InitError(
             f"The structure {structure} must contain a single "
@@ -112,7 +112,7 @@ def _get_chain_id(structure: GenericStructure):
 
 
 def _str2seq(structure: GenericStructure):
-    str_seq = list(structure.get_protein_sequence())
+    str_seq = list(structure.get_sequence())
     if not str_seq:
         return ChainSequence.make_empty()
 
@@ -124,7 +124,7 @@ def _str2seq(structure: GenericStructure):
     chain_id = _get_chain_id(structure)
     return ChainSequence.from_string(
         "".join(seq1),
-        name=f"{structure.structure_id}{Sep.chain}{chain_id}",
+        name=f"{structure.name}{Sep.chain}{chain_id}",
         **seqs,  # type: ignore  # Fails to recognize kwargs
     )
 
@@ -227,7 +227,7 @@ class ChainStructure:
 
         self._id = self._make_id()
 
-        self.seq.meta[MetaNames.structure_id] = structure.structure_id
+        self.seq.meta[MetaNames.structure_id] = structure.name
         self.seq.meta[MetaNames.structure_chain_id] = chain_id
         self.seq.meta[MetaNames.altloc] = self.altloc
 
@@ -390,7 +390,7 @@ class ChainStructure:
     # def from_structure(
     #     cls,
     #     structure: bst.AtomArray | GenericStructure,
-    #     structure_id: str | None = None,
+    #     name: str | None = None,
     #     chain_id: str | None = None,
     #     **kwargs,
     # ) -> ChainStructure:
@@ -398,10 +398,10 @@ class ChainStructure:
     #     """
     #     :param structure: An `AtomArray` or `GenericStructure`,
     #         corresponding to a single protein chain.
-    #     :param structure_id: ID of the provided structure.
+    #     :param name: ID of the provided structure.
     #     :param chain_id: Chain identifier. If not provided, will take the first
     #         atom's chain ID from the provided structure.
-    #     :param kwargs: Passed to initializer. Avoid using `_structure_id`, `chain_id`,
+    #     :param kwargs: Passed to initializer. Avoid using `_name`, `chain_id`,
     #         or `structure` since they are supplied internally within this
     #         method.
     #     :return: Initialized chain structure.
@@ -550,7 +550,7 @@ class ChainStructure:
             other = ChainStructure(
                 other.structure,
                 other.chain_id,
-                other.structure.structure_id,
+                other.structure.name,
                 other.seq,
                 other.parent,
                 other.children,
@@ -576,7 +576,7 @@ class ChainStructure:
         keep: bool = True,
         deep_copy: bool = False,
         tolerate_failure: bool = False,
-        silent: bool = False
+        silent: bool = False,
     ) -> ChainStructure:
         """
         Create a sub-structure from this one.
@@ -620,14 +620,14 @@ class ChainStructure:
 
         enum_field = seq.field_names().enum
         start, end = seq[enum_field][0], seq[enum_field][-1]
-        structure = self.structure.extract_segment(start, end)
+        structure = self.structure.extract_segment(start, end, self.chain_id)
 
         if structure.is_empty or structure.is_empty_polymer:
             if tolerate_failure:
                 if not silent:
                     LOGGER.warning(
-                        f"Extracting structure segment using boundaries ({start}, {end}) "
-                        f"yielded an empty structure."
+                        f"Extracting structure segment using boundaries "
+                        f"({start}, {end}) yielded an empty structure."
                     )
             else:
                 raise InitError("The resulting substructure is empty")
@@ -637,7 +637,7 @@ class ChainStructure:
             # disjoint residue and therefore not treated as a part of a polymer).
             # To be safe, we adjust spawned segment boundaries to avoid mismatched
             # primary sequences in polymeric peptide and extracted segment.
-            a = structure.array_poly_peptide
+            a = structure.array[structure.mask.primary_polymer]
             if len(a) == 0:
                 a = structure.array
             enum2segment = seq.get_map(enum_field, "i")
@@ -652,7 +652,7 @@ class ChainStructure:
             seq = seq[seq_start:seq_end]
 
         child = ChainStructure(
-            structure, self.chain_id, self.structure.structure_id, seq=seq, parent=self
+            structure, self.chain_id, self.structure.name, seq=seq, parent=self
         )
         if keep:
             self.children.append(child)

@@ -53,7 +53,7 @@ def test_chainio(simple_structure, simple_chain_seq):
         assert len(objs) == 1
         s_r = objs.pop()
         assert s_r.id == struc.id
-        assert s_r.structure.structure_id == struc.structure.structure_id
+        assert s_r.structure.name == struc.structure.name
         assert s_r.chain_id == struc.chain_id
         assert s_r.structure is not None
         assert s_r.seq.seq1 == struc._seq.seq1

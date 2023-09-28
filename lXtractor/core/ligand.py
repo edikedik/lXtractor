@@ -3,12 +3,14 @@ from __future__ import annotations
 import typing as t
 from collections import abc
 
-import biotite.structure as bst
 import numpy as np
 import pandas as pd
+from biotite import structure as bst
+from numpy import typing as npt
 
 from lXtractor.core.config import MetaNames, LigandConfig
 from lXtractor.core.exceptions import FormatError
+from lXtractor.util import find_polymer_type
 from lXtractor.util.structure import (
     filter_ligand,
     iter_residue_masks,
@@ -42,6 +44,17 @@ class Ligand:
     ``{res_name}_{res_id}:{chain_id}<-({parent})``.
     """
 
+    __slots__ = (
+        "is_polymer",
+        "parent",
+        "mask",
+        "contact_mask",
+        "parent_contacts",
+        "ligand_idx",
+        "dist",
+        "meta",
+    )
+
     def __init__(
         self,
         parent: GenericStructure,
@@ -68,6 +81,9 @@ class Ligand:
             raise FormatError(
                 "Ligand must have at least one contact atom in parent structure. Got 0."
             )
+        for k in [MetaNames.res_name, MetaNames.res_id, MetaNames.structure_chain_id]:
+            if k not in meta:
+                raise KeyError(f"Missing required key {k} in meta.")
         ligand_atoms = parent.array[mask]
         ligand_chains = set(ligand_atoms.chain_id)
         ligand_resnames = set(ligand_atoms.res_name)
@@ -76,14 +92,7 @@ class Ligand:
             raise FormatError(
                 f"Ligand atoms point to more than one chain: {ligand_chains}"
             )
-        if len(ligand_resnames) > 1:
-            raise FormatError(
-                f"Ligand atoms point to more than one ligand res name {ligand_resnames}"
-            )
-        if len(ligand_res_ids) > 1:
-            raise FormatError(
-                f"Ligand atoms point to more than one ligand res id {ligand_res_ids}"
-            )
+        self.is_polymer = len(ligand_resnames) > 1 or len(ligand_res_ids) > 1
 
         #: Parent structure.
         self.parent: GenericStructure = parent
@@ -146,21 +155,21 @@ class Ligand:
         """
         :return: Ligand chain ID.
         """
-        return self.array.chain_id[0]
+        return self.meta[MetaNames.structure_chain_id]
 
     @property
     def res_name(self) -> str:
         """
         :return: Ligand residue name.
         """
-        return self.array.res_name[0]
+        return self.meta[MetaNames.res_name]
 
     @property
-    def res_id(self) -> int:
+    def res_id(self) -> str:
         """
         :return: Ligand residue number.
         """
-        return self.array.res_id[0]
+        return self.meta[MetaNames.res_id]
 
     def is_locally_connected(self, mask: np.ndarray, cfg=LigandConfig()) -> bool:
         """
@@ -232,8 +241,9 @@ def find_ligands(
             continue
 
         contacts, dist, ligand_idx = find_contacts(a, m_ligand, cfg.bond_thresholds)
-        contacts[is_ligand | is_solvent] = 0
-        m_contacts = contacts != 0
+        parent_contacts = contacts.copy()
+        parent_contacts[is_ligand | is_solvent] = 0
+        m_contacts = parent_contacts != 0
 
         # The number of residues connected to a ligand
         num_residues = bst.get_residue_count(a[m_contacts])
@@ -252,6 +262,60 @@ def find_ligands(
         }
 
         yield Ligand(structure, m_ligand, m_contacts, contacts, ligand_idx, dist, meta)
+
+
+def make_ligand(
+    m_lig: npt.NDArray[np.bool_],
+    m_pol: npt.NDArray[np.bool_],
+    structure: GenericStructure,
+) -> Ligand | None:
+    a, cfg = structure.array, structure.cfg
+
+    if m_lig.sum() < cfg.ligand_config.min_atoms:
+        return None
+
+    lig_chains = bst.get_chains(a[m_lig])
+    if len(lig_chains) != 1:
+        raise RuntimeError(
+            f"Ligand must correspond to a single chain. "
+            f"Found {len(lig_chains)}: {lig_chains}."
+        )
+
+    contacts, dist, ligand_idx = find_contacts(
+        a, m_lig, cfg.ligand_config.bond_thresholds
+    )
+    m_cont = contacts != 0
+
+    # The number of residues connected to a ligand
+    num_residues = bst.get_residue_count(a[m_cont & m_pol])
+
+    if (
+        np.sum(m_cont & m_pol) < cfg.ligand_config.min_atom_connections
+        or num_residues < cfg.ligand_config.min_res_connections
+    ):
+        return None
+
+    lig_num_residues = bst.get_residue_count(a[m_lig])
+    if lig_num_residues == 1:
+        name, res_id = a[m_lig].res_name[0], a[m_lig].res_id[0]
+    elif lig_num_residues > 1:
+        _, lig_poly_type = find_polymer_type(a[m_lig])
+        if lig_poly_type == "x":
+            raise RuntimeError(
+                "Expected a polymer ligand but could not determine the polymer type"
+            )
+        name = f"{lig_poly_type}{lig_num_residues}"
+        res_id = f"{a[m_lig].res_id[0]}-{a[m_lig].res_id[-1]}"
+    else:
+        raise RuntimeError("Zero residues in a putative ligand")
+
+    meta = {
+        MetaNames.res_name: name,
+        MetaNames.res_id: res_id,
+        MetaNames.structure_chain_id: lig_chains[0],
+    }
+
+    return Ligand(structure, m_lig, m_cont, contacts, ligand_idx, dist, meta)
 
 
 if __name__ == "__main__":

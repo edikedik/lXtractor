@@ -49,7 +49,7 @@ def sample_chain(prefix: str = 'c', structure: t.Optional[ChainStructure] = None
 
 
 def get_fst_chain(s: GenericStructure) -> ChainStructure:
-    return ChainStructure(next(s.split_chains()), s.structure_id)
+    return ChainStructure(next(s.split_chains()), s.name)
 
 
 def mark_meta(s: ChainStructure) -> ChainStructure:

@@ -16,9 +16,14 @@ import biotite.structure as bst
 import biotite.structure.info as bstinfo
 import biotite.structure.io as bstio
 import numpy as np
-from more_itertools import unzip, windowed
+from more_itertools import unzip, windowed, mark_ends, triplewise
 
-from lXtractor.core.config import SOLVENTS, BondThresholds, STRUCTURE_FMT
+from lXtractor.core.config import (
+    SOLVENTS,
+    BondThresholds,
+    STRUCTURE_FMT,
+    NUCLEOTIDES,
+)
 from lXtractor.core.exceptions import LengthMismatch, MissingData, FormatError
 from lXtractor.util.io import parse_suffix
 from lXtractor.util.typing import is_sequence_of
@@ -31,6 +36,7 @@ __all__ = (
     "filter_any_polymer",
     "filter_solvent_extended",
     "filter_to_common_atoms",
+    "find_polymer_type",
     "find_contacts",
     "iter_canonical",
     "iter_residue_masks",
@@ -158,7 +164,7 @@ def filter_to_common_atoms(
     """
 
     def preprocess_array(a: bst.AtomArray) -> tuple[int, bst.AtomArray]:
-        return bst.get_residue_count(a), bst.residue_iter(a)
+        return get_residue_count(a), bst.residue_iter(a)
 
     def process_pair(
         r1: bst.AtomArray, r2: bst.AtomArray
@@ -212,7 +218,7 @@ def _is_polymer(array, min_size, pol_type):
         raise ValueError(f"Unsupported polymer type {pol_type}")
 
     mask = filt_fn(array)
-    return bst.get_residue_count(array[mask]) >= min_size
+    return get_residue_count(array[mask]) >= min_size
 
 
 def _split_array(a: bst.AtomArray, idx: abc.Iterable[int]):
@@ -221,17 +227,56 @@ def _split_array(a: bst.AtomArray, idx: abc.Iterable[int]):
         yield a[i:j]
 
 
-def filter_polymer(a, min_size=2, pol_type="peptide"):
-    # TODO: make a PR
+def _check_pair(a1, a2):
+    (a1, is_pol1), (a2, is_pol2) = a1, a2
+    chains_a1, chains_a2 = map(bst.get_chains, [a1, a2])
+    return (
+        is_pol1
+        and is_pol2
+        and len(chains_a1) == 1
+        and len(chains_a2) == 1
+        and chains_a1[0] == chains_a2[0]
+        and a1[-1].res_id < a2[0].res_id
+    )
+
+
+def _check_poly_triplet_mid(
+    is_first: bool,
+    is_last: bool,
+    triplet: tuple[
+        tuple[bst.AtomArray, bool],
+        tuple[bst.AtomArray, bool],
+        tuple[bst.AtomArray, bool],
+    ],
+):
+    fst, mid, lst = triplet
+    if mid[1]:
+        return True
+    if is_first:
+        return _check_pair(fst, mid)
+    if is_last:
+        return _check_pair(mid, lst)
+    return _check_pair(fst, mid) and _check_pair(mid, lst)
+
+
+def filter_polymer(a, min_size=2, pol_type="peptide", stitch: bool = True):
     """
     Filter for atoms that are a part of a consecutive standard macromolecular
     polymer entity.
+
+    If `stitch` is ``True``, it will handle cases, where polymer of the same
+    type but smaller size is bordered by confirmed polymer(s). For instance,
+    if the polymer chain is disjoint, and there is a single residue separating
+    the disjoint parts (``POL1---RES---POL2```), this residue will be considered
+    as a part of a polymer, too (if its in the same chain and the residue
+    numbering is consistent).
 
     :param a: The array to filter.
     :param min_size: The minimum number of monomers.
     :param pol_type: The polymer type, either ``"peptide"``, ``"nucleotide"``,
         or ``"carbohydrate"``. Abbreviations are supported: ``"p"``, ``"pep"``,
         ``"n"``, etc.
+    :param stitch: Stitch together disjoint polymer pieces.
     :return: This array is `True` for all indices in `array`, where atoms
         belong to consecutive polymer entity having at least `min_size` monomers.
     """
@@ -239,24 +284,52 @@ def filter_polymer(a, min_size=2, pol_type="peptide"):
     res_breaks = bst.check_res_id_continuity(a)
     bb_breaks = bst.check_backbone_continuity(a)
     het_breaks = check_het_continuity(a)
-    pep_breaks = check_polymer_continuity(a, "p")
-    nuc_breaks = check_polymer_continuity(a, "n")
-    car_breaks = check_polymer_continuity(a, "c")
+    pol_breaks = check_polymer_continuity(a, pol_type[0])
+    # pep_breaks = check_polymer_continuity(a, "p")
+    # nuc_breaks = check_polymer_continuity(a, "n")
+    # car_breaks = check_polymer_continuity(a, "c")
     if len(het_breaks) != 0:
         # take only het tail to avoid including modified residues
         het_breaks = het_breaks[-1:]
 
     breaks = np.concatenate(
-        [res_breaks, bb_breaks, het_breaks, pep_breaks, nuc_breaks, car_breaks]
+        [res_breaks, bb_breaks, het_breaks, pol_breaks]
     )
     split_idx = np.sort(np.unique(breaks))
 
     check_pol = partial(_is_polymer, min_size=min_size, pol_type=pol_type)
-    bool_idx = map(
-        lambda x: np.full(len(x), check_pol(x), dtype=bool),
-        _split_array(a, split_idx),
-    )
-    return np.concatenate(list(bool_idx))
+    check_pol_mid = partial(_is_polymer, min_size=1, pol_type=pol_type)
+    chunks = [(x, check_pol(x)) for x in _split_array(a, split_idx)]
+
+    if stitch:
+        if len(chunks) == 1:
+            bool_idx = [np.full(len(chunks[0][0]), chunks[0][1], dtype=np.bool_)]
+        elif len(chunks) == 2:
+            fst, lst = chunks
+            if _check_pair(fst, lst):
+                bool_idx = [
+                    np.full(len(fst[0]), True, dtype=np.bool_),
+                    np.full(len(lst[0]), True, dtype=np.bool_),
+                ]
+            else:
+                bool_idx = [np.full(len(x[0]), x[1], dtype=np.bool_) for x in chunks]
+        else:
+            bool_idx = []
+            for is_first, is_last, triplet in mark_ends(triplewise(chunks)):
+                fst, mid, lst = triplet
+                triplet = fst, (mid[0], check_pol_mid(mid[0])), lst
+                if is_first:
+                    bool_idx.append(np.full(len(fst[0]), fst[1], dtype=np.bool_))
+
+                mid_valid = _check_poly_triplet_mid(is_first, is_last, triplet)
+                bool_idx.append(np.full(len(mid[0]), mid_valid, dtype=np.bool_))
+
+                if is_last:
+                    bool_idx.append(np.full(len(lst[0]), lst[1], dtype=np.bool_))
+    else:
+        bool_idx = [np.full(len(x[0]), x[1], dtype=np.bool_) for x in chunks]
+
+    return np.concatenate(bool_idx)
 
 
 def filter_any_polymer(a: bst.AtomArray, min_size: int = 2) -> np.ndarray:
@@ -273,20 +346,26 @@ def filter_any_polymer(a: bst.AtomArray, min_size: int = 2) -> np.ndarray:
     )
 
 
-def filter_solvent_extended(a: bst.AtomArray) -> np.ndarray:
+def filter_solvent_extended(
+    a: bst.AtomArray,
+    solvents: abc.Sequence[str] = SOLVENTS,
+    nucleotides: abc.Sequence[str] = NUCLEOTIDES,
+) -> np.ndarray:
     """
     Filter for solvent atoms using a curated solvent list including non-water
     molecules typically being a part of a crystallization solution.
 
     :param a: Atom array.
+    :param solvents: A sequence of solvent residue three-letter codes.
+    :param nucleotides: A sequence of nucleotide residue codes.
     :return: A boolean mask ``True`` for solvent atoms.
     """
-    # TODO: should use size threshold to automatically exclude small ligands
     if len(a) == 0:
-        return np.empty(shape=0, dtype=bool)
+        return np.empty(shape=0, dtype=np.bool_)
     return (
-        np.isin(a.res_name, SOLVENTS)
+        np.isin(a.res_name, solvents)
         | (np.vectorize(len)(a.res_name) != 3)
+        & ~np.isin(a.res_name, nucleotides)
         # | (np.vectorize(len)(a.res_name) == 1)
     )
 
@@ -303,6 +382,36 @@ def filter_ligand(a: bst.AtomArray) -> np.ndarray:
     """
     # return ~(is_polymer | is_solvent) & a.hetero
     return ~(filter_any_polymer(a) | filter_solvent_extended(a))
+
+
+def find_polymer_type(
+    a: bst.AtomArray, min_size: int = 2, residues: bool = False
+) -> tuple[np.ndarray, str]:
+    """
+    Find the major polymer type, i.e., the one with the largest number of
+    atoms or monomers.
+
+    :param a: An arbitrary atom array.
+    :param min_size: Minimum number of monomers for a polymer.
+    :param residues: ``True`` if the dominant polymer should be picked according
+        to the number of residues. Otherwise, the number of atoms will be used.
+    :return: A binary mask pointing at the polymer atoms in `a` and the polymer
+        type -- "c" (carbohydrate), "n" (nucleotide), or "p" (peptide). If no
+        polymer atoms were found, polymer type will be designated as "x".
+    """
+    is_carb = filter_polymer(a, min_size, "c")
+    is_nuc = filter_polymer(a, min_size, "n")
+    is_pep = filter_polymer(a, min_size, "p")
+
+    is_pol, pol_type = max(
+        [(is_carb, "c"), (is_nuc, "n"), (is_pep, "p")],
+        key=(lambda x: get_residue_count(x[0]))
+        if residues
+        else (lambda x: x[0].sum()),
+    )
+    if np.any(is_pol):
+        return is_pol, pol_type
+    return is_pol, "x"
 
 
 def find_contacts(
@@ -377,6 +486,19 @@ def _exclude(a, names, elements):
     if elements:
         a = a[~np.isin(a.element, elements)]
     return a
+
+
+def get_residue_count(a: bst.AtomArray):
+    """
+    A simple wrapper around the original biotite `get_residue_count`
+    that handles an empty `a` properly.
+
+    :param a: An Atom Array.
+    :return: The number of distinct residues in `a`.
+    """
+    if len(a) == 0:
+        return 0
+    return bst.get_residue_count(a)
 
 
 def get_missing_atoms(

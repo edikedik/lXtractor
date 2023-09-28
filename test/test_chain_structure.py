@@ -130,14 +130,14 @@ def test_io(test_structure, fmt):
         s_r = ChainStructure.read(tmp, search_children=True)
         assert s_r.seq is not None
         assert s_r.structure is not None
-        assert s_r.structure.structure_id == s.structure.structure_id
+        assert s_r.structure.name == s.structure.name
         assert s_r.chain_id == s.chain_id
 
         assert len(s_r.children) == 1
         s_r_child = s_r.children.pop()
         assert not s_r_child.seq.children
         assert (
-            s_r_child.seq.meta[MetaNames.structure_id] == child1.structure.structure_id
+            s_r_child.seq.meta[MetaNames.structure_id] == child1.structure.name
         )
         assert s_r_child.seq.meta[MetaNames.structure_chain_id] == child1.chain_id
 
@@ -147,7 +147,7 @@ def test_superpose(test_structure):
 
     superposed, rmsd, _ = s.superpose(s)
     assert rmsd < EPS
-    assert f"rmsd_{test_structure.structure.structure_id}:A" in superposed.seq.meta
+    assert f"rmsd_{test_structure.structure.name}:A" in superposed.seq.meta
 
     _, rmsd, _ = s.superpose(s, [1])
     assert rmsd < EPS
