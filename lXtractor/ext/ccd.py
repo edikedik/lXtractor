@@ -114,18 +114,17 @@ def _parse_entry(data: list[str]):
 
 class CCD(AbstractResource):
     """
-    Chemical Component Dictionary resource.
+    `Chemical Component Dictionary resource <https://www.wwpdb.org/data/ccd>`_.
 
     CCD is represented as a dictionary, where keys are PDB three-letter codes
     and values are also dictionaries, where keys are CCD groups (e.g.,
     "_chem_comp") that point to :class:`Field` objects.
 
-    On the first use, one has to download and parse CCD data. For this, please
-    invoke:
+    On the first use, one has to download and parse the CCD data:
 
-    # >>> ccd = CCD()
-    # >>> ccd.fetch();
-    # >>> ccd.parse();
+    >>> ccd = CCD()
+    >>> ccd.fetch();
+    >>> ccd.parse();
 
     This will fetch, parse, and store the resource locally as a single `msgpack`
     serialized file. These data will be automatically loaded upon future
