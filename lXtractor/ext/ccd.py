@@ -19,6 +19,10 @@ LOGGER = logging.getLogger(__name__)
 RESOURCES = Path(__file__).parent.parent / "resources"
 RAW_CCD_NAME = "components.cif.gz"
 PARSED_CCD_NAME = "CCD.msgpack"
+MISSING_MSG = (
+    "No parsed entries. Use `fetch` to obtain raw data and `parse` "
+    "to parse and store the data."
+)
 URL = "https://files.wwpdb.org/pub/pdb/data/monomers/components.cif.gz"
 KV_PATTERN = re.compile(r"(_\w+)\.(\w+)\s+((?:[^;\n]+|;[\s\S]+?;)\s*)")
 
@@ -27,6 +31,7 @@ class Field(UserDict):
     """
     A straightforward ``dict`` extension with additional representation methods.
     """
+
     def as_df(self):
         try:
             val = next(iter(self.values()))
@@ -36,6 +41,9 @@ class Field(UserDict):
         if isinstance(val, str):
             d = valmap(lambda x: [x], d)
         return pd.DataFrame(d)
+
+
+CCD_T = dict[str, dict[str, Field]]
 
 
 def _wrap_fields(entries):
@@ -112,7 +120,7 @@ def _parse_entry(data: list[str]):
     return entry_id, parsed_splits
 
 
-class CCD(AbstractResource):
+class CCD(AbstractResource, UserDict[str, dict[str, Field]]):
     """
     `Chemical Component Dictionary resource <https://www.wwpdb.org/data/ccd>`_.
 
@@ -146,16 +154,11 @@ class CCD(AbstractResource):
         resource_name: str | None = "CCD",
         read_entries: bool = True,
     ):
-        super().__init__(resource_path, resource_name)
+        AbstractResource.__init__(self, resource_path, resource_name)
+        UserDict.__init__(self)
 
-        self.entries: dict[str, dict[str, Field]] | None = None
         if read_entries and self.path.exists():
             self.read()
-
-    def __getitem__(self, item: str) -> dict[str, Field]:
-        if self.entries is None:
-            raise MissingData("No parsed entries to access")
-        return self.entries[item]
 
     def fetch(self, url: str = URL, overwrite: bool = False) -> Path:
         raw_path = RESOURCES / RAW_CCD_NAME
@@ -174,7 +177,7 @@ class CCD(AbstractResource):
         overwrite: bool = False,
         store_to_resources: bool = True,
         rm_raw: bool = True,
-    ):
+    ) -> CCD_T:
         if self.path.exists() and store_to_resources and not overwrite:
             raise RuntimeError(
                 "Resources was parsed. Pass overwrite if you want to overwrite."
@@ -185,7 +188,7 @@ class CCD(AbstractResource):
         with gzip.open(path, "rt", encoding="utf-8") as f:
             lines = filter(bool, map(lambda x: x.removesuffix("\n"), f))
             splits = list(split_before(lines, lambda x: x.startswith("data_")))
-            self.entries = dict(map(_parse_entry, splits))
+            self.data = dict(map(_parse_entry, splits))
 
         if store_to_resources:
             self.dump(self.path)
@@ -193,27 +196,25 @@ class CCD(AbstractResource):
         if rm_raw:
             os.remove(path)
 
-        return self.entries
+        return self.data
 
-    def dump(self, path: Path):
-        if self.entries is None:
+    def dump(self, path: Path) -> Path:
+        if self.data is None:
             raise MissingData("No entries to save")
-        packed = msgpack.packb(_unwrap_fields(self.entries))
+        packed = msgpack.packb(_unwrap_fields(self.data))
         with self.path.open("wb") as f:
             f.write(packed)
             LOGGER.info(f"Stored parsed resource to {self.path}")
+        return path
 
-    def read(self):
+    def read(self) -> CCD_T:
         if not self.path.exists():
-            raise MissingData(
-                "No parsed entries to read. Use `fetch` to obtain raw data and "
-                "`parse` to parse and store the data."
-            )
+            raise MissingData(MISSING_MSG)
         with self.path.open("rb") as f:
             unpacker = msgpack.Unpacker(f)
-            self.entries = _wrap_fields(unpacker.unpack())
+            self.data = _wrap_fields(unpacker.unpack())
 
-        return self.entries
+        return self.data
 
 
 if __name__ == "__main__":
