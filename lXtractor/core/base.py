@@ -71,6 +71,10 @@ class AbstractResource(metaclass=ABCMeta):
     """
 
     def __init__(self, resource_path: str | Path, resource_name: str | None):
+        """
+        :param resource_path: Path to parsed resource data.
+        :param resource_name: Resource's name.
+        """
         self.name = resource_name
         self.path = resource_path
 
