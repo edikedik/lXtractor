@@ -17,7 +17,7 @@ from typing_extensions import Self
 import lXtractor.core.segment as lxs
 from lXtractor.core.alignment import Alignment
 from lXtractor.core.base import (
-    AminoAcidDict,
+    ResNameDict,
     AlignMethod,
     Ord,
     NamedTupleT,
@@ -162,7 +162,7 @@ class ChainSequence(lxs.Segment):
                 raise MissingData(
                     "Attempted to construct seq3 from seq1 but the latter is missing."
                 ) from e
-            mapping = AminoAcidDict()
+            mapping = ResNameDict()
             return [mapping[x] for x in seq1]
         return self[SeqNames.seq3]
 

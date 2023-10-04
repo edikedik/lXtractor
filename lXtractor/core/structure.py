@@ -19,7 +19,7 @@ from more_itertools import unique_everseen
 from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
-from lXtractor.core.base import AminoAcidDict
+from lXtractor.core.base import ResNameDict
 from lXtractor.core.config import (
     LigandConfig,
     EMPTY_STRUCTURE_ID,
@@ -39,6 +39,7 @@ from lXtractor.util.structure import (
 
 LOGGER = logging.getLogger(__name__)
 EMPTY_ALTLOC = ("", " ", ".")
+RES_DICT = ResNameDict()
 
 
 @dataclass(frozen=True)
@@ -148,9 +149,9 @@ class GenericStructure:
     def __eq__(self, other: t.Any) -> bool:
         if isinstance(other, GenericStructure):
             return (
-                    self._name == other._name
-                    and len(self) == len(other)
-                    and np.all(self.array == other.array)
+                self._name == other._name
+                and len(self) == len(other)
+                and np.all(self.array == other.array)
             )
         return False
 
@@ -374,29 +375,22 @@ class GenericStructure:
         if copy:
             array = array.copy()
 
-        return self.__class__(
-            array, self.name, len(self.ligands) > 0, cfg=self.cfg
-        )
+        return self.__class__(array, self.name, len(self.ligands) > 0, cfg=self.cfg)
 
     def get_sequence(self) -> abc.Generator[tuple[str, str, int]]:
         """
         :return: A tuple with (1) one-letter code, (2) three-letter code,
             (3) residue number of each residue in :meth:`array_polymer`.
         """
-        # TODO: rm specialization towards protein _seq
         if self.is_empty:
             return []
 
-        mapping = AminoAcidDict()
         m = self.mask.primary_polymer
         a = self.array if not any(m) else self.array[m]
-        for r in bst.residue_iter(a):
-            atom = r[0]
-            try:
-                one_letter_code = mapping.three21[atom.res_name]
-            except KeyError:
-                one_letter_code = "X"
-            yield one_letter_code, atom.res_name, atom.res_id
+        first_atoms = (r[0] for r in bst.residue_iter(a))
+        yield from (
+            (RES_DICT.get(a.res_name), a.res_name, a.res_id) for a in first_atoms
+        )
 
     def subset_with_ligands(
         self, mask: np.ndarray, transfer_meta: bool = True, copy: bool = False
@@ -691,7 +685,7 @@ class ProteinStructure(GenericStructure):
         ligands: bool | list[Ligand] = True,
         cfg: StructureConfig = StructureConfig(),
     ):
-        cfg.primary_pol_type = 'p'
+        cfg.primary_pol_type = "p"
         super().__init__(array, structure_id, ligands, cfg)
 
 
@@ -703,7 +697,7 @@ class NucleotideStructure(GenericStructure):
         ligands: bool | list[Ligand] = True,
         cfg: StructureConfig = StructureConfig(),
     ):
-        cfg.primary_pol_type = 'n'
+        cfg.primary_pol_type = "n"
         super().__init__(array, structure_id, ligands, cfg)
 
 
@@ -715,7 +709,7 @@ class CarbohydrateStructure(GenericStructure):
         ligands: bool | list[Ligand] = True,
         cfg: StructureConfig = StructureConfig(),
     ):
-        cfg.primary_pol_type = 'c'
+        cfg.primary_pol_type = "c"
         super().__init__(array, structure_id, ligands, cfg)
 
 
@@ -779,9 +773,7 @@ def mark_atoms(
                 ligands.append(lig)
 
     # Annotate polymer ligands
-    is_putative_lig = ~(is_pol | is_solv | (marks == AtomMark.LIGAND)) & (
-        is_any_pol
-    )
+    is_putative_lig = ~(is_pol | is_solv | (marks == AtomMark.LIGAND)) & (is_any_pol)
     pol_marks = {"c": AtomMark.CARB, "n": AtomMark.NUC, "p": AtomMark.PEP}
     if np.any(is_putative_lig):
         for c in bst.get_chains(a[is_putative_lig]):

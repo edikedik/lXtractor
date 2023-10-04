@@ -9,7 +9,7 @@ from pathlib import Path
 import msgpack
 import pandas as pd
 from more_itertools import split_at, split_before
-from toolz import valmap
+from toolz import valmap, valfilter
 
 from lXtractor.core.base import AbstractResource
 from lXtractor.core.exceptions import MissingData
@@ -215,6 +215,22 @@ class CCD(AbstractResource, UserDict[str, dict[str, Field]]):
             self.data = _wrap_fields(unpacker.unpack())
 
         return self.data
+
+    def make_res_name_map(self, store_to_resources: bool = True) -> dict[str, str]:
+        if self.data is None:
+            raise MissingData(MISSING_MSG)
+        m = {k: v["_chem_comp"]["one_letter_code"] for k, v in self.items()}
+        m = valfilter(lambda x: x != "?" and len(x) == 1, m)
+
+        if store_to_resources:
+            from lXtractor.core.base import ALL21
+
+            path = ALL21.absolute()
+            with path.open("wb") as f:
+                f.write(msgpack.packb(m))
+                LOGGER.info(f"Stored residue mapping to {path}")
+
+        return m
 
 
 if __name__ == "__main__":

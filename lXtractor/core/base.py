@@ -10,59 +10,39 @@ from io import TextIOBase
 from pathlib import Path
 from typing import runtime_checkable
 
+import msgpack
+
 T = t.TypeVar("T")
 _T = t.TypeVar("_T", contravariant=True)
 
-_Fetcher = t.Callable[[t.Iterable[str]], T]
-_Getter = t.Callable[[T, t.Sequence[str]], t.Sequence[str]]
+_Fetcher = abc.Callable[[abc.Iterable[str]], T]
+_Getter = abc.Callable[[T, abc.Sequence[str]], abc.Sequence[str]]
+_MapT = dict[int, int | None]
 
-_MapT = t.Dict[int, t.Optional[int]]
+ALL21 = Path(__file__).parent.parent / "resources" / "all21.msgpack"
 
 
-class AminoAcidDict(UserDict):
+class ResNameDict(UserDict):
     """
-    Provides mapping between 3->1 and 1->3-letter amino acid residue codes.
+    A dictionary providing mapping between PDB residue names and their
+    one-letter codes. The mapping was parsed from the CCD and can be obtained
+    by calling :meth:`lXtractor.ext.ccd.CCD.make_res_name_map`.
 
-    >>> d = AminoAcidDict(any_unk='X')
-    >>> assert d['A'] == 'ALA'
+    >>> d = ResNameDict()
     >>> assert d['ALA'] == 'A'
-    >>> assert d['XXX'] == 'X'
-    >>> assert d['X'] == 'UNK'
-    >>> assert d['CA'] == 'X'
 
     """
 
-    def __init__(
-        self, aa1_unk: str = "X", aa3_unk: str = "UNK", any_unk: str | None = None
-    ):
-        """
-        :param aa1_unk: Unknown character when mapping 3->1
-        :param aa3_unk: Unknown character when mapping 1->3
-        :param any_unk: Unknown character when a key doesn't
-            meet 1 or 3 length requirements.
-        """
+    def __init__(self):
+        from lXtractor.core.exceptions import MissingData
 
-        self.any_unk = any_unk
-        self.aa1_unk = aa1_unk
-        self.aa3_unk = aa3_unk
+        if not ALL21.exists():
+            raise MissingData(f"Missing parsed all-to-one mapping in {ALL21}")
 
-        from lXtractor.core.config import _AminoAcids
-
-        self.three21 = dict(_AminoAcids)
-        self.one23 = dict((x[1], x[0]) for x in _AminoAcids)
-
-        super().__init__(**self.three21, **self.one23)
-
-    def __getitem__(self, item: str) -> str:
-        if len(item) == 3:
-            return self.three21.get(item, self.aa1_unk)
-        if len(item) == 1:
-            return self.one23.get(item, self.aa3_unk)
-        if self.any_unk is not None:
-            return self.any_unk
-        raise KeyError(
-            f"Expected 3-sized or 1-sized item, " f"got {len(item)}-sized {item}"
-        )
+        with ALL21.open("rb") as f:
+            unpacker = msgpack.Unpacker(f)
+            all21 = unpacker.unpack()
+            super().__init__(all21)
 
 
 class AbstractResource(metaclass=ABCMeta):
