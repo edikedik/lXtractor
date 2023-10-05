@@ -622,7 +622,11 @@ class ChainStructure:
         start, end = seq[enum_field][0], seq[enum_field][-1]
         structure = self.structure.extract_segment(start, end, self.chain_id)
 
-        if structure.is_empty or structure.is_empty_polymer:
+        if (
+            structure.is_empty
+            or structure.is_empty_polymer
+            and not structure.is_singleton
+        ):
             if tolerate_failure:
                 if not silent:
                     LOGGER.warning(

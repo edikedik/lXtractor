@@ -49,7 +49,7 @@ def test_degenerate(simple_structure):
     assert len(s.mask.unk) == 0
 
     with pytest.raises(NoOverlap):
-        s.extract_segment(1, 1)
+        s.extract_segment(1, 1, "A")
     with pytest.raises(MissingData):
         _ = simple_structure.superpose(s)
     with pytest.raises(MissingData):
@@ -88,12 +88,14 @@ def test_split_altloc(inp):
 
 def test_sequence(simple_structure):
     seq = list(simple_structure.get_sequence())
-    seq_, _ = bst.get_residues(simple_structure.array_polymer)
+    seq_, _ = bst.get_residues(
+        simple_structure.array[simple_structure.mask.primary_polymer]
+    )
     assert len(seq) == len(seq_) == 129
 
 
 def test_subsetting(simple_structure):
-    sub = simple_structure.extract_segment(1, 2)
+    sub = simple_structure.extract_segment(1, 2, simple_structure.chain_ids[0])
     seq = list(sub.get_sequence())
     assert len(seq) == 2
 
@@ -182,12 +184,14 @@ def test_atom_marks_extracting(peptide_dna_complex):
     assert seg.mask.unk.sum() == 0
 
     s = NucleotideStructure.read(peptide_dna_complex)
-    seg = s.extract_segment(22, 29, "D")
+    seg = s.extract_segment(22, 30, "D")
     assert seg.chain_ids_polymer == ["D"]
     assert seg.chain_ids_ligand == ["A"]
     assert seg.mask.unk.sum() == 0
 
-    seg = seg.extract_positions([22, 23, 25, 27, 28, 29], "D")
-    assert seg.mask.unk.sum() == 0
+    # (!) No "stitch" mode implemented by default
+
+    # seg = seg.extract_positions([22, 23, 24, 26, 28, 29, 30], "D")
+    # assert seg.mask.unk.sum() == 0
     # Should recognize position 25 as part of the polymer
-    assert bst.get_residue_count(seg.array[seg.mask.primary_polymer]) == 6
+    # assert bst.get_residue_count(seg.array[seg.mask.primary_polymer]) == 7

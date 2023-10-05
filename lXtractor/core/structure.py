@@ -35,6 +35,7 @@ from lXtractor.util.structure import (
     filter_solvent_extended,
     filter_polymer,
     iter_residue_masks,
+    mark_polymer_type,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -386,7 +387,7 @@ class GenericStructure:
             return []
 
         m = self.mask.primary_polymer
-        a = self.array if not any(m) else self.array[m]
+        a = self.array if not np.any(m) else self.array[m]
         first_atoms = (r[0] for r in bst.residue_iter(a))
         yield from (
             (RES_DICT.get(a.res_name), a.res_name, a.res_id) for a in first_atoms
@@ -678,6 +679,9 @@ class GenericStructure:
 
 
 class ProteinStructure(GenericStructure):
+    """
+    A structure type where primary polymer is peptide.
+    """
     def __init__(
         self,
         array: bst.AtomArray,
@@ -690,6 +694,9 @@ class ProteinStructure(GenericStructure):
 
 
 class NucleotideStructure(GenericStructure):
+    """
+    A structure type where primary polymer is nucleotide.
+    """
     def __init__(
         self,
         array: bst.AtomArray,
@@ -702,6 +709,9 @@ class NucleotideStructure(GenericStructure):
 
 
 class CarbohydrateStructure(GenericStructure):
+    """
+    A structure type where primary polymer is carbohydrate.
+    """
     def __init__(
         self,
         array: bst.AtomArray,
@@ -729,23 +739,22 @@ def mark_atoms(
     a, cfg = structure.array, structure.cfg
 
     is_solv = filter_solvent_extended(a, cfg.solvents)
-    is_carb = filter_polymer(a, cfg.n_monomers, "c")
-    is_nuc = filter_polymer(a, cfg.n_monomers, "n")
-    is_pep = filter_polymer(a, cfg.n_monomers, "p")
+    pol_types = mark_polymer_type(a, cfg.n_monomers)
+    is_nuc, is_pep, is_carb = (np.equal(pol_types, p) for p in ["n", "p", "c"])
 
-    is_any_pol = is_carb | is_nuc | is_pep
+    is_any_pol = pol_types != "x"
     is_solv[is_any_pol] = False
 
     marks = np.full(len(a), AtomMark.UNK)
     marks[is_solv] = AtomMark.SOLVENT
 
     match cfg.primary_pol_type[0]:
-        case "c":
-            is_pol, pol_type = is_carb, "c"
-        case "n":
-            is_pol, pol_type = is_nuc, "n"
         case "p":
             is_pol, pol_type = is_pep, "p"
+        case "n":
+            is_pol, pol_type = is_nuc, "n"
+        case "c":
+            is_pol, pol_type = is_carb, "c"
         case _:
             is_pol, pol_type = max(
                 [(is_carb, "c"), (is_nuc, "n"), (is_pep, "p")], key=lambda x: x[0].sum()
@@ -773,7 +782,7 @@ def mark_atoms(
                 ligands.append(lig)
 
     # Annotate polymer ligands
-    is_putative_lig = ~(is_pol | is_solv | (marks == AtomMark.LIGAND)) & (is_any_pol)
+    is_putative_lig = ~(is_pol | is_solv | (marks == AtomMark.LIGAND)) & is_any_pol
     pol_marks = {"c": AtomMark.CARB, "n": AtomMark.NUC, "p": AtomMark.PEP}
     if np.any(is_putative_lig):
         for c in bst.get_chains(a[is_putative_lig]):
