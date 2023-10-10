@@ -740,7 +740,7 @@ def mark_atoms(
 
     is_solv = filter_solvent_extended(a, cfg.solvents)
     pol_types = mark_polymer_type(a, cfg.n_monomers)
-    is_nuc, is_pep, is_carb = (np.equal(pol_types, p) for p in ["n", "p", "c"])
+    is_nuc, is_pep, is_carb = (pol_types == p for p in ["n", "p", "c"])
 
     is_any_pol = pol_types != "x"
     is_solv[is_any_pol] = False
