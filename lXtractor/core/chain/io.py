@@ -15,7 +15,7 @@ from lXtractor.core.chain import ChainList
 from lXtractor.core.chain.chain import Chain
 from lXtractor.core.chain.sequence import ChainSequence
 from lXtractor.core.chain.structure import ChainStructure
-from lXtractor.core.config import DumpNames, _DumpNames
+from lXtractor.core.config import DefaultConfig
 from lXtractor.util import get_dirs, apply, path_tree
 
 CT = t.TypeVar("CT", ChainSequence, ChainStructure, Chain)
@@ -34,7 +34,6 @@ class ChainIOConfig:
     num_proc: int = 1
     verbose: bool = False
     tolerate_failures: bool = False
-    dump_names: _DumpNames = DumpNames
 
 
 @curry
@@ -174,7 +173,6 @@ class ChainIO:
         num_proc: int = 1,
         verbose: bool = False,
         tolerate_failures: bool = False,
-        dump_names: _DumpNames = DumpNames,
     ):
         """
         :param num_proc: The number of parallel processes. Using more processes
@@ -193,8 +191,6 @@ class ChainIO:
         self.verbose = verbose
         #: Errors when reading/writing do not raise an exception.
         self.tolerate_failures = tolerate_failures
-        #: File names container.
-        self.dump_names = dump_names
 
     def read(
         self,
@@ -226,8 +222,8 @@ class ChainIO:
             callbacks=callbacks,
             **kwargs,
         )
-
-        if DumpNames.segments_dir in dirs or not dirs and isinstance(path, Path):
+        fnames = DefaultConfig['filenames']
+        if fnames['segments_dir'] in dirs or not dirs and isinstance(path, Path):
             paths = [path]
         else:
             paths = iter(dirs.values())

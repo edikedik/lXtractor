@@ -20,12 +20,7 @@ from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
 from lXtractor.core.base import ResNameDict
-from lXtractor.core.config import (
-    LigandConfig,
-    EMPTY_STRUCTURE_ID,
-    StructureConfig,
-    AtomMark,
-)
+from lXtractor.core.config import AtomMark, DefaultConfig
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
 from lXtractor.core.ligand import Ligand, make_ligand
 from lXtractor.util.structure import (
@@ -33,7 +28,6 @@ from lXtractor.util.structure import (
     load_structure,
     save_structure,
     filter_solvent_extended,
-    filter_polymer,
     iter_residue_masks,
     mark_polymer_type,
 )
@@ -73,7 +67,6 @@ class GenericStructure:
         "_ligands",
         "_mask",
         "_id",
-        "_cfg",
     )
 
     def __init__(
@@ -81,21 +74,17 @@ class GenericStructure:
         array: bst.AtomArray,
         name: str,
         ligands: bool | list[Ligand] = True,
-        cfg: StructureConfig = StructureConfig(),
     ):
         """
         :param array: Atom array object.
         :param name: ID of a structure in `array`.
         :param ligands: A list of ligands or flag indicating to extract ligands
             during initialization.
-        :param cfg: Structure configuration object.
         """
         #: Atom array object.
         self._array: bst.AtomArray = array
         #: ID of a structure in `array`.
         self._name: str = name
-
-        self._cfg = cfg
 
         atom_marks, _ligands = mark_atoms(self)
         atom_marks.flags.writeable = False
@@ -103,10 +92,8 @@ class GenericStructure:
         self._atom_marks = atom_marks
 
         if np.any(atom_marks == AtomMark.UNK):
-            LOGGER.warning(
-                f"Structure {name} has {(atom_marks == AtomMark.UNK).sum()} "
-                f"uncategorized atoms."
-            )
+            num_unk = np.sum(atom_marks == AtomMark.UNK)
+            LOGGER.warning(f"Structure {name} has {num_unk} uncategorized atoms.")
 
         if isinstance(ligands, bool):
             _ligands = _ligands if ligands else []
@@ -209,14 +196,6 @@ class GenericStructure:
         self._id = self._make_id()
 
     @property
-    def cfg(self) -> StructureConfig:
-        """
-        :return: Setting of this structure, defining its basic properties like
-            a primary polymer type and which molecules to consider as ligands.
-        """
-        return self._cfg
-
-    @property
     def array(self) -> bst.AtomArray:
         """
         :return: Atom array object.
@@ -273,10 +252,6 @@ class GenericStructure:
         raise RuntimeError("Cannot set ligands")
 
     @property
-    def ligand_cfg(self) -> LigandConfig:
-        return self._cfg.ligand_config
-
-    @property
     def is_empty(self) -> bool:
         """
         :return: ``True`` if the :meth:`array` is empty.
@@ -305,9 +280,8 @@ class GenericStructure:
         cls,
         inp: IOBase | Path | str | bytes,
         path2id: abc.Callable[[Path], str] = lambda p: p.name.split(".")[0],
-        structure_id: str = EMPTY_STRUCTURE_ID,
+        structure_id: str = DefaultConfig["unknowns"]["structure_id"],
         ligands: bool = True,
-        cfg: StructureConfig = StructureConfig(),
         altloc: bool = False,
         **kwargs,
     ) -> Self:
@@ -338,19 +312,22 @@ class GenericStructure:
         if altloc:
             kwargs["altloc"] = "all"
         array = load_structure(inp, **kwargs)
+        empty_id = DefaultConfig["unknowns"]["structure_id"]
         if hasattr(array, "altloc_id"):
             array.altloc_id[np.isin(array.altloc_id, EMPTY_ALTLOC)] = ""
-        if isinstance(inp, Path) and structure_id == EMPTY_STRUCTURE_ID:
+        if isinstance(inp, Path) and structure_id == empty_id:
             structure_id = path2id(inp)
         if isinstance(array, bst.AtomArrayStack):
             raise InitError(
                 f"{inp} is likely an NMR structure. "
                 f"NMR structures are not supported."
             )
-        return cls(array, structure_id, ligands, cfg)
+        return cls(array, structure_id, ligands)
 
     @classmethod
-    def make_empty(cls, structure_id: str = EMPTY_STRUCTURE_ID) -> Self:
+    def make_empty(
+        cls, structure_id: str = DefaultConfig["unknowns"]["structure_id"]
+    ) -> Self:
         """
         :param structure_id: (Optional) ID of the created array.
         :return: An instance with empty :meth:`array`.
@@ -376,7 +353,7 @@ class GenericStructure:
         if copy:
             array = array.copy()
 
-        return self.__class__(array, self.name, len(self.ligands) > 0, cfg=self.cfg)
+        return self.__class__(array, self.name, len(self.ligands) > 0)
 
     def get_sequence(self) -> abc.Generator[tuple[str, str, int]]:
         """
@@ -412,7 +389,7 @@ class GenericStructure:
         # Filter connected ligands
         ligands = list(
             filter(
-                lambda lig: lig.is_locally_connected(mask, self.ligand_cfg),
+                lambda lig: lig.is_locally_connected(mask),
                 self.ligands,
             )
         )
@@ -423,7 +400,7 @@ class GenericStructure:
             np.zeros_like(self.array.res_id, dtype=bool),
         )
         a = self.array[mask | ligand_mask]
-        return self.__class__(a, self.name, True, self.cfg)
+        return self.__class__(a, self.name, True)
 
         # m = mask | ligand_mask
         # # Create a new instance
@@ -469,7 +446,7 @@ class GenericStructure:
         :param ligands: A flag indicating whether to preserve connected ligands.
         :return: An iterable over chains found in :attr:`array`.
         """
-        # TODO: the chains are subsetted from copy and are not copies themselves
+        # TODO: the chains are subset from copy and are not copies themselves
 
         if polymer:
             chain_ids = self.chain_ids_polymer
@@ -485,7 +462,7 @@ class GenericStructure:
                 a_sub = a[mask]
                 if copy:
                     a_sub = a_sub.copy()
-                yield self.__class__(a_sub, self.name, cfg=self.cfg)
+                yield self.__class__(a_sub, self.name)
 
     def split_altloc(self, *, copy: bool = True) -> abc.Iterator[Self]:
         """
@@ -512,9 +489,7 @@ class GenericStructure:
             a = self.array[no_alt_mask | (self.array.altloc_id == altloc)]
             if copy:
                 a = a.copy()
-            yield self.__class__(
-                a, self._name, ligands=bool(self.ligands), cfg=self.cfg
-            )
+            yield self.__class__(a, self._name, ligands=bool(self.ligands))
 
     def extract_segment(
         self,
@@ -568,7 +543,7 @@ class GenericStructure:
         mask = chain_mask & (self.array.res_id >= start) & (self.array.res_id <= end)
         if ligands:
             return self.subset_with_ligands(mask)
-        return self.__class__(self.array[mask], self._name, cfg=self.cfg)
+        return self.__class__(self.array[mask], self._name)
 
     def extract_positions(
         self,
@@ -682,45 +657,48 @@ class ProteinStructure(GenericStructure):
     """
     A structure type where primary polymer is peptide.
     """
+
     def __init__(
         self,
         array: bst.AtomArray,
         structure_id: str,
         ligands: bool | list[Ligand] = True,
-        cfg: StructureConfig = StructureConfig(),
     ):
-        cfg.primary_pol_type = "p"
-        super().__init__(array, structure_id, ligands, cfg)
+        with DefaultConfig.temporary_namespace():
+            DefaultConfig["structure"]["primary_pol_type"] = "p"
+            super().__init__(array, structure_id, ligands)
 
 
 class NucleotideStructure(GenericStructure):
     """
     A structure type where primary polymer is nucleotide.
     """
+
     def __init__(
         self,
         array: bst.AtomArray,
         structure_id: str,
         ligands: bool | list[Ligand] = True,
-        cfg: StructureConfig = StructureConfig(),
     ):
-        cfg.primary_pol_type = "n"
-        super().__init__(array, structure_id, ligands, cfg)
+        with DefaultConfig.temporary_namespace():
+            DefaultConfig["structure"]["primary_pol_type"] = "n"
+            super().__init__(array, structure_id, ligands)
 
 
 class CarbohydrateStructure(GenericStructure):
     """
     A structure type where primary polymer is carbohydrate.
     """
+
     def __init__(
         self,
         array: bst.AtomArray,
         structure_id: str,
         ligands: bool | list[Ligand] = True,
-        cfg: StructureConfig = StructureConfig(),
     ):
-        cfg.primary_pol_type = "c"
-        super().__init__(array, structure_id, ligands, cfg)
+        with DefaultConfig.temporary_namespace():
+            DefaultConfig["structure"]["primary_pol_type"] = "c"
+            super().__init__(array, structure_id, ligands)
 
 
 def mark_atoms(
@@ -728,7 +706,7 @@ def mark_atoms(
 ) -> tuple[npt.NDArray[np.int_], list[Ligand]]:
     """
     Mark each atom in structure according to
-    :class:`lXtractor.core.config.AtomType`.
+    :class:`lXtractor.core.config.AtomMark`.
 
     This function is used upon initializing :class:`GenericStructure` and its
     subclasses, storing the output under :attr:`GenericStructure.atom_marks`.
@@ -736,10 +714,10 @@ def mark_atoms(
     :param structure: An arbitrary structure.
     :return: An array of atom marks (equivalently, classes or types).
     """
-    a, cfg = structure.array, structure.cfg
+    a = structure.array
 
-    is_solv = filter_solvent_extended(a, cfg.solvents)
-    pol_types = mark_polymer_type(a, cfg.n_monomers)
+    is_solv = filter_solvent_extended(a)
+    pol_types = mark_polymer_type(a, DefaultConfig["structure"]["n_monomers"])
     is_nuc, is_pep, is_carb = (pol_types == p for p in ["n", "p", "c"])
 
     is_any_pol = pol_types != "x"
@@ -748,7 +726,7 @@ def mark_atoms(
     marks = np.full(len(a), AtomMark.UNK)
     marks[is_solv] = AtomMark.SOLVENT
 
-    match cfg.primary_pol_type[0]:
+    match DefaultConfig["structure"]["primary_pol_type"][0]:
         case "p":
             is_pol, pol_type = is_pep, "p"
         case "n":
@@ -788,9 +766,11 @@ def mark_atoms(
         for c in bst.get_chains(a[is_putative_lig]):
             m_lig = is_putative_lig & (a.chain_id == c)
             lig = make_ligand(m_lig, is_pol, structure)
-            lig_pol_type = lig.res_name[0]
-            if lig is not None and lig_pol_type in cfg.ligand_pol_types:
-                marks[m_lig] = AtomMark.LIGAND | pol_marks[lig_pol_type]
+            if (
+                lig is not None
+                and lig.res_name[0] in DefaultConfig["structure"]["ligand_pol_types"]
+            ):
+                marks[m_lig] = AtomMark.LIGAND | pol_marks[lig.res_name[0]]
                 ligands.append(lig)
 
     return marks, ligands

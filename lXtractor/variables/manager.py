@@ -23,7 +23,7 @@ from tqdm.auto import tqdm
 
 import lXtractor.core.chain as lxc
 from lXtractor.core import Ligand
-from lXtractor.core.config import SeqNames
+from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import MissingData
 from lXtractor.core.structure import GenericStructure
 from lXtractor.variables.base import (
@@ -107,7 +107,7 @@ def get_mapping(obj: t.Any, map_name: str | None, map_to: str | None) -> dict | 
 
     if map_to is None:
         if isinstance(obj, lxc.ChainStructure):
-            to = seq[SeqNames.enum]
+            to = seq[DefaultConfig["mapnames"]["enum"]]
         else:
             to = range(1, len(fr) + 1)
     else:
@@ -189,7 +189,7 @@ def stage(
     vs: abc.Sequence[InpV] | None,
     *,
     missing: bool = True,
-    seq_name: str = SeqNames.seq1,
+    seq_name: str = DefaultConfig["mapnames"]["seq1"],
     map_name: str | None = None,
     map_to: str | None = None,
 ) -> StagedStr | StagedSeq | StagedLig:

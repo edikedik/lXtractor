@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from lXtractor.core.chain import ChainStructure, ChainSequence
-from lXtractor.core.config import DumpNames, MetaNames
+from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import InitError, NoOverlap, LengthMismatch, MissingData
 from lXtractor.util.io import get_files, get_dirs
 from test.common import mark_meta
@@ -45,10 +45,9 @@ def test_init(simple_structure, four_chain_structure):
     assert s.seq is not None
 
     # ensure _seq is initialized
-    fields = s.seq.field_names()
-    assert fields.seq1 in s.seq
-    assert fields.seq3 in s.seq
-    assert fields.enum in s.seq
+    assert DefaultConfig["mapnames"]["seq1"] in s.seq
+    assert DefaultConfig["mapnames"]["seq3"] in s.seq
+    assert DefaultConfig["mapnames"]["enum"] in s.seq
 
 
 def test_degenerate(test_structure):
@@ -116,16 +115,17 @@ def test_io(test_structure, fmt):
     child1 = s.spawn_child(1, 10)
 
     with TemporaryDirectory() as tmp:
+        fnames, mnames = DefaultConfig["filenames"], DefaultConfig["metadata"]
         tmp = Path(tmp)
         s.write(tmp, fmt=fmt, write_children=True)
 
         files = get_files(tmp)
         dirs = get_dirs(tmp)
 
-        assert f"{DumpNames.structure_base_name}.{fmt}" in files
-        assert DumpNames.sequence in files
-        assert DumpNames.meta in files
-        assert DumpNames.segments_dir in dirs
+        assert f"{fnames['structure_base_name']}.{fmt}" in files
+        assert fnames["sequence"] in files
+        assert fnames["meta"] in files
+        assert fnames["segments_dir"] in dirs
 
         s_r = ChainStructure.read(tmp, search_children=True)
         assert s_r.seq is not None
@@ -136,10 +136,8 @@ def test_io(test_structure, fmt):
         assert len(s_r.children) == 1
         s_r_child = s_r.children.pop()
         assert not s_r_child.seq.children
-        assert (
-            s_r_child.seq.meta[MetaNames.structure_id] == child1.structure.name
-        )
-        assert s_r_child.seq.meta[MetaNames.structure_chain_id] == child1.chain_id
+        assert s_r_child.seq.meta[mnames["structure_id"]] == child1.structure.name
+        assert s_r_child.seq.meta[mnames["structure_chain_id"]] == child1.chain_id
 
 
 def test_superpose(test_structure):

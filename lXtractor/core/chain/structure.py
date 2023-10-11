@@ -17,17 +17,7 @@ from lXtractor.core.base import ApplyT, FilterT
 from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.list import _wrap_children, ChainList
 from lXtractor.core.chain.sequence import ChainSequence
-from lXtractor.core.config import (
-    SeqNames,
-    Sep,
-    MetaNames,
-    DumpNames,
-    _DumpNames,
-    EMPTY_STRUCTURE_ID,
-    EMPTY_CHAIN_ID,
-    UNK_NAME,
-    ColNames,
-)
+from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import LengthMismatch, InitError, MissingData
 from lXtractor.core.structure import GenericStructure
 from lXtractor.util import biotite_align
@@ -105,7 +95,7 @@ def _validate_chain_seq(
 
 def _get_chain_id(structure: GenericStructure):
     if structure.is_empty:
-        return EMPTY_CHAIN_ID
+        return DefaultConfig["unknowns"]["chain_id"]
     if structure.is_singleton or len(structure) == 2:
         return structure.array.chain_id[0]
     return structure.chain_ids_polymer.pop()
@@ -118,13 +108,14 @@ def _str2seq(structure: GenericStructure):
 
     seq1, seq3, num = map(list, unzip(str_seq))
     seqs: dict[str, list[int] | list[str]] = {
-        SeqNames.seq3: seq3,
-        SeqNames.enum: num,
+        DefaultConfig["mapnames"]["seq3"]: seq3,
+        DefaultConfig["mapnames"]["enum"]: num,
     }
     chain_id = _get_chain_id(structure)
+    sep_chain = DefaultConfig["separators"]["chain"]
     return ChainSequence.from_string(
         "".join(seq1),
-        name=f"{structure.name}{Sep.chain}{chain_id}",
+        name=f"{structure.name}{sep_chain}{chain_id}",
         **seqs,  # type: ignore  # Fails to recognize kwargs
     )
 
@@ -197,11 +188,13 @@ class ChainStructure:
         from lXtractor.variables import Variables
 
         if isinstance(structure, bst.AtomArray):
-            structure = GenericStructure(structure, structure_id or EMPTY_STRUCTURE_ID)
+            structure = GenericStructure(
+                structure, structure_id or DefaultConfig["unknowns"]["structure_id"]
+            )
 
         if structure is None:
             structure = GenericStructure.make_empty(structure_id)
-            self._chain_id = chain_id or EMPTY_CHAIN_ID
+            self._chain_id = chain_id or DefaultConfig["unknowns"]["chain_id"]
         else:
             _validate_chain(structure)
             self._chain_id = _get_chain_id(structure)
@@ -227,9 +220,10 @@ class ChainStructure:
 
         self._id = self._make_id()
 
-        self.seq.meta[MetaNames.structure_id] = structure.name
-        self.seq.meta[MetaNames.structure_chain_id] = chain_id
-        self.seq.meta[MetaNames.altloc] = self.altloc
+        names = DefaultConfig["metadata"]
+        self.seq.meta[names["structure_id"]] = structure.name
+        self.seq.meta[names["structure_chain_id"]] = chain_id
+        self.seq.meta[names["altloc"]] = self.altloc
 
     def __str__(self) -> str:
         return self.id
@@ -514,7 +508,10 @@ class ChainStructure:
                 _res_id = res_id
             else:
                 mapping = c.seq.get_map(map_name)
-                _res_id = [mapping[x]._asdict()[SeqNames.enum] for x in res_id]
+                _res_id = [
+                    mapping[x]._asdict()[DefaultConfig["mapnames"]["enum"]]
+                    for x in res_id
+                ]
 
             return filter_selection(c.array, _res_id, _atom_names)
 
@@ -618,7 +615,7 @@ class ChainStructure:
             keep=keep_seq_child,
         )
 
-        enum_field = seq.field_names().enum
+        enum_field = DefaultConfig["mapnames"]["enum"]
         start, end = seq[enum_field][0], seq[enum_field][-1]
         structure = self.structure.extract_segment(start, end, self.chain_id)
 
@@ -723,7 +720,6 @@ class ChainStructure:
         cls,
         base_dir: Path,
         *,
-        dump_names: _DumpNames = DumpNames,
         search_children: bool = False,
         **kwargs,
     ) -> Self:
@@ -745,7 +741,10 @@ class ChainStructure:
         dirs = get_dirs(base_dir)
         variables = None
 
-        bname = dump_names.structure_base_name
+        fnames = DefaultConfig["filenames"]
+        mnames = DefaultConfig["metadata"]
+        unk = DefaultConfig["unknowns"]
+        bname = fnames["structure_base_name"]
         stems = {p.name.split(".")[0]: p.name for p in files.values()}
         if bname not in stems:
             raise InitError(
@@ -753,25 +752,25 @@ class ChainStructure:
                 f'where "fmt" is supported structure format'
             )
 
-        seq = ChainSequence.read(base_dir, dump_names=dump_names, search_children=False)
-        s_id = seq.meta.get(MetaNames.structure_id, EMPTY_STRUCTURE_ID)
-        chain_id = seq.meta.get(MetaNames.structure_chain_id, EMPTY_CHAIN_ID)
+        seq = ChainSequence.read(base_dir, search_children=False)
+        s_id = seq.meta.get(mnames["structure_id"], unk["structure_id"])
+        chain_id = seq.meta.get(mnames["structure_chain_id"], unk["chain_id"])
 
         if "structure_id" not in kwargs:
             kwargs["structure_id"] = s_id
 
         structure = GenericStructure.read(base_dir / stems[bname], **kwargs)
 
-        if dump_names.variables in files:
+        if fnames["variables"] in files:
             from lXtractor.variables import Variables
 
-            variables = Variables.read(files[dump_names.variables]).structure
+            variables = Variables.read(files[fnames["variables"]]).structure
 
         cs = cls(structure, chain_id, seq=seq, variables=variables)
 
-        if search_children and dump_names.segments_dir in dirs:
-            for path in (base_dir / dump_names.segments_dir).iterdir():
-                child = cls.read(path, dump_names=dump_names, search_children=True)
+        if search_children and fnames["segments_dir"] in dirs:
+            for path in (base_dir / fnames["segments_dir"]).iterdir():
+                child = cls.read(path, search_children=True)
                 child.parent = cs
                 cs.children.append(child)
 
@@ -782,7 +781,6 @@ class ChainStructure:
         base_dir: Path,
         fmt: str = "mmtf.gz",
         *,
-        dump_names: _DumpNames = DumpNames,
         write_children: bool = False,
     ):
         """
@@ -798,7 +796,6 @@ class ChainStructure:
         :param fmt: Structure format to use. Supported formats are "pdb", "cif",
             and "mmtf". Adding ".gz" (eg, "mmtf.gz") will lead to gzip
             compression.
-        :param dump_names: File names container.
         :param write_children: Recursively write :attr:`children`.
         :return: Nothing.
         """
@@ -808,22 +805,24 @@ class ChainStructure:
 
         base_dir.mkdir(exist_ok=True, parents=True)
 
+        fnames = DefaultConfig["filenames"]
+
         self.seq.write(base_dir)
-        self.structure.write(base_dir / f"{dump_names.structure_base_name}.{fmt}")
+        self.structure.write(base_dir / f"{fnames['structure_base_name']}.{fmt}")
         if self.variables:
-            self.variables.write(base_dir / dump_names.variables)
+            self.variables.write(base_dir / fnames["variables"])
 
         if write_children:
             for child in self.children:
-                child_name = child.seq.name or UNK_NAME
-                child_dir = base_dir / DumpNames.segments_dir / child_name
-                child.write(child_dir, fmt, dump_names=dump_names, write_children=True)
+                child_name = child.seq.name or DefaultConfig["unknowns"]["name"]
+                child_dir = base_dir / fnames["segments_dir"] / child_name
+                child.write(child_dir, fmt, write_children=True)
 
     def summary(
         self, meta: bool = True, children: bool = False, ligands: bool = False
     ) -> pd.DataFrame:
         s = self.seq.summary(meta=meta, children=False)
-        s[ColNames.id] = [self.id]
+        s[DefaultConfig["colnames"]["id"]] = [self.id]
         if ligands and len(self.ligands) > 0:
             lig_df = pd.DataFrame(lig.summary() for lig in self.ligands)
             lig_df.columns = ["Ligand_" + c for c in lig_df.columns]
@@ -848,7 +847,7 @@ def filter_selection_extended(
     Get mask for certain positions and atoms of a chain structure.
 
     .. seealso:
-        :func:`lXtractor.util._seq.filter_selection`
+        :func:`lXtractor.util.seq.filter_selection`
 
     :param c: Arbitrary chain structure.
     :param pos: A sequence of positions.
@@ -891,7 +890,7 @@ def subset_to_matching(
     reference: ChainStructure,
     c: ChainStructure,
     map_name: str | None = None,
-    skip_if_match: str = SeqNames.seq1,
+    skip_if_match: str = DefaultConfig["mapnames"]["seq1"],
     **kwargs,
 ) -> tuple[ChainStructure, ChainStructure]:
     """
@@ -926,11 +925,13 @@ def subset_to_matching(
     pos_pairs: abc.Iterable[tuple[int, int | None]]
     if not map_name:
         pos2 = reference.seq.map_numbering(c.seq, **kwargs)
-        pos1 = reference.seq[SeqNames.enum]
+        pos1 = reference.seq[DefaultConfig["mapnames"]["enum"]]
         pos_pairs = zip(pos1, pos2, strict=True)
     else:
         pos_pairs = zip(
-            reference.seq[SeqNames.enum], reference.seq[map_name], strict=True
+            reference.seq[DefaultConfig["mapnames"]["enum"]],
+            reference.seq[map_name],
+            strict=True,
         )
 
     pos_pairs = filter(lambda x: x[0] is not None and x[1] is not None, pos_pairs)

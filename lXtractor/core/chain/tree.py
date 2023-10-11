@@ -13,26 +13,25 @@ from more_itertools import windowed
 from toolz import groupby
 
 from lXtractor.core.chain import Chain, ChainSequence, ChainStructure, ChainList
-from lXtractor.core.config import EMPTY_STRUCTURE_ID, EMPTY_CHAIN_ID
 from lXtractor.core.exceptions import MissingData, FormatError
 
-T = t.TypeVar('T')
-CT = t.TypeVar('CT', ChainSequence, ChainStructure, Chain)
+T = t.TypeVar("T")
+CT = t.TypeVar("CT", ChainSequence, ChainStructure, Chain)
 CT_: t.TypeAlias = Chain | ChainSequence | ChainStructure
 
-_SEP = '<-('
-FILLER = '*'
-NODE_PATTERN = re.compile(r'(.+)\|(\d+-\d+)')
+_SEP = "<-("
+FILLER = "*"
+NODE_PATTERN = re.compile(r"(.+)\|(\d+-\d+)")
 LOGGER = logging.getLogger(__name__)
 
 __all__ = (
-    'list_ancestors_names',
-    'list_ancestors',
-    'make',
-    'make_filled',
-    'make_str_tree',
-    'make_obj_tree',
-    'recover'
+    "list_ancestors_names",
+    "list_ancestors",
+    "make",
+    "make_filled",
+    "make_str_tree",
+    "make_obj_tree",
+    "recover",
 )
 
 
@@ -41,12 +40,12 @@ def node_name(c: CT_) -> str:
     :param c: Chain*-type object.
     :return:
     """
-    return f'{c.name}|{c.start}-{c.end}'
+    return f"{c.name}|{c.start}-{c.end}"
 
 
 def _check_tree(g: nx.Graph):
     if not nx.is_tree(g):
-        raise ValueError('Obtained graph is not a tree')
+        raise ValueError("Obtained graph is not a tree")
 
 
 def list_ancestors_names(id_or_chain: CT_ | str) -> list[str]:
@@ -60,9 +59,9 @@ def list_ancestors_names(id_or_chain: CT_ | str) -> list[str]:
     """
     if not isinstance(id_or_chain, str):
         try:
-            _id = id_or_chain.meta['id']
+            _id = id_or_chain.meta["id"]
         except KeyError as e:
-            raise MissingData(f'Missing ID property in meta of {id_or_chain}') from e
+            raise MissingData(f"Missing ID property in meta of {id_or_chain}") from e
     else:
         _id = id_or_chain
 
@@ -70,7 +69,7 @@ def list_ancestors_names(id_or_chain: CT_ | str) -> list[str]:
 
     while _SEP in _id:
         _id_sep = _id.split(_SEP)
-        _id = _SEP.join(_id_sep[1:]).removesuffix(')')
+        _id = _SEP.join(_id_sep[1:]).removesuffix(")")
         obj_ids.append(_id_sep[0])
     obj_ids.append(_id)
     return obj_ids[1:]
@@ -109,17 +108,17 @@ def make_filled(name: str, _t: CT | t.Type[CT]) -> CT:
     re_find = NODE_PATTERN.findall(name)
     if len(re_find) != 1:
         raise FormatError(
-            f'Failed to parse name {name} into {{name}}|{{start}}-{{end}} format. '
-            f're.findall results: {re_find}'
+            f"Failed to parse name {name} into {{name}}|{{start}}-{{end}} format. "
+            f"re.findall results: {re_find}"
         )
     match = re_find[0]
     if len(match) != 2:
         raise FormatError(
-            f'Unexpected match from {name}. Expected to find exactly two items: '
-            f'name and boundaries. Found {len(match)}: {match}'
+            f"Unexpected match from {name}. Expected to find exactly two items: "
+            f"name and boundaries. Found {len(match)}: {match}"
         )
     real_name, bounds = match
-    start, end = map(int, bounds.split('-'))
+    start, end = map(int, bounds.split("-"))
     if start == end == 0:
         if issubclass(_t, (Chain, ChainStructure, ChainSequence)):
             return _t.make_empty()
@@ -138,7 +137,7 @@ def make_filled(name: str, _t: CT | t.Type[CT]) -> CT:
             return seq
         if is_chain_instance[2]:
             return ChainStructure(None, seq=seq)
-        raise RuntimeError('...')
+        raise RuntimeError("...")
     try:
         is_chain_subclass = (
             issubclass(_t, Chain),
@@ -146,7 +145,7 @@ def make_filled(name: str, _t: CT | t.Type[CT]) -> CT:
             issubclass(_t, ChainStructure),
         )
     except TypeError as e:
-        raise TypeError(f'Failed to infer type of {_t}') from e
+        raise TypeError(f"Failed to infer type of {_t}") from e
 
     if is_chain_subclass[0]:
         return Chain.from_seq(seq)
@@ -155,7 +154,7 @@ def make_filled(name: str, _t: CT | t.Type[CT]) -> CT:
     if is_chain_subclass[2]:
         return ChainStructure(None, seq=seq)
 
-    raise RuntimeError('...')
+    raise RuntimeError("...")
 
 
 def make_obj_tree(
@@ -244,12 +243,12 @@ def make_obj_tree(
 
 
 def _connect(_child_name: str, _parent_name: str, _tree: nx.DiGraph):
-    child_objs = _tree.nodes[_child_name]['objs']
-    parent_objs = _tree.nodes[_parent_name]['objs']
+    child_objs = _tree.nodes[_child_name]["objs"]
+    parent_objs = _tree.nodes[_parent_name]["objs"]
     for _child_obj, _parent_obj in product(child_objs, parent_objs):
         if (
             _child_obj.parent is None
-            and _parent_name in _child_obj.meta['id']
+            and _parent_name in _child_obj.meta["id"]
             or _parent_name in _child_obj.id
         ):
             _child_obj.parent = _parent_obj
@@ -290,7 +289,7 @@ def make_str_tree(
         tree.add_node(name, objs=chains_group)
 
     for node in list(tree.nodes):
-        for obj in tree.nodes[node]['objs']:
+        for obj in tree.nodes[node]["objs"]:
             names = [node_name(obj), *list_ancestors_names(obj)]
             for child_name, parent_name in windowed(names, 2):
                 assert child_name is not None
@@ -364,5 +363,5 @@ def recover(c: CT_) -> CT_:
     return c
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError

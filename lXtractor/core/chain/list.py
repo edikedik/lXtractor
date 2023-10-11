@@ -18,7 +18,7 @@ from typing_extensions import Self
 import lXtractor.core.segment as lxs
 from lXtractor.core.base import Ord, ApplyT
 from lXtractor.core.chain.base import is_chain_type_iterable, is_chain_type
-from lXtractor.core.config import MetaNames
+from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import MissingData
 from lXtractor.util import apply
 
@@ -26,7 +26,6 @@ if t.TYPE_CHECKING:
     from lXtractor.core.chain import ChainSequence, ChainStructure, Chain
 
     CT = t.TypeVar("CT", ChainStructure, ChainSequence, Chain)
-    # CT = t.TypeVar('CT', bound=t.Union[ChainSequence, ChainStructure, Chain])
     CS = t.TypeVar("CS", ChainStructure, ChainSequence)
     CTU: t.TypeAlias = ChainSequence | ChainStructure | Chain
 else:
@@ -49,7 +48,7 @@ def add_category(c: t.Any, cat: str):
     else:
         raise TypeError(f"Failed to find .meta attr in {c}")
 
-    field = MetaNames.category
+    field = DefaultConfig["metadata"]["category"]
     if field not in meta:
         meta[field] = cat
     else:

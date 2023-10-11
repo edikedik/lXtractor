@@ -3,123 +3,22 @@ A module encompassing various settings of lXtractor objects.
 """
 from __future__ import annotations
 
-import typing as t
-from collections import namedtuple
-from dataclasses import dataclass
+import json
+from collections import UserDict, abc
+from contextlib import contextmanager
+from copy import deepcopy
 from enum import IntFlag
+from pathlib import Path
 
-Bounds = t.NamedTuple("Bounds", [("lower", float), ("upper", float)])
-Separators = namedtuple(
-    "Separators", ["list", "chain", "dom", "uni_pdb", "str", "start_end"]
-)
-Sep = Separators(",", ":", "::", "_", "--", "|")
-EMPTY_STRUCTURE_ID: str = "XXXX"
-EMPTY_CHAIN_ID: str = "X"
-UNK_NAME: str = "Unk"
 STRUCTURE_EXT = (".cif", ".pdb", ".mmtf")
-STRUCTURE_FMT = tuple(x.removeprefix(".") for x in STRUCTURE_EXT)
+STRUCTURE_FMT = tuple(x[1:] for x in STRUCTURE_EXT)
 
-_AminoAcids = [
-    ("ALA", "A"),
-    ("CYS", "C"),
-    ("THR", "T"),
-    ("GLU", "E"),
-    ("ASP", "D"),
-    ("PHE", "F"),
-    ("TRP", "W"),
-    ("ILE", "I"),
-    ("VAL", "V"),
-    ("LEU", "L"),
-    ("LYS", "K"),
-    ("MET", "M"),
-    ("ASN", "N"),
-    ("GLN", "Q"),
-    ("SER", "S"),
-    ("ARG", "R"),
-    ("TYR", "Y"),
-    ("HIS", "H"),
-    ("PRO", "P"),
-    ("GLY", "G"),
-]
-SOLVENTS = (
-    "1PE",
-    "2HT",
-    "2PE",
-    "7PE",
-    "ACT",
-    "ACT",
-    "BME",
-    "BTB",
-    "BU3",
-    "BUD",
-    "CIT",
-    "COM",
-    "CXS",
-    "DIO",
-    "DMS",
-    "DOD",
-    "DTD",
-    "DTT",
-    "DTV",
-    "DVT",
-    "EDO",
-    "EOH",
-    "EPE",
-    "FLC",
-    "FMT",
-    "GBL",
-    "GG5",
-    "GLC",
-    "GOL",
-    "HOH",
-    "IOD",
-    "IPA",
-    "IPH",
-    "MES",
-    "MG8",
-    "MLA",
-    "MLI",
-    "MOH",
-    "MPD",
-    "MRD",
-    "MXE",
-    "MYR",
-    "HN4",
-    "NO3",
-    "OCT",
-    "P4C",
-    "P4G",
-    "P6G",
-    "PEG",
-    "PE4",
-    "PG0",
-    "PGO",
-    "PG4",
-    "PGE",
-    "PGF",
-    "PO4",
-    "PTL",
-    "SCN",
-    "SGM",
-    "SIN",
-    "SIN",
-    "SO4",
-    "SRT",
-    "TAM",
-    "TAR",
-    "TBR",
-    "TCE",
-    "TFA",
-    "TFA",
-    "TLA",
-    "TMA",
-    "TRS",
-    "UNX",
-)
-NUCLEOTIDES = (
-    'DA', 'DT', 'DC', 'DG', 'A', 'C', 'T', 'G', 'U'
-)
+_RESOURCES = Path(__file__).parent.parent / "resources"
+_DEFAULT_CONFIG_PATH = _RESOURCES / "default_config.json"
+_USER_CONFIG_PATH = _RESOURCES / "user_config.json"
+
 MetaColumns = (
+    # TODO: move to docs
     # Taken from https://bioservices.readthedocs.io/en/main/_modules/bioservices/uniprot.html#UniProt
     # Names & Taxonomy ================================================
     "accession",
@@ -254,84 +153,130 @@ MetaColumns = (
 )
 
 
-@dataclass(frozen=True)
-class _DumpNames:
+class Config(UserDict):
     """
-    Dataclass encapsulating names of files used for dumping data.
-    """
+    A configuration management class.
 
-    sequence: str = "sequence.tsv"
-    meta: str = "meta.tsv"
-    variables: str = "variables.tsv"
-    segments_dir: str = "segments"
-    structures_dir: str = "structures"
-    structure_base_name: str = "structure"
+    This class facilitates the loading and saving of configuration settings,
+    with a user-specified configuration overriding the default settings.
 
+    :param default_config_path: The path to the default config file. This is a
+        reference default settings, which can be used to reset user settings
+        if needed.
+    :param user_config_path: The path to the user configuration file. This file
+        is stored internally and can be modified by a user to provide permanent
+        settings.
 
-@dataclass(frozen=True)
-class _SeqNames:
-    """
-    Container holding names used within
-    :attr:`lXtractor.core.Protein.ChainSequence._seqs`
-    """
+    Loading and mofifying the config:
 
-    seq1: str = "seq1"
-    seq3: str = "seq3"
-    enum: str = "numbering"
-    map_canonical: str = "map_canonical"
-    map_other: str = "map_other"
-    map_aln: str = "map_aln"
-    map_pdb: str = "map_pdb"
-    map_ref: str = "map_ref"
+    >>> cfg = Config()
+    >>> list(cfg.keys())[:2]
+    ['bonds', 'colnames']
+    >>> cfg['bonds']['non_covalent_upper']
+    5.0
+    >>> cfg['bonds']['non_covalent_upper'] = 6
 
+    Equivalently, one can update the config by a local JSON file or dict:
 
-@dataclass(frozen=True)
-class _MetaNames:
-    id: str = "id"
-    name: str = "name"
-    variables: str = "variables"
-    structure_id: str = "structure_id"
-    structure_chain_id: str = "structure_chain_id"
-    category: str = "category"
-    res_id: str = "res_id"
-    res_name: str = "res_name"
-    altloc: str = "altloc"
+    >>> cfg.update_with({'bonds': {'non_covalent_upper': 4}})
+    >>> assert cfg['bonds']['non_covalent_upper'] == 4
 
+    The changes can be stored internally and loaded automatically in the future:
 
-@dataclass(frozen=True)
-class _ColNames:
-    id: str = "ObjectID"
-    parent_id: str = "ParentID"
-    start: str = "Start"
-    end: str = "End"
+    >>> cfg.save()
+    >>> cfg = Config()
+    >>> assert cfg['bonds']['non_covalent_upper'] == 4
 
+    To restore default settings:
 
-@dataclass(frozen=True)
-class BondThresholds:
-    """
-    Holds covalent and non-covalent bond length distance thresholds,
-    in angstroms.
+    >>> cfg.reset_to_defaults()
+    >>> cfg.clear_user_config()
     """
 
-    covalent: Bounds = Bounds(1.2, 1.8)
-    non_covalent: Bounds = Bounds(1.8, 5)
+    def __init__(
+        self,
+        default_config_path: str | Path = _DEFAULT_CONFIG_PATH,
+        user_config_path: str | Path = _USER_CONFIG_PATH,
+    ):
+        self.default_config_path = Path(default_config_path)
+        self.user_config_path = Path(user_config_path)
+
+        super().__init__()
+        self.reload()
+
+    @contextmanager
+    def temporary_namespace(self):
+        """
+        A context manager for a temporary config namespace.
+
+        Within this context, changes to the config are allowed, but will be
+        reverted back to the original config once the context is exited.
+
+        Example:
+
+        >>> cfg = Config()
+        >>> with cfg.temporary_namespace():
+        ...     cfg['bonds']['non_covalent_upper'] = 10
+        ...     # Do some stuff with the temporary config...
+        ... # Config is reverted back to original state here
+        >>> assert cfg['bonds']['non_covalent_upper'] != 10
+        """
+        original_config = deepcopy(self.data)
+        try:
+            yield self  # This allows access to the Config object within the context
+        finally:
+            self.data = original_config  # Revert config back to original state
+
+    def reload(self):
+        """Load the configuration from files."""
+        # Load true default config
+        with self.default_config_path.open("r") as f:
+            self.data.update(json.load(f))
+
+        # Update with default user config
+        with self.user_config_path.open("r") as f:
+            user_default_config = json.load(f)
+        self.update_with(user_default_config)
+
+    def save(self, user_config_path: str | Path = _USER_CONFIG_PATH):
+        """
+        Save the current configuration. By default, will store the configuration
+        internally. This stored configuration will be loaded automatically on
+        top of the default configuration.
+
+        :param user_config_path: The path where to save the user configuration file.
+        :raises ValueError: If the user config path is not provided.
+        """
+        with Path(user_config_path).open("w") as f:
+            json.dump(self.data, f, indent=4)
+
+    def reset_to_defaults(self):
+        """Reset the configuration to the default settings."""
+        self.data.clear()
+        with self.default_config_path.open("r") as f:
+            self.data.update(json.load(f))
+
+    def clear_user_config(self):
+        """Clear the contents of the locally stored user config file."""
+        with self.user_config_path.open("w") as f:
+            json.dump({}, f, indent=4)
+
+    def update_with(
+        self, other: abc.Mapping[str, abc.Mapping[str, list[str] | str | float]] | Path
+    ):
+        if isinstance(other, Path):
+            with other.open() as f:
+                self.update(json.load(f))
+        else:
+            for k, v in other.items():
+                if k in self:
+                    self[k].update(v)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.data})"
 
 
-@dataclass(frozen=True)
-class LigandConfig:
-    """
-    Config with parameters for ligand detection.
-    """
-
-    #: The distance thresholds for various bond types.
-    bond_thresholds: BondThresholds = BondThresholds()
-    #: The min number of a ligand's atoms.
-    min_atoms: int = 5
-    #: The min number of a structure's atoms forming at least bonds
-    #: with a ligand.
-    min_atom_connections: int = 5
-    #: The min number of a structure's residues forming contact with a ligand.
-    min_res_connections: int = 3
+DefaultConfig = Config()
 
 
 class AtomMark(IntFlag):
@@ -339,6 +284,7 @@ class AtomMark(IntFlag):
     The atom categories. Some categories may be combined, e.g., LIGAND | PEP
     is another valid category denoting ligand peptide atoms.
     """
+
     #: Unknown atom.
     UNK: int = 1
     #: Solvent atom.
@@ -353,35 +299,6 @@ class AtomMark(IntFlag):
     #: Carbohydrate polymer atoms.
     CARB: int = 32
 
-
-@dataclass(frozen=False)
-class StructureConfig:
-    """
-    Structure configuration parameters. Needed to initialize
-    :class:`lXtractor.core.structure.GenericStructure` objects.
-
-    """
-    #: A primary polymer type. "auto" will determine the primary polymer type
-    #: as the one having the most atoms. Other valid values are "carbohydrate",
-    #: "nucleotide", or "peptide". Abbreviations ("c", "n", or "p") are
-    #: supported.
-    primary_pol_type: str = "auto"
-    #: Which polymer types can also be ligands.
-    ligand_pol_types: tuple[str, ...] = ("c", "n", "p")
-    #: The number of monomers to consider a polymeric entity a polymer.
-    n_monomers: int = 2
-    #: The ligand configuration parameters.
-    ligand_config: LigandConfig = LigandConfig()
-    #: The list of solvent three-letter codes.
-    solvents: tuple[str, ...] = SOLVENTS
-    #: Atom marks (types/categories).
-    marks: AtomMark = AtomMark
-
-
-DumpNames = _DumpNames()
-SeqNames = _SeqNames()
-MetaNames = _MetaNames()
-ColNames = _ColNames()
 
 if __name__ == "__main__":
     raise RuntimeError

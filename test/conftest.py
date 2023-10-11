@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import biotite.structure as bst
 import pytest
 
 from lXtractor.core.chain import ChainList, ChainStructure, ChainSequence, Chain
-from lXtractor.core.config import SeqNames, DumpNames
+from lXtractor.core.config import DefaultConfig
 from lXtractor.core.structure import GenericStructure
-from lXtractor.util import filter_polymer
 from lXtractor.util.seq import read_fasta
 from lXtractor.variables.sequential import SeqEl
 from lXtractor.variables.structural import Dist, PseudoDihedral
@@ -143,10 +141,10 @@ def simple_chain_variables() -> tuple[PseudoDihedral, Dist, SeqEl]:
 
 
 @pytest.fixture()
-def simple_chain_seq() -> tuple[SeqNames, ChainSequence]:
-    fields = ChainSequence.field_names()
-    s = ChainSequence(1, 5, "S", {fields.seq1: "AAAAA"})
-    return fields, s
+def simple_chain_seq() -> ChainSequence:
+    seq1 = DefaultConfig["mapnames"]["seq1"]
+    s = ChainSequence(1, 5, "S", {seq1: "AAAAA"})
+    return s
 
 
 @pytest.fixture()
@@ -164,6 +162,7 @@ def src_chain(chicken_src_seq, src_str, abl_str) -> Chain:
 
 @pytest.fixture(scope="session")
 def fake_chain_dump(tmp_path_factory) -> tuple[Path, dict[str, Path]]:
+    names = DefaultConfig["filenames"]
     base = tmp_path_factory.mktemp("base", numbered=False)
     paths = dict(
         base=base,
@@ -181,9 +180,9 @@ def fake_chain_dump(tmp_path_factory) -> tuple[Path, dict[str, Path]]:
 
     for name in ["base", "X", "x1", "Y", "s1", "s2"]:
         p = paths[name]
-        open(p / DumpNames.meta, "w").close()
-        open(p / DumpNames.sequence, "w").close()
+        open(p / names["meta"], "w").close()
+        open(p / names["sequence"], "w").close()
 
-    open(paths["s1"] / f"{DumpNames.structure_base_name}.pdb", "w").close()
+    open(paths["s1"] / f"{names['structure_base_name']}.pdb", "w").close()
 
     return base, paths

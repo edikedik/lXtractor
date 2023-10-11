@@ -18,14 +18,25 @@ from toolz import curry, compose_left
 from tqdm.auto import tqdm
 
 from lXtractor.core.chain import ChainList, map_numbering_many2many
-from lXtractor.core.config import SeqNames, STRUCTURE_EXT
+from lXtractor.core.config import STRUCTURE_EXT, DefaultConfig
 from lXtractor.core.exceptions import InitError
-from lXtractor.core.structure import GenericStructure
+from lXtractor.core.structure import (
+    GenericStructure,
+    ProteinStructure,
+    NucleotideStructure,
+    CarbohydrateStructure,
+)
 from lXtractor.util.io import parse_suffix
 from lXtractor.util.misc import apply
 from lXtractor.util.seq import biotite_align
 
 LOGGER = logging.getLogger(__name__)
+_STRUCTURE_TYPES = {
+    "a": GenericStructure,
+    "n": NucleotideStructure,
+    "p": ProteinStructure,
+    "c": CarbohydrateStructure,
+}
 
 if t.TYPE_CHECKING:
     from lXtractor.core.chain import Chain, ChainStructure, ChainSequence
@@ -89,9 +100,12 @@ def _read_path(
     if suffix in supported_seq_ext:
         return ChainSequence.from_file(path)
     if suffix in supported_str_ext:
+        # TODO: This takes only the first altloc but should take all of them
         # Read initial structures, split by chains ant altloc
         # and wrap into a ChainStructure
-        structure = next(GenericStructure.read(path, altloc=True).split_altloc())
+        pol_type = DefaultConfig["structure"]["primary_pol_type"][0]
+        structure_cls = _STRUCTURE_TYPES[pol_type]
+        structure = next(structure_cls.read(path, altloc=True).split_altloc())
         return list(map(ChainStructure, structure.split_chains(polymer=True)))
     if tolerate_failures:
         return None
@@ -119,7 +133,12 @@ def _init(
             )
             structures = [s for s in structures if s.chain_id in xs]
             res = structures or None
-        case GenericStructure():
+        case (
+            GenericStructure()
+            | ProteinStructure()
+            | NucleotideStructure()
+            | CarbohydrateStructure()
+        ):
             res = ChainStructure(inp)
         case Path():
             res = _read_path(
@@ -384,7 +403,8 @@ class ChainInitializer:
                     c.add_structure(s, align_method=biotite_align, **kwargs)
             chains = ChainList(x[0] for x in items)
         else:
-            map_name = kwargs.get("map_name") or SeqNames.map_canonical
+            default_name = DefaultConfig["mapnames"]["map_canonical"]
+            map_name = kwargs.get("map_name") or default_name
 
             # create numbering groups -- lists of lists with numberings
             # for each structure in values

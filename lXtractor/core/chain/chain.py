@@ -14,7 +14,7 @@ from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.list import ChainList, _wrap_children
 from lXtractor.core.chain.sequence import ChainSequence
 from lXtractor.core.chain.structure import ChainStructure
-from lXtractor.core.config import DumpNames, SeqNames, _DumpNames, ColNames
+from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import (
     AmbiguousMapping,
     MissingData,
@@ -336,29 +336,25 @@ class Chain:
         cls,
         path: Path,
         *,
-        dump_names: _DumpNames = DumpNames,
         search_children: bool = False,
     ) -> Chain:
         """
         :param path: A path to a directory with at least sequence and
             metadata files.
-        :param dump_names: File names container.
         :param search_children: Recursively search for child segments and
             populate :attr:`children`.
         :return: An initialized chain.
         """
-        seq = ChainSequence.read(path, dump_names=dump_names, search_children=False)
+        fnames = DefaultConfig["filenames"]
+        seq = ChainSequence.read(path, search_children=False)
 
         structures = [
-            ChainStructure.read(p, dump_names=dump_names)
-            for p in (path / dump_names.structures_dir).glob("*")
+            ChainStructure.read(p) for p in (path / fnames["structures_dir"]).glob("*")
         ]
         c = Chain(seq, structures)
         if search_children:
-            for child_path in (path / dump_names.segments_dir).glob("*"):
-                child = Chain.read(
-                    child_path, dump_names=dump_names, search_children=True
-                )
+            for child_path in (path / fnames["segments_dir"]).glob("*"):
+                child = Chain.read(child_path, search_children=True)
                 child.parent = c
                 c.children.append(child)
         return c
@@ -371,7 +367,6 @@ class Chain:
         self,
         base_dir: Path,
         *,
-        dump_names: _DumpNames = DumpNames,
         str_fmt: str = "mmtf.gz",
         write_children: bool = True,
     ):
@@ -380,27 +375,23 @@ class Chain:
         Created dumps can be reinitialized via :meth:`read`.
 
         :param base_dir: A writable dir to hold the data.
-        :param dump_names: A file names container.
         :param str_fmt: A format to write :attr:`structures` in.
         :param write_children: Recursively write :attr:`children`.
         :return: Nothing.
         """
         base_dir.mkdir(parents=True, exist_ok=True)
-
-        self.seq.write(base_dir, dump_names=dump_names, write_children=False)
+        fnames = DefaultConfig["filenames"]
+        self.seq.write(base_dir, write_children=False)
 
         if self.structures:
-            str_dir = base_dir / dump_names.structures_dir
+            str_dir = base_dir / fnames["structures_dir"]
             str_dir.mkdir(exist_ok=True)
             for s in self.structures:
-                s.write(
-                    str_dir / s.id, str_fmt, dump_names=dump_names, write_children=False
-                )
+                s.write(str_dir / s.id, str_fmt, write_children=False)
 
         for c in self.children:
             c.write(
-                base_dir / dump_names.segments_dir / c.id,
-                dump_names=dump_names,
+                base_dir / fnames["segments_dir"] / c.id,
                 str_fmt=str_fmt,
                 write_children=write_children,
             )
@@ -411,7 +402,7 @@ class Chain:
         *,
         check_ids: bool = True,
         map_to_seq: bool = True,
-        map_name: str = SeqNames.map_canonical,
+        map_name: str = DefaultConfig["mapnames"]["map_canonical"],
         add_to_children: bool = False,
         **kwargs,
     ):
@@ -454,7 +445,7 @@ class Chain:
     def transfer_seq_mapping(
         self,
         map_name: str,
-        link_map: str = SeqNames.map_canonical,
+        link_map: str = DefaultConfig["mapnames"]["map_canonical"],
         link_map_points_to: str = "i",
         **kwargs,
     ):
@@ -596,7 +587,7 @@ class Chain:
         self, meta: bool = True, children: bool = False, structures: bool = True
     ) -> pd.DataFrame:
         s = self.seq.summary(meta=meta, children=False)
-        s[ColNames.id] = [self.id]
+        s[DefaultConfig["colnames"]["id"]] = [self.id]
         if structures and self.structures:
             str_summaries = pd.concat(
                 s.summary(meta=meta, children=False) for s in self.structures

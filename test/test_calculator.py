@@ -25,30 +25,30 @@ def chain_structure_seq(chain_structure):
     return seq, mapping
 
 
-SeqEl191 = SeqEl(191, 'str')
-SeqEl191Res = (True, 'K')
+SeqEl191 = SeqEl(191, "str")
+SeqEl191Res = (True, "K")
 TEST_SINGLES = (
     # Sequential
     (SeqEl191, SeqEl191Res),
-    (SeqEl(1000, 'str'), (False, 'Missing 1000 in mapping')),
+    (SeqEl(1000, "str"), (False, "Missing 1000 in mapping")),
     (PFP(191, 1), (True, -4.99)),
     (
-        make_str(reduce=count_char(c='E'), rtype=str)(start=178),
+        make_str(reduce=count_char(c="E"), rtype=str)(start=178),
         (True, 5),
     ),
     (
-        make_str(reduce=count_char(c='E'), rtype=str)(start=178, stop=189),
+        make_str(reduce=count_char(c="E"), rtype=str)(start=178, stop=189),
         (True, 4),
     ),
     # Structural
-    (Dist(28, 191, 'CB', 'CB'), (True, 23.513)),
-    (AggDist(28, 191, 'min'), (True, 19.607)),
+    (Dist(28, 191, "CB", "CB"), (True, 23.513)),
+    (AggDist(28, 191, "min"), (True, 19.607)),
 )
 TEST_ITERABLES = (
     ([True], [[SeqEl191, (PFP(191, 1))]], [[SeqEl191Res, (True, -4.99)]]),
     (
         [True, False],
-        [[SeqEl191], [(Dist(28, 191, 'CB', 'CB'))]],
+        [[SeqEl191], [(Dist(28, 191, "CB", "CB"))]],
         [[SeqEl191Res], [(True, 23.513)]],
     ),
     (  # check vs broadcasting
@@ -77,8 +77,8 @@ def get_obj(is_seq_str, chain_structure_seq, chain_structure):
     return o, m
 
 
-@pytest.mark.parametrize('v,res', TEST_SINGLES)
-@pytest.mark.parametrize('num_proc', [1, 2])
+@pytest.mark.parametrize("v,res", TEST_SINGLES)
+@pytest.mark.parametrize("num_proc", [1, 2])
 def test_call_singles(v, res, chain_structure, chain_structure_seq, num_proc):
     calc = GenericCalculator(num_proc=num_proc)
     o, m = get_obj(
@@ -89,8 +89,8 @@ def test_call_singles(v, res, chain_structure, chain_structure_seq, num_proc):
     assert comp(actual, res, is_float)
 
 
-@pytest.mark.parametrize('is_seq,v,res', TEST_ITERABLES)
-@pytest.mark.parametrize('num_proc', [1, 2])
+@pytest.mark.parametrize("is_seq,v,res", TEST_ITERABLES)
+@pytest.mark.parametrize("num_proc", [1, 2])
 def test_call_iterables(is_seq, v, res, num_proc, chain_structure_seq, chain_structure):
     calc = GenericCalculator(num_proc=num_proc)
     inputs = [get_obj(x, chain_structure_seq, chain_structure) for x in is_seq]
@@ -103,8 +103,8 @@ def test_call_iterables(is_seq, v, res, num_proc, chain_structure_seq, chain_str
             assert comp(actual, r, is_float)
 
 
-@pytest.mark.parametrize('v,res', TEST_MAP)
-@pytest.mark.parametrize('num_proc', [1, 2])
+@pytest.mark.parametrize("v,res", TEST_MAP)
+@pytest.mark.parametrize("num_proc", [1, 2])
 def test_map(v, res, num_proc, chain_structure_seq):
     calc = GenericCalculator(num_proc=num_proc)
     o, m = chain_structure_seq
@@ -112,7 +112,7 @@ def test_map(v, res, num_proc, chain_structure_seq):
     assert calc_res == res
 
 
-@pytest.mark.parametrize('num_proc', [1, 2])
+@pytest.mark.parametrize("num_proc", [1, 2])
 def test_vmap(num_proc, chain_structure_seq):
     calc = GenericCalculator(num_proc=num_proc)
     o, m = chain_structure_seq

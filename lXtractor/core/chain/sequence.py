@@ -27,31 +27,28 @@ from lXtractor.core.base import (
 )
 from lXtractor.core.chain.base import topo_iter
 from lXtractor.core.chain.list import _wrap_children, add_category, ChainList
-from lXtractor.core.config import (
-    SeqNames,
-    MetaNames,
-    _SeqNames,
-    _MetaNames,
-    DumpNames,
-    _DumpNames,
-    UNK_NAME,
-    ColNames,
-)
+from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import (
     MissingData,
     InitError,
     AmbiguousMapping,
     LengthMismatch,
 )
-from lXtractor.util import biotite_align, apply
-from lXtractor.util.io import get_files, get_dirs
-from lXtractor.util.misc import is_empty
-from lXtractor.util.seq import mafft_align, map_pairs_numbering, read_fasta
+from lXtractor.util import (
+    biotite_align,
+    apply,
+    mafft_align,
+    map_pairs_numbering,
+    read_fasta,
+    get_dirs,
+    get_files,
+    is_empty,
+)
 
 if t.TYPE_CHECKING:
     from lXtractor.core.chain import Chain, ChainStructure
 
-# TODO: add "reset_numbering()" method for a segment
+# TODO: add "drop_index()" method for a segment
 # It "reenumerates" the segment from the new start (1 by default)
 # and may keep an existing numbering
 
@@ -103,20 +100,6 @@ class ChainSequence(lxs.Segment):
         """
         return tuple(self._seqs.keys())
 
-    @classmethod
-    def field_names(cls) -> _SeqNames:
-        """
-        :return: The default sequence's names.
-        """
-        return SeqNames
-
-    @classmethod
-    def meta_names(cls) -> _MetaNames:
-        """
-        :return: defaults names of the :attr:`meta` fields.
-        """
-        return MetaNames
-
     def _get_seq(self, name: str) -> abc.Sequence[str]:
         try:
             return self[name]
@@ -128,8 +111,8 @@ class ChainSequence(lxs.Segment):
         """
         :return: the primary sequence's (:meth:`seq1`) numbering.
         """
-        if SeqNames.enum in self:
-            return self[SeqNames.enum]
+        if DefaultConfig["mapnames"]["enum"] in self:
+            return self[DefaultConfig["mapnames"]["enum"]]
         return list(range(self.start, self.end + 1))
 
     @property
@@ -146,7 +129,7 @@ class ChainSequence(lxs.Segment):
         """
         :return: the primary sequence.
         """
-        s = self._get_seq(SeqNames.seq1)
+        s = self._get_seq(DefaultConfig["mapnames"]["seq1"])
         return s if isinstance(s, str) else "".join(s)
 
     @property
@@ -155,16 +138,16 @@ class ChainSequence(lxs.Segment):
         """
         :return: the three-letter codes of a primary sequence.
         """
-        if SeqNames.seq3 not in self:
+        if DefaultConfig["mapnames"]["seq3"] not in self:
             try:
-                seq1 = self[SeqNames.seq1]
+                seq1 = self[DefaultConfig["mapnames"]["seq1"]]
             except KeyError as e:
                 raise MissingData(
                     "Attempted to construct seq3 from seq1 but the latter is missing."
                 ) from e
             mapping = ResNameDict()
             return [mapping[x] for x in seq1]
-        return self[SeqNames.seq3]
+        return self[DefaultConfig["mapnames"]["seq3"]]
 
     @property
     def categories(self) -> list[str]:
@@ -174,27 +157,27 @@ class ChainSequence(lxs.Segment):
         Categories are kept under "category" field in :attr:`meta`
         as a ","-separated list of strings. For instance, "domain,family_x".
         """
-        cat: str = self.meta.get(MetaNames.category, "")
+        cat: str = self.meta.get(DefaultConfig["metadata"]["category"], "")
         return cat.split(",") if cat else []
 
     def _setup_and_validate(self) -> None:
         super()._setup_and_validate()
 
-        if SeqNames.seq1 not in self:
-            warnings.warn(f"Missing {SeqNames.seq1}")
+        if DefaultConfig["mapnames"]["seq1"] not in self:
+            warnings.warn(f"Missing {DefaultConfig['mapnames']['seq1']}")
         else:
             if not isinstance(self.seq1, str):
                 try:
-                    self[SeqNames.seq1] = "".join(self.seq1)
+                    self[DefaultConfig["mapnames"]["seq1"]] = "".join(self.seq1)
                 except Exception as e:
                     raise InitError(
-                        f"Failed to convert {SeqNames.seq1} "
+                        f"Failed to convert {DefaultConfig['mapnames']['seq1']} "
                         f"from type {type(self.seq1)} to str "
                         f"due to: {e}"
                     ) from e
 
-        self.meta[MetaNames.id] = self.id
-        self.meta[MetaNames.name] = self.name
+        self.meta[DefaultConfig["metadata"]["id"]] = self.id
+        self.meta[DefaultConfig["metadata"]["name"]] = self.name
         self.children: ChainList[ChainSequence] = _wrap_children(self.children)
 
     def rename(self, name: str) -> Self:
@@ -248,7 +231,7 @@ class ChainSequence(lxs.Segment):
             return "".join(s)
 
         if isinstance(other, str):
-            name = name or UNK_NAME
+            name = name or DefaultConfig["unknowns"]["name"]
             other = ChainSequence.from_string(other)
         elif isinstance(other, tuple):
             name = other[0]
@@ -271,7 +254,7 @@ class ChainSequence(lxs.Segment):
             if not name:
                 name = f"map_{other.name}"
         elif isinstance(other, Alignment):
-            self_name = self.name or UNK_NAME
+            self_name = self.name or DefaultConfig["unknowns"]["name"]
             aligned_other = other.align((self_name, seq1))[self_name]
             aligned_other_num = [
                 i for (i, c) in enumerate(aligned_other, start=1) if c != "-"
@@ -286,7 +269,7 @@ class ChainSequence(lxs.Segment):
                 **kwargs,
             )
             if not name:
-                name = SeqNames.map_aln
+                name = DefaultConfig["mapnames"]["map_aln"]
         else:
             raise TypeError(f"Unsupported type {type(other)}")
 
@@ -642,8 +625,8 @@ class ChainSequence(lxs.Segment):
         # TODO: there is no point in transferring meta info whatsoever --> make new
         child = self.sub(start, end, deep_copy=deep_copy, handle_mode="self")
         child.name = name
-        child.meta[MetaNames.name] = name
-        child.meta[MetaNames.id] = child.id
+        child.meta[DefaultConfig["metadata"]["name"]] = name
+        child.meta[DefaultConfig["metadata"]["id"]] = child.id
 
         if category:
             add_category(child, category)
@@ -838,7 +821,13 @@ class ChainSequence(lxs.Segment):
         if name is None:
             name = seq[0]
 
-        return cls(start, end, name, meta=meta, seqs={SeqNames.seq1: seq[1], **kwargs})
+        return cls(
+            start,
+            end,
+            name,
+            meta=meta,
+            seqs={DefaultConfig["mapnames"]["seq1"]: seq[1], **kwargs},
+        )
 
     @classmethod
     def from_string(
@@ -869,7 +858,13 @@ class ChainSequence(lxs.Segment):
             start = start or 1
             end = end or start + len(s) - 1
 
-        return cls(start, end, name, meta=meta, seqs={SeqNames.seq1: s, **kwargs})
+        return cls(
+            start,
+            end,
+            name,
+            meta=meta,
+            seqs={DefaultConfig["mapnames"]["seq1"]: s, **kwargs},
+        )
 
     @classmethod
     def from_tuple(
@@ -888,7 +883,13 @@ class ChainSequence(lxs.Segment):
         else:
             start = start or 1
             end = end or start + len(s) - 1
-        return cls(start, end, name, meta=meta, seqs={SeqNames.seq1: s, **kwargs})
+        return cls(
+            start,
+            end,
+            name,
+            meta=meta,
+            seqs={DefaultConfig["mapnames"]["seq1"]: s, **kwargs},
+        )
 
     @classmethod
     def make_empty(cls) -> ChainSequence:
@@ -928,7 +929,6 @@ class ChainSequence(lxs.Segment):
         cls,
         base_dir: Path,
         *,
-        dump_names: _DumpNames = DumpNames,
         search_children: bool = False,
     ) -> Self:
         """
@@ -943,35 +943,35 @@ class ChainSequence(lxs.Segment):
         files = get_files(base_dir)
         dirs = get_dirs(base_dir)
 
-        if dump_names.sequence not in files:
-            raise InitError(f"{dump_names.sequence} must be present")
+        filenames = DefaultConfig["filenames"]
 
-        if dump_names.meta in files:
-            df = pd.read_csv(
-                files[dump_names.meta], sep=r"\s+", names=["Title", "Value"]
-            )
+        name_seq = filenames["sequence"]
+        name_meta = filenames["meta"]
+        if name_seq not in files:
+            raise InitError(f"{name_seq} must be present")
+
+        if name_meta in files:
+            df = pd.read_csv(files[name_meta], sep=r"\s+", names=["Title", "Value"])
             meta = dict(zip(df["Title"], df["Value"]))
-            if MetaNames.name in meta:
-                name = meta[MetaNames.name]
+            if DefaultConfig["metadata"]["name"] in meta:
+                name = meta[DefaultConfig["metadata"]["name"]]
             else:
                 name = "UnnamedSequence"
         else:
             meta, name = {}, "UnnamedSequence"
 
-        df = pd.read_csv(files[dump_names.sequence], sep="\t")
+        df = pd.read_csv(files[filenames["sequence"]], sep="\t")
         seq = cls.from_df(df, name)
         seq.meta = meta
 
-        if dump_names.variables in files:
+        if filenames["variables"] in files:
             from lXtractor.variables import Variables
 
-            seq.variables = Variables.read(files[dump_names.variables]).sequence
+            seq.variables = Variables.read(files[filenames["variables"]]).sequence
 
-        if search_children and dump_names.segments_dir in dirs:
-            for path in (base_dir / dump_names.segments_dir).iterdir():
-                child = ChainSequence.read(
-                    path, dump_names=dump_names, search_children=True
-                )
+        if search_children and filenames["segments_dir"] in dirs:
+            for path in (base_dir / filenames["segments_dir"]).iterdir():
+                child = ChainSequence.read(path, search_children=True)
                 child.parent = seq
                 seq.children.append(child)
 
@@ -1010,7 +1010,6 @@ class ChainSequence(lxs.Segment):
         self,
         base_dir: Path,
         *,
-        dump_names: _DumpNames = DumpNames,
         write_children: bool = False,
     ):
         """
@@ -1018,29 +1017,34 @@ class ChainSequence(lxs.Segment):
         in `base_dir` using :meth:`write_seq` and :meth:`write_meta`.
 
         :param base_dir: Destination directory.
-        :param dump_names: A container (dataclass) with filenames.
         :param write_children: Recursively write children.
         :return: Nothing.
         """
         base_dir.mkdir(exist_ok=True, parents=True)
-        self.write_seq(base_dir / dump_names.sequence)
+        self.write_seq(base_dir / DefaultConfig["filenames"]["sequence"])
         if self.meta:
-            self.write_meta(base_dir / dump_names.meta)
+            self.write_meta(base_dir / DefaultConfig["filenames"]["meta"])
             if self.variables:
-                self.variables.write(base_dir / dump_names.variables)
+                self.variables.write(base_dir / DefaultConfig["filenames"]["variables"])
         if write_children:
             for child in self.children:
                 child_dir = (
-                    base_dir / dump_names.segments_dir / (child.name or UNK_NAME)
+                    base_dir
+                    / DefaultConfig["filenames"]["segments_dir"]
+                    / (child.name or DefaultConfig["unknowns"]["name"])
                 )
-                child.write(
-                    child_dir, dump_names=dump_names, write_children=write_children
-                )
+                child.write(child_dir, write_children=write_children)
 
     def summary(self, meta: bool = True, children: bool = False) -> pd.DataFrame:
         parent_id = self.parent.id if self.parent is not None else np.NaN
         vs = [parent_id, self.id, self.start, self.end]
-        cols = [ColNames.parent_id, ColNames.id, ColNames.start, ColNames.end]
+        colnames = DefaultConfig["colnames"]
+        cols = [
+            colnames["parent_id"],
+            colnames["id"],
+            colnames["start"],
+            colnames["end"],
+        ]
 
         if meta:
             vs += list(self.meta.values())

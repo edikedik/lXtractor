@@ -22,7 +22,7 @@ from more_itertools import chunked_even, peekable
 from tqdm.auto import tqdm
 
 from lXtractor.core.base import UrlGetter
-from lXtractor.core.config import DumpNames
+from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import FormatError
 
 T = t.TypeVar("T")
@@ -43,7 +43,7 @@ __all__ = (
     "run_sp",
     "path_tree",
     "parse_suffix",
-    "read_n_col_table"
+    "read_n_col_table",
 )
 
 
@@ -473,12 +473,14 @@ def get_dirs(path: Path) -> dict[str, Path]:
 
 def _is_valid_seq_path(path: Path) -> bool:
     files = get_files(path)
-    return DumpNames.meta in files and DumpNames.sequence in files
+    fnames = DefaultConfig["filenames"]
+    return fnames["meta"] in files and fnames["sequence"] in files
 
 
 def _is_valid_str_path(path: Path) -> bool:
     base_names = [x.split(".")[0] for x in get_files(path)]
-    return _is_valid_seq_path(path) and DumpNames.structure_base_name in base_names
+    fnames = DefaultConfig["filenames"]
+    return _is_valid_seq_path(path) and fnames["structure_base_name"] in base_names
 
 
 # TODO: make doctests
@@ -501,6 +503,7 @@ def path_tree(path: Path) -> nx.DiGraph:
     :return: An undirected graph with paths as nodes and edges representing
         parent-child relationships.
     """
+    fnames = DefaultConfig["filenames"]
 
     d = nx.DiGraph()
     d.add_node(path)
@@ -508,19 +511,19 @@ def path_tree(path: Path) -> nx.DiGraph:
     for root, dirs, files in walk(path):
         root_path = Path(root)
         if (
-            DumpNames.meta in files
-            and DumpNames.structures_dir != root_path.parent.name
+            fnames["meta"] in files
+            and fnames["structures_dir"] != root_path.parent.name
         ):
             d.add_node(root_path)
         else:
             parent, child = root_path.parent.name, root_path.name
-            if child == DumpNames.segments_dir:
+            if child == fnames["segments_dir"]:
                 for seg in dirs:
                     if _is_valid_seq_path(root_path / seg):
                         d.add_edge(root_path.parent, root_path / seg)
                     else:
                         LOGGER.warning(f"Invalid segment object in {root_path / seg}")
-            if child == DumpNames.structures_dir:
+            if child == fnames["structures_dir"]:
                 structures = []
                 for s_dir in dirs:
                     if _is_valid_str_path(root_path / s_dir):

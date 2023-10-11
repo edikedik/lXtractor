@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from lXtractor.core.chain import ChainSequence
-from lXtractor.core.config import SeqNames
+from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import MissingData
 from lXtractor.ext import filter_by_method
 from lXtractor.core.chain.structure import filter_selection_extended, subset_to_matching
@@ -20,7 +20,7 @@ def test_extended_selection_filter(src_str):
     m = filter_selection_extended(src_str, pos=dfg, atom_names=['C', 'CA'])
     assert m.sum() == 6
 
-    child = src_str.spawn_child(404, 406, map_from=SeqNames.enum)
+    child = src_str.spawn_child(404, 406, map_from=DefaultConfig['mapnames']['enum'])
     child._seq.add_seq('X', [1, 2, 3])
     m = filter_selection_extended(
         child, pos=[2], atom_names=['N', 'C', 'CA'], map_name='X', exclude_hydrogen=True

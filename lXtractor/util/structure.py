@@ -18,12 +18,7 @@ import numpy.typing as npt
 from more_itertools import unzip, windowed, unique_everseen
 from toolz import compose_left
 
-from lXtractor.core.config import (
-    SOLVENTS,
-    BondThresholds,
-    STRUCTURE_FMT,
-    NUCLEOTIDES,
-)
+from lXtractor.core.config import DefaultConfig, STRUCTURE_FMT
 from lXtractor.core.exceptions import LengthMismatch, MissingData, FormatError
 from lXtractor.util.io import parse_suffix
 from lXtractor.util.typing import is_sequence_of
@@ -320,23 +315,20 @@ def filter_any_polymer(a: bst.AtomArray, min_size: int = 2) -> np.ndarray:
 
 def filter_solvent_extended(
     a: bst.AtomArray,
-    solvents: abc.Sequence[str] = SOLVENTS,
-    nucleotides: abc.Sequence[str] = NUCLEOTIDES,
 ) -> np.ndarray:
     """
     Filter for solvent atoms using a curated solvent list including non-water
     molecules typically being a part of a crystallization solution.
 
     :param a: Atom array.
-    :param solvents: A sequence of solvent residue three-letter codes.
-    :param nucleotides: A sequence of nucleotide residue codes.
     :return: A boolean mask ``True`` for solvent atoms.
     """
     if len(a) == 0:
         return np.empty(shape=0, dtype=np.bool_)
     return (
-        np.isin(a.res_name, solvents)
-        | (np.vectorize(len)(a.res_name) != 3) & ~np.isin(a.res_name, nucleotides)
+        np.isin(a.res_name, DefaultConfig["residues"]["solvents"])
+        | (np.vectorize(len)(a.res_name) != 3)
+        & ~np.isin(a.res_name, DefaultConfig["residues"]["nucleotides"])
         # | (np.vectorize(len)(a.res_name) == 1)
     )
 
@@ -383,7 +375,8 @@ def find_polymer_type(
 
 
 def find_contacts(
-    a: bst.AtomArray, mask: np.ndarray, ts: BondThresholds = BondThresholds()
+    a: bst.AtomArray,
+    mask: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Find contacts between a subset of atoms within the structure and the rest
@@ -391,7 +384,6 @@ def find_contacts(
 
     :param a: Atom array.
     :param mask: A boolean mask ``True`` for atoms for which to find contacts.
-    :param ts: Bond thresholds.
     :return: A tuple with three arrays of size equal to the `a`'s number of atoms:
 
         #. Contacts.
@@ -413,9 +405,15 @@ def find_contacts(
     d_min = np.min(d, axis=0)  # min distance from sub atoms to the rest
     d_argmin = np.argmin(d, axis=0)  # sub atom indices contacting structure
 
+    bonds = DefaultConfig["bonds"]
+
     contacts = np.zeros_like(d_min, dtype=int)
-    contacts[(d_min >= ts.non_covalent.lower) & (d_min <= ts.non_covalent.upper)] = 1
-    contacts[(d_min >= ts.covalent.lower) & (d_min <= ts.covalent.upper)] = 2
+    contacts[
+        (d_min >= bonds["non_covalent_lower"]) & (d_min <= bonds["non_covalent_upper"])
+    ] = 1
+    contacts[
+        (d_min >= bonds["covalent_lower"]) & (d_min <= bonds["covalent_upper"])
+    ] = 2
     contacts[mask] = 0
 
     return contacts, d_min, d_argmin

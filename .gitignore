@@ -1,15 +1,21 @@
-### JetBrains template
-# Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
-# Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
+### lXtractor-specific
 
 notebooks
 docs/notebooks
-lXtractor/resources
+lXtractor/resources/*
+!lXtractor/resources/PFP.csv
+!lXtractor/resources/all21.msgpack
+!lXtractor/resources/default_config.json
+!lXtractor/resources/user_config.json
 tok.txt
 todo.md
 *.ipynb
 stash
 .directory
+
+### JetBrains template
+# Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
+# Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
 
 # User-specific stuff
 .idea/**/workspace.xml
@@ -201,11 +207,8 @@ docs/_build/
 target/
 
 # Jupyter Notebook
-.ipynb_checkpoints
 
 # IPython
-profile_default/
-ipython_config.py
 
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is

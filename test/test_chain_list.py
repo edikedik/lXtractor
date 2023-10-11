@@ -2,7 +2,7 @@ import pytest
 from toolz import curry, identity
 
 from lXtractor.core.chain import ChainList, ChainSequence, ChainStructure, Chain
-from lXtractor.core.config import ColNames
+from lXtractor.core.config import DefaultConfig
 from lXtractor.core.segment import Segment
 
 
@@ -196,7 +196,7 @@ def test_summary(simple_chain_structure):
     # + one chain structure child = 6
     assert len(df) == 6
     # Two initial chains and one chain structure
-    assert len(df[df[ColNames.parent_id].isna()]) == 3
+    assert len(df[df[DefaultConfig["colnames"]["parent_id"]].isna()]) == 3
 
 
 def spawn_child(s, start, end, name):
@@ -222,12 +222,12 @@ def test_apply():
 
 
 def test_drop_duplicates():
-    s1 = ChainSequence.from_string('XXX', name='S')
-    s2 = ChainSequence.from_string('YYY', name='S')
+    s1 = ChainSequence.from_string("XXX", name="S")
+    s2 = ChainSequence.from_string("YYY", name="S")
     cl = ChainList([s1, s2])
     cl_ = cl.drop_duplicates()
     assert len(cl_) == 1
-    assert cl_[0].seq1 == 'XXX'
+    assert cl_[0].seq1 == "XXX"
     cl_ = cl.drop_duplicates(key=identity)
     assert len(cl_) == 2
     assert cl_ == cl

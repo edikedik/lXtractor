@@ -5,6 +5,7 @@ binding pocket.
 import re
 from collections import abc
 
+# noinspection PyUnresolvedReferences
 import numpy as np
 from lXtractor.core import Ligand
 from lXtractor.core.exceptions import ParsingError, FormatError

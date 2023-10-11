@@ -6,14 +6,15 @@ from more_itertools import consume
 
 from lXtractor.core.chain import ChainStructure, ChainIO, Chain, ChainSequence
 from lXtractor.core.chain.io import read_chains, ChainIOConfig
-from lXtractor.core.config import DumpNames
+from lXtractor.core.config import DefaultConfig
 from lXtractor.util.io import get_files, get_dirs
 
 T = t.TypeVar("T")
 
 
 def test_chainio(simple_structure, simple_chain_seq):
-    fields, seq = simple_chain_seq
+    fnames = DefaultConfig["filenames"]
+    seq = simple_chain_seq
     struc = ChainStructure(simple_structure)
     seq_child = seq.spawn_child(1, 2)
     ch = Chain(seq, [struc], children=[Chain(seq_child)])
@@ -24,8 +25,8 @@ def test_chainio(simple_structure, simple_chain_seq):
         tmp = Path(tmp)
         consume(io.write(seq, tmp))
         files = get_files(tmp)
-        assert DumpNames.sequence in files
-        assert DumpNames.meta in files
+        assert fnames["sequence"] in files
+        assert fnames["meta"] in files
         s_r = list(io.read_chain_seq(tmp))
         assert len(s_r) == 1
         s_r = s_r.pop()
@@ -40,10 +41,10 @@ def test_chainio(simple_structure, simple_chain_seq):
         tmp = Path(tmp)
         consume(io.write(struc, tmp))
         files = get_files(tmp)
-        stems = [x.name.split('.')[0] for x in files.values()]
-        assert DumpNames.structure_base_name in stems
-        assert DumpNames.sequence in files
-        assert DumpNames.meta in files
+        stems = [x.name.split(".")[0] for x in files.values()]
+        assert fnames["structure_base_name"] in stems
+        assert fnames["sequence"] in files
+        assert fnames["meta"] in files
 
         consume(io.write([struc, struc], tmp))
         dirs = get_dirs(tmp)
@@ -60,24 +61,25 @@ def test_chainio(simple_structure, simple_chain_seq):
 
     # chain io
     with TemporaryDirectory() as tmp:
+        fnames = DefaultConfig["filenames"]
         tmp = Path(tmp)
         consume(io.write(ch, tmp))
         files = get_files(tmp)
         dirs = get_dirs(tmp)
-        assert DumpNames.sequence in files
-        assert DumpNames.meta in files
-        assert DumpNames.structures_dir in dirs
+        assert fnames["sequence"] in files
+        assert fnames["meta"] in files
+        assert fnames["structures_dir"] in dirs
 
-        struc_paths = list(dirs[DumpNames.structures_dir].glob("*"))
+        struc_paths = list(dirs[fnames["structures_dir"]].glob("*"))
         assert len(struc_paths) == 1
         struc_path = struc_paths.pop()
         assert struc_path.name == struc.id
 
-        assert DumpNames.segments_dir in dirs
-        segm_paths = list(dirs[DumpNames.segments_dir].glob("*"))
+        assert fnames["segments_dir"] in dirs
+        segm_paths = list(dirs[fnames["segments_dir"]].glob("*"))
         assert len(segm_paths) == 1
         segm_dir = segm_paths.pop()
-        assert segm_dir.name == f'Chain({seq_child.id})'
+        assert segm_dir.name == f"Chain({seq_child.id})"
 
         c_r = list(io.read_chain(tmp, search_children=True))
         assert len(c_r) == 1
@@ -101,7 +103,7 @@ def test_chainio(simple_structure, simple_chain_seq):
 
 
 def test_chainio_parallel(simple_structure, simple_chain_seq):
-    fields, seq = simple_chain_seq
+    seq = simple_chain_seq
 
     io = ChainIO(num_proc=2)
 
@@ -127,7 +129,7 @@ def change_name(obj: T) -> T:
 
 
 def test_read_chains(simple_structure, simple_chain_seq):
-    fields, seq = simple_chain_seq
+    seq = simple_chain_seq
     cs = ChainStructure(simple_structure)
     c = Chain(seq, structures=[cs])
     child1 = c.spawn_child(1, 3, name="C1")

@@ -14,7 +14,7 @@ import numpy as np
 from more_itertools import unique_justseen
 from toolz import pipe
 
-from lXtractor.core.config import LigandConfig
+from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import FailedCalculation, InitError
 from lXtractor.util.structure import calculate_dihedral
 from lXtractor.variables.base import (
@@ -22,8 +22,13 @@ from lXtractor.variables.base import (
     AggFns,
     MappingT,
 )
-from lXtractor.variables.util import residue_mask, atom_mask, _get_residue, _get_coord, \
-    _agg_dist
+from lXtractor.variables.util import (
+    residue_mask,
+    atom_mask,
+    _get_residue,
+    _get_coord,
+    _agg_dist,
+)
 
 if t.TYPE_CHECKING:
     from lXtractor.core.structure import GenericStructure
@@ -491,17 +496,20 @@ class ClosestLigandNames(StructureVariable):
             if self.a is not None
             else residue_mask(self.p, obj.array, mapping)
         )
-        cfg = LigandConfig(min_atom_connections=1, min_res_connections=0)
-        names = []
-        for lig in obj.ligands:
-            try:
-                if lig.is_locally_connected(mask, cfg):
-                    names.append(lig.res_name)
-            except IndexError as e:
-                raise FailedCalculation(
-                    f"Failed to apply obtained position mask derived from {obj._name} "
-                    f"to a ligand {lig.res_name} ({lig.parent._name}) parent contacts"
-                ) from e
+        with DefaultConfig.temporary_namespace():
+            DefaultConfig["ligand"]["min_atom_connections"] = 1
+            DefaultConfig["ligand"]["min_res_connections"] = 0
+            names = []
+            for lig in obj.ligands:
+                try:
+                    if lig.is_locally_connected(mask):
+                        names.append(lig.res_name)
+                except IndexError as e:
+                    raise FailedCalculation(
+                        f"Failed to apply obtained position mask derived from "
+                        f"{obj} to a ligand {lig.res_name} "
+                        f"({lig.parent}) parent contacts."
+                    ) from e
         return ",".join(names)
 
 

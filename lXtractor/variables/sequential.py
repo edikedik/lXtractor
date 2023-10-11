@@ -9,18 +9,18 @@ from collections import abc
 
 from more_itertools import islice_extended
 
-from lXtractor.core.config import SeqNames
+from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import FailedCalculation
 from lXtractor.variables.base import SequenceVariable, MappingT, ProtFP
 from lXtractor.variables.util import _try_map
 
-T = t.TypeVar('T')
-V = t.TypeVar('V')
-K = t.TypeVar('K')
+T = t.TypeVar("T")
+V = t.TypeVar("V")
+K = t.TypeVar("K")
 
 _ProtFP = ProtFP()
 
-__all__ = ('SeqEl', 'PFP', 'SliceTransformReduce', 'make_str')
+__all__ = ("SeqEl", "PFP", "SliceTransformReduce", "make_str")
 
 
 class SeqEl(SequenceVariable[T, T]):
@@ -37,9 +37,14 @@ class SeqEl(SequenceVariable[T, T]):
 
     """
 
-    __slots__ = ('p', '_rtype', 'seq_name')
+    __slots__ = ("p", "_rtype", "seq_name")
 
-    def __init__(self, p: int, _rtype: str = 'str', seq_name: str = SeqNames.seq1):
+    def __init__(
+        self,
+        p: int,
+        _rtype: str = "str",
+        seq_name: str = DefaultConfig["mapnames"]["seq1"],
+    ):
         """
         :param p: Position, starting from 1.
         :param seq_name: The name of the sequence used to distinguish variables
@@ -57,14 +62,12 @@ class SeqEl(SequenceVariable[T, T]):
     def rtype(self) -> t.Type[T]:
         return eval(self._rtype)
 
-    def calculate(
-        self, obj: abc.Sequence[T], mapping: MappingT | None = None
-    ) -> T:
+    def calculate(self, obj: abc.Sequence[T], mapping: MappingT | None = None) -> T:
         p: int = _try_map(self.p, mapping)
         try:
             return obj[p - 1]
         except IndexError as e:
-            raise FailedCalculation(f'Missing index {p - 1} in sequence') from e
+            raise FailedCalculation(f"Missing index {p - 1} in sequence") from e
 
 
 class PFP(SequenceVariable):
@@ -76,7 +79,7 @@ class PFP(SequenceVariable):
         :class:`lXtractor.variables.base.ProtFP`
     """
 
-    __slots__ = ('p', 'i')
+    __slots__ = ("p", "i")
 
     def __init__(self, p: int, i: int):
         """
@@ -100,7 +103,7 @@ class PFP(SequenceVariable):
         try:
             return _ProtFP[(obj[p - 1], self.i)]
         except (KeyError, IndexError) as e:
-            raise FailedCalculation(f'Failed to map {p - 1} with ProtFP') from e
+            raise FailedCalculation(f"Failed to map {p - 1} with ProtFP") from e
 
 
 class SliceTransformReduce(SequenceVariable, t.Generic[T, V, K]):
@@ -120,14 +123,14 @@ class SliceTransformReduce(SequenceVariable, t.Generic[T, V, K]):
 
     """
 
-    __slots__ = ('start', 'stop', 'step', 'seq_name')
+    __slots__ = ("start", "stop", "step", "seq_name")
 
     def __init__(
         self,
         start: int | None = None,
         stop: int | None = None,
         step: int | None = None,
-        seq_name: str = SeqNames.seq1,
+        seq_name: str = DefaultConfig["mapnames"]["seq1"],
     ):
         """
         .. note::
@@ -173,9 +176,7 @@ class SliceTransformReduce(SequenceVariable, t.Generic[T, V, K]):
         """
         return seq
 
-    def calculate(
-        self, obj: abc.Iterable[K], mapping: MappingT | None = None
-    ) -> V:
+    def calculate(self, obj: abc.Iterable[K], mapping: MappingT | None = None) -> V:
         start, stop, step = map(
             lambda x: None if x is None else _try_map(x, mapping),
             [self.start, self.stop, self.step],
@@ -257,13 +258,13 @@ def make_str(
         encapsulating the provided operations within the
         :meth:`SliceTransformReduce.calculate`.
     """
-    d = {'reduce': staticmethod(reduce), 'rtype': property(lambda _: rtype)}
+    d = {"reduce": staticmethod(reduce), "rtype": property(lambda _: rtype)}
 
     if transform is None:
-        transform_name = ''
+        transform_name = ""
     else:
         transform_name = transform_name or transform.__name__
-        d['transform'] = staticmethod(transform)
+        d["transform"] = staticmethod(transform)
 
     reduce_name = reduce_name or reduce.__name__
 
@@ -271,11 +272,11 @@ def make_str(
         lambda x: x.capitalize(), [transform_name, reduce_name]
     )
 
-    cls_name = f'Slice{transform_name}{reduce_name}'
+    cls_name = f"Slice{transform_name}{reduce_name}"
     obj = type(cls_name, (SliceTransformReduce,), d)
 
     return obj
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError

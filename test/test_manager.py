@@ -88,7 +88,7 @@ def test_calculate(sample_chain_list, simple_chain_variables):
     assert len(results) == len(structures) * 2
 
 
-def test_aggregate_from_it(simple_chain_seq):
+def test_aggregate_from_it():
     cseq1 = ChainSequence.from_string("ACDEG", name="seq1")
     cseq2 = ChainSequence.from_string("GEDCA", name="seq2")
     manager = Manager()

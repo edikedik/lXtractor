@@ -4,7 +4,7 @@ from itertools import chain
 import pytest
 
 from lXtractor.core.chain import ChainInitializer, ChainSequence, ChainStructure, Chain
-from lXtractor.core.config import SeqNames
+from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import InitError
 
 
@@ -18,7 +18,7 @@ def items(
         simple_structure_path,
         chicken_src_seq_path,
         (simple_structure_path, ["A"]),
-        simple_chain_seq[1],
+        simple_chain_seq,
     ]
 
 
@@ -52,6 +52,7 @@ def test_iterable_parallel(items):
 @pytest.mark.parametrize("assert_children", [True, False])
 @pytest.mark.parametrize("num_proc", [1, 2])
 def test_mapping(mapping, assert_children, num_proc):
+    mapnames = DefaultConfig["mapnames"]
     io = ChainInitializer(tolerate_failures=False)
     chains = io.from_mapping(
         mapping,
@@ -68,24 +69,24 @@ def test_mapping(mapping, assert_children, num_proc):
     assert len(chains[1].structures) == 1
     if assert_children:
         assert all(
-            SeqNames.map_canonical in x._seq
+            mapnames["map_canonical"] in x._seq
             for x in chain.from_iterable(c.structures for c in chains)
         )
         children = chains.collapse_children().structures
         assert len(children) == 1
         assert all(
-            SeqNames.map_canonical in x.seq
+            mapnames["map_canonical"] in x.seq
             for x in chains.collapse_children().structures
         )
     else:
         assert all(
-            SeqNames.map_canonical not in x._seq
+            mapnames["map_canonical"] not in x._seq
             for x in chain.from_iterable(c.structures for c in chains)
         )
 
 
 def test_mapping_invalid_objects(simple_chain_seq):
-    _, s = simple_chain_seq
+    s = simple_chain_seq
     m = {s: [1, None]}
 
     io = ChainInitializer()
@@ -120,14 +121,16 @@ def spawn_child(item):
     return item[0], item[1]
 
 
-@pytest.mark.parametrize('num_proc', [1, 2])
+@pytest.mark.parametrize("num_proc", [1, 2])
 def test_callbacks(items, mapping, num_proc):
     io = ChainInitializer()
     xs = list(io.from_iterable(items, callbacks=[accept]))
     assert len(xs) == 6
     assert xs[0].name == "X"
 
-    chains = io.from_mapping(mapping, key_callbacks=[accept], num_proc_read_seq=num_proc)
+    chains = io.from_mapping(
+        mapping, key_callbacks=[accept], num_proc_read_seq=num_proc
+    )
     assert all([c.seq.name == "X" for c in chains])
 
     # Emptying structures results in subsequent filtering to produce
@@ -139,7 +142,7 @@ def test_callbacks(items, mapping, num_proc):
         mapping,
         item_callbacks=[spawn_child],
         num_proc_item_callbacks=2,
-        check_ids=False  # OK to add a structure with the same ID to a chain
+        check_ids=False,  # OK to add a structure with the same ID to a chain
     )
     assert len(chains) == 2
     assert all([len(c.seq.children) == 1 for c in chains])

@@ -17,7 +17,7 @@ from tqdm.auto import tqdm
 from typing_extensions import Self
 
 from lXtractor.core.base import Ord, NamedTupleT
-from lXtractor.core.config import Sep
+from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import (
     LengthMismatch,
     NoOverlap,
@@ -260,7 +260,8 @@ class Segment(abc.Sequence[NamedTupleT]):
 
     def _make_id(self):
         parent = f"<-({self.parent.id})" if self.parent else ""
-        return f"{self.name}{Sep.start_end}{self.start}-{self.end}{parent}"
+        sep = DefaultConfig["separators"]
+        return f"{self.name}{sep['start_end']}{self.start}-{self.end}{parent}"
 
     @property
     def id(self) -> str:

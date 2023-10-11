@@ -9,14 +9,14 @@ import pytest
 
 from lXtractor.core.alignment import Alignment
 from lXtractor.core.chain import ChainSequence
-from lXtractor.core.config import DumpNames
+from lXtractor.core.config import DefaultConfig
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.seq import read_fasta, biotite_align, mafft_align
 
 
 @pytest.fixture
 def simple_chain_with_child(simple_chain_seq) -> ChainSequence:
-    _, s = simple_chain_seq
+    s = simple_chain_seq
     s.add_seq("S", [1 for _ in range(len(s))])
     s.spawn_child(1, 3, "X1"), s.spawn_child(1, 1, "X2")
     return s
@@ -25,13 +25,13 @@ def simple_chain_with_child(simple_chain_seq) -> ChainSequence:
 def test_init(simple_chain_seq):
     # with pytest.raises(MissingData):
     #     ChainSequence(1, 2)
-    fields, s = simple_chain_seq
-    assert fields.seq1 in s
+    s = simple_chain_seq
+    assert DefaultConfig["mapnames"]["seq1"] in s
     assert len(s) == 5
 
 
 def test_spawn(simple_chain_seq):
-    _, s = simple_chain_seq
+    s = simple_chain_seq
     s13 = s.spawn_child(1, 3)
     s12 = s13.spawn_child(1, 2)
     assert s12.parent == s13
@@ -59,29 +59,28 @@ def test_degenerate():
 
 
 def test_map_accession(simple_chain_seq):
-    fields, s = simple_chain_seq
+    s = simple_chain_seq
     mapping = s.get_map("i")
     assert mapping[1].seq1 == "A"
     assert mapping[1].i == 1
 
 
 def test_convert(simple_chain_seq):
-    fields, s = simple_chain_seq
+    s = simple_chain_seq
     df = s.as_df()
-    assert fields.seq1 in df.columns
+    assert DefaultConfig["mapnames"]["seq1"] in df.columns
     # assert fields.seq3 in df.columns
     # assert fields.enum in df.columns
     assert len(df) == len(s)
 
 
 def test_closest_and_boundaries():
-    fields = ChainSequence.field_names()
     s = ChainSequence(
         1,
         5,
         "S",
         seqs={
-            fields.seq1: "ABCDE",
+            DefaultConfig["mapnames"]["seq1"]: "ABCDE",
             "N": [1, 3, 5, 10, 20],
             "K": [None, 10, None, 20, None],
         },
@@ -130,7 +129,7 @@ def test_map(simple_fasta_path, chicken_src_seq, human_src_seq):
 
 
 def test_map_transfer(simple_chain_seq):
-    _, s1 = simple_chain_seq
+    s1 = simple_chain_seq
     s2 = deepcopy(s1)
     s1.add_seq("R", "PUTIN")
     s1.add_seq("V", "MUDAK")
@@ -141,7 +140,8 @@ def test_map_transfer(simple_chain_seq):
 
 
 def test_io(simple_chain_seq):
-    _, s = simple_chain_seq
+    fnames = DefaultConfig["filenames"]
+    s = simple_chain_seq
     child = s.spawn_child(1, 2)
 
     with TemporaryDirectory() as tmp:
@@ -151,9 +151,9 @@ def test_io(simple_chain_seq):
         files = get_files(tmp_path)
         dirs = get_dirs(Path(tmp))
 
-        assert DumpNames.sequence in files
-        assert DumpNames.meta in files
-        assert DumpNames.segments_dir in dirs
+        assert fnames["sequence"] in files
+        assert fnames["meta"] in files
+        assert fnames["segments_dir"] in dirs
 
         s_r = ChainSequence.read(tmp_path, search_children=True)
         assert s_r.seq1 == s.seq1
@@ -237,7 +237,7 @@ def test_apply_to_map(simple_chain_with_child):
 
 
 def test_as_chain(simple_chain_seq, simple_chain_structure):
-    _, seq = simple_chain_seq
+    seq = simple_chain_seq
     c1 = seq.spawn_child(1, 2, "C")
     s = simple_chain_structure
     c = seq.as_chain()
@@ -253,7 +253,7 @@ def test_as_chain(simple_chain_seq, simple_chain_structure):
 
 @pytest.mark.parametrize("meta", [True, False])
 def test_summary(simple_chain_seq, meta):
-    _, seq = simple_chain_seq
+    seq = simple_chain_seq
     df = seq.summary(meta=meta)
     assert isinstance(df, pd.DataFrame)
     assert "ObjectID" in df.columns

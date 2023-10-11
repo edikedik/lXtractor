@@ -44,7 +44,7 @@ def test_init(pkinase_hmm_path):
 
 def test_convert(pkinase_hmm_path, abl_str, simple_chain_seq):
     ann = PyHMMer(pkinase_hmm_path)
-    _, chain_seq = simple_chain_seq
+    chain_seq = simple_chain_seq
     for c in [abl_str, chain_seq, "AAAAA"]:
         assert isinstance(ann.convert_seq(c), DigitalSequence)
 
