@@ -131,8 +131,8 @@ class CCD(AbstractResource, UserDict[str, dict[str, Field]]):
     On the first use, one has to download and parse the CCD data:
 
     >>> ccd = CCD()
-    >>> ccd.fetch();
-    >>> ccd.parse();
+    >>> _ = ccd.fetch()
+    >>> _ = ccd.parse()
 
     This will fetch, parse, and store the resource locally as a single `msgpack`
     serialized file. These data will be automatically loaded upon future
