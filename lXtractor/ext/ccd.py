@@ -39,8 +39,8 @@ class Field(UserDict):
             return pd.DataFrame()
         d = self
         if isinstance(val, str):
-            d = valmap(lambda x: [x], d)
-        return pd.DataFrame(d)
+            return pd.DataFrame(valmap(lambda x: [x], d))
+        return pd.DataFrame(d.data)
 
 
 CCD_T = dict[str, dict[str, Field]]

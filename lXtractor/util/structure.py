@@ -17,6 +17,7 @@ import numpy as np
 import numpy.typing as npt
 import rustworkx as rx
 from more_itertools import unzip, windowed, unique_everseen
+from scipy.spatial import KDTree
 from toolz import compose_left
 
 from lXtractor.core.config import DefaultConfig, STRUCTURE_FMT, EMPTY_ALTLOC
@@ -706,13 +707,15 @@ def save_structure(array: bst.AtomArray, path: Path, **kwargs):
 
 def to_graph(a: bst.AtomArray) -> rx.PyGraph:
     g = rx.PyGraph()
-    idx = g.add_nodes_from(range(len(a)))
-    d = np.linalg.norm(a.coord[:, np.newaxis] - a.coord, axis=-1)
-    for i in idx:
-        d_i = d[i] <= DefaultConfig['bonds']['covalent_upper']
-        conn_idx = np.where(d_i)[0]
-        edges = ((i, j, d_i) for j in conn_idx if j != i)
-        g.add_edges_from(list(edges))
+    g.add_nodes_from(range(len(a)))
+
+    # Construct a KD tree to speed up neighbor searches
+    kdtree = KDTree(a.coord)
+    pairs = kdtree.query_pairs(r=DefaultConfig["bonds"]["covalent_upper"])
+
+    # Batch edge addition
+    edges = [(i, j, np.linalg.norm(a.coord[i] - a.coord[j])) for i, j in pairs]
+    g.add_edges_from(edges)
 
     return g
 
