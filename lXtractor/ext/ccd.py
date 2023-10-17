@@ -37,10 +37,9 @@ class Field(UserDict):
             val = next(iter(self.values()))
         except StopIteration:
             return pd.DataFrame()
-        d = self
         if isinstance(val, str):
-            return pd.DataFrame(valmap(lambda x: [x], d))
-        return pd.DataFrame(d.data)
+            return pd.DataFrame(valmap(lambda x: [x], self))
+        return pd.DataFrame(self.data)
 
 
 CCD_T = dict[str, dict[str, Field]]
