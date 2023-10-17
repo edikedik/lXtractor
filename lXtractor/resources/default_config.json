@@ -1,8 +1,7 @@
 {
   "bonds": {
     "covalent_lower": 1.2,
-    "covalent_upper": 1.8,
-    "non_covalent_lower": 1.8,
+    "covalent_upper": 1.85,
     "non_covalent_upper": 5.0
   },
   "colnames": {

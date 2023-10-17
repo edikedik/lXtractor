@@ -6,12 +6,15 @@ import biotite.structure.info as bstinfo
 import numpy as np
 import pytest
 
-from lXtractor.core.config import STRUCTURE_FMT
+from test.common import ALL_STRUCTURES
+from lXtractor.core.config import STRUCTURE_FMT, EMPTY_ALTLOC
 from lXtractor.util.structure import (
     filter_to_common_atoms,
     get_missing_atoms,
     get_observed_atoms_frac,
-    load_structure, save_structure,
+    load_structure,
+    save_structure,
+    iter_altloc_masks,
 )
 
 DATA = Path(__file__).parent / "data"
@@ -133,11 +136,25 @@ def test_load_structure(path):
         assert isinstance(load_structure(content, fmt, gz=gz), bst.AtomArray)
 
 
-@pytest.mark.parametrize('fmt', [*STRUCTURE_FMT, *(x + '.gz' for x in STRUCTURE_FMT)])
+@pytest.mark.parametrize("fmt", [*STRUCTURE_FMT, *(x + ".gz" for x in STRUCTURE_FMT)])
 def test_save_structure(simple_structure, fmt):
     s = simple_structure
     with TemporaryDirectory() as tmp:
-        path = Path(tmp) / f'structure.{fmt}'
+        path = Path(tmp) / f"structure.{fmt}"
         save_structure(s.array, path)
         sl = load_structure(path)
         assert isinstance(sl, bst.AtomArray)
+
+
+@pytest.mark.parametrize("inp_path", ALL_STRUCTURES)
+def test_iter_altloc_masks(inp_path):
+    a = load_structure(inp_path, altloc="all")
+    ids = set(a.altloc_id)
+    masks = list(iter_altloc_masks(a))
+    assert (
+        len(ids) == 1
+        and ids.issubset(EMPTY_ALTLOC)
+        or len(masks) == len(set(a.altloc_id)) - 1
+    )
+    m = np.vstack(masks)
+    assert np.all(np.any(m, axis=0))

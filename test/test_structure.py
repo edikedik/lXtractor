@@ -2,6 +2,7 @@ from copy import deepcopy
 from pathlib import Path
 
 import biotite.structure as bst
+import numpy as np
 import pytest
 
 from lXtractor.core.config import AtomMark, DefaultConfig
@@ -164,9 +165,23 @@ def test_atom_marks_splitting(peptide_dna_complex):
     # Expecting four chains: two DNA strands and two protein chains
     chains = list(s.split_chains())
     assert len(chains) == 4
+    assert all(not any(s.mask.unk) for s in chains)
     # Expecting two protein chains; DNA strands become attached ligands
     chains = list(s.split_chains(polymer=True))
     assert len(chains) == 2
+    assert all(not any(s.mask.unk) for s in chains)
+
+
+@pytest.mark.parametrize(
+    "str_path",
+    # sorted(chain(DATA.glob("*mmtf*"), DATA.glob("*cif*"), DATA.glob("*pdb*"))),
+    [Path('/home/edik/Projects/lXtractor/test/data/4TWC.mmtf.gz')]
+)
+def test_atom_marks_no_unk(str_path):
+    s = GenericStructure.read(str_path, altloc=True)
+    assert not s.mask.unk.any()
+    for c in s.split_chains(polymer=True):
+        assert not c.mask.unk.any()
 
 
 def test_atom_marks_extracting(peptide_dna_complex):

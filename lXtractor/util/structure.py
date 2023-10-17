@@ -15,10 +15,11 @@ import biotite.structure.info as bstinfo
 import biotite.structure.io as bstio
 import numpy as np
 import numpy.typing as npt
+import rustworkx as rx
 from more_itertools import unzip, windowed, unique_everseen
 from toolz import compose_left
 
-from lXtractor.core.config import DefaultConfig, STRUCTURE_FMT
+from lXtractor.core.config import DefaultConfig, STRUCTURE_FMT, EMPTY_ALTLOC
 from lXtractor.core.exceptions import LengthMismatch, MissingData, FormatError
 from lXtractor.util.io import parse_suffix
 from lXtractor.util.typing import is_sequence_of
@@ -272,7 +273,9 @@ def mark_polymer_type(a: bst.AtomArray, min_size: int = 2) -> npt.NDArray[np.str
         pol_types = np.full_like(a, "x")
         for c in chain_ids:
             chain_mask = a.chain_id == c
-            pol_types[chain_mask] = mark_polymer_type(a[chain_mask], min_size)
+            for alt_mask in iter_altloc_masks(a):
+                m = chain_mask & alt_mask
+                pol_types[m] = mark_polymer_type(a[m], min_size)
         return pol_types
 
     chunks = _split_array(a, _find_breaks(a))
@@ -419,7 +422,9 @@ def find_contacts(
     return contacts, d_min, d_argmin
 
 
-def iter_residue_masks(a: bst.AtomArray) -> abc.Generator[np.ndarray, None, None]:
+def iter_residue_masks(
+    a: bst.AtomArray,
+) -> abc.Generator[npt.NDArray[np.bool_], None, None]:
     """
     Iterate over residue masks.
 
@@ -430,6 +435,24 @@ def iter_residue_masks(a: bst.AtomArray) -> abc.Generator[np.ndarray, None, None
     arange = np.arange(len(a))
     for i in range(len(starts) - 1):
         yield (arange >= starts[i]) & (arange < starts[i + 1])
+
+
+def iter_altloc_masks(
+    a: bst.AtomArray,
+) -> abc.Generator[npt.NDArray[np.bool_], None, None]:
+    if not hasattr(a, "altloc_id"):
+        yield np.full_like(a, True, dtype=np.bool_)
+    else:
+        aids = a.altloc_id
+        aids_unique = sorted(unique_everseen(aids))
+        if len(aids_unique) == 0:
+            raise RuntimeError("...")
+        elif len(aids_unique) == 1:
+            yield np.full_like(a, True, dtype=np.bool_)
+        else:
+            empty_ = np.isin(aids, EMPTY_ALTLOC)
+            for aid in aids_unique[1:]:
+                yield (aids == aid) | empty_
 
 
 def iter_canonical(a: bst.AtomArray) -> abc.Generator[bst.AtomArray | None, None, None]:
@@ -679,6 +702,19 @@ def save_structure(array: bst.AtomArray, path: Path, **kwargs):
     io.close()
 
     return path
+
+
+def to_graph(a: bst.AtomArray) -> rx.PyGraph:
+    g = rx.PyGraph()
+    idx = g.add_nodes_from(range(len(a)))
+    d = np.linalg.norm(a.coord[:, np.newaxis] - a.coord, axis=-1)
+    for i in idx:
+        d_i = d[i] <= DefaultConfig['bonds']['covalent_upper']
+        conn_idx = np.where(d_i)[0]
+        edges = ((i, j, d_i) for j in conn_idx if j != i)
+        g.add_edges_from(list(edges))
+
+    return g
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
 from lXtractor.core.base import ResNameDict
-from lXtractor.core.config import AtomMark, DefaultConfig
+from lXtractor.core.config import AtomMark, DefaultConfig, EMPTY_ALTLOC
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
 from lXtractor.core.ligand import Ligand, make_ligand
 from lXtractor.util.structure import (
@@ -33,7 +33,6 @@ from lXtractor.util.structure import (
 )
 
 LOGGER = logging.getLogger(__name__)
-EMPTY_ALTLOC = ("", " ", ".")
 RES_DICT = ResNameDict()
 
 

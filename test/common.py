@@ -1,9 +1,17 @@
 import typing as t
 from copy import deepcopy
+from itertools import chain
+from pathlib import Path
 
 from lXtractor.core.chain import Chain, ChainStructure, ChainSequence
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.structure import GenericStructure
+
+
+DATA = Path(__file__).parent / "data"
+ALL_STRUCTURES = sorted(
+    chain(DATA.glob("*mmtf*"), DATA.glob("*cif*"), DATA.glob("*pdb*"))
+)
 
 
 def basic_chain_seq(start=1, end=10, fill="A", name="chain") -> ChainSequence:

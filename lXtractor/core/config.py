@@ -302,3 +302,4 @@ class AtomMark(IntFlag):
 
 if __name__ == "__main__":
     raise RuntimeError
+EMPTY_ALTLOC = ("", " ", ".")
