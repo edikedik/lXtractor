@@ -6,6 +6,7 @@ from collections import defaultdict, UserDict
 from itertools import takewhile
 from pathlib import Path
 
+import biotite.structure as bst
 import msgpack
 import pandas as pd
 from more_itertools import split_at, split_before
@@ -25,6 +26,17 @@ MISSING_MSG = (
 )
 URL = "https://files.wwpdb.org/pub/pdb/data/monomers/components.cif.gz"
 KV_PATTERN = re.compile(r"(_\w+)\.(\w+)\s+((?:[^;\n]+|;[\s\S]+?;)\s*)")
+ATOM_KEYS = (
+    "comp_id",
+    "atom_id",
+    "type_symbol",
+    "model_Cartn_x",
+    "model_Cartn_y",
+    "model_Cartn_z",
+    "pdbx_model_Cartn_x_ideal",
+    "pdbx_model_Cartn_y_ideal",
+    "pdbx_model_Cartn_z_ideal",
+)
 
 
 class Field(UserDict):
@@ -33,6 +45,9 @@ class Field(UserDict):
     """
 
     def as_df(self):
+        """
+        :return: A dataframe constructed from key-value pairs.
+        """
         try:
             val = next(iter(self.values()))
         except StopIteration:
@@ -40,6 +55,36 @@ class Field(UserDict):
         if isinstance(val, str):
             return pd.DataFrame(valmap(lambda x: [x], self))
         return pd.DataFrame(self.data)
+
+    def as_atom_array(self, ideal_coord: bool = False) -> bst.AtomArray:
+        """
+        If the field is `"_chem_comp_atom"`, create an atom array from these
+        data.
+
+        :param ideal_coord: Use ideal coordinates.
+        :return: An atom array with coordinates, atom and residues names filled.
+        """
+        for k in ATOM_KEYS:
+            if k not in self:
+                raise KeyError(f"Missing required key {k}")
+        sizes = {len(self[k]) for k in ATOM_KEYS}
+        if len(sizes) > 1:
+            raise ValueError("All field values must have the same size")
+        size = sizes.pop()
+        if ideal_coord:
+            x, y, z = (f"pdbx_model_Cartn_{x}_ideal" for x in ["x", "y", "z"])
+        else:
+            x, y, z = (f"model_Cartn_{x}" for x in ["x", "y", "z"])
+        atoms = [
+            bst.Atom(
+                [self[x][i], self[y][i], self[z][i]],
+                atom_name=self["atom_id"][i],
+                res_name=self["comp_id"][i],
+                element=self["type_symbol"][i],
+            )
+            for i in range(size)
+        ]
+        return bst.array(atoms)
 
 
 CCD_T = dict[str, dict[str, Field]]
@@ -72,7 +117,10 @@ def _parse_loop(data: list[str]) -> tuple[str, Field]:
     group = data[0].split(".")[0]
     header = dict(
         enumerate(
-            map(lambda x: x.split(".")[1], takewhile(lambda x: x.startswith("_"), data))
+            map(
+                lambda x: x.split(".")[1].strip(),
+                takewhile(lambda x: x.startswith("_"), data),
+            )
         )
     )
     values = data[len(header) + 1 :]
