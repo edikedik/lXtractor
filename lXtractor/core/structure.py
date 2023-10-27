@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 import operator as op
 import typing as t
-from collections import abc
+from collections import abc, defaultdict
 from dataclasses import dataclass
 from functools import reduce
 from io import IOBase
@@ -15,6 +15,7 @@ from pathlib import Path
 import biotite.structure as bst
 import numpy as np
 import numpy.typing as npt
+import rustworkx as rx
 from more_itertools import unique_everseen
 from typing_extensions import Self
 
@@ -30,10 +31,18 @@ from lXtractor.util.structure import (
     filter_solvent_extended,
     iter_residue_masks,
     mark_polymer_type,
+    to_graph,
+    determine_polymer_type,
 )
 
 LOGGER = logging.getLogger(__name__)
 RES_DICT = ResNameDict()
+_POL_MARKS = {
+    "c": AtomMark.CARB,
+    "n": AtomMark.NUC,
+    "p": AtomMark.PEP,
+    "x": AtomMark.UNK,
+}
 
 
 @dataclass(frozen=True)
@@ -54,6 +63,45 @@ class GenericStructure:
     A generic macromolecular structure with possibly many chains holding
     a single :class:`biotite.structure.AtomArray` instance.
 
+    This object is a core data structure in `lXtractor` for structural data.
+
+    The object is considered immutable: atoms of a structure can't change their
+    location or properties, as well as other protected attributes.
+
+    While atoms are stored as :class:`biotite.structure.AtomArray`,
+    `GenericStructure` defines additional annotations for each atom and
+    operations crucial for other objects such as
+    :class:`lXtractor.core.chain.ChainStructure`.
+
+    Upon initialization, atom array attains graph representation (:meth:`graph`)
+    using :func:`lXtractor.util.structure.to_graph` function. Using this
+    representation, atom annotations are attained via :func``mark_atoms_g`.
+    These annotations can be accessed via :meth:`atom_marks`. For convenience,
+    boolean masks are stored and can be applied to the :meth:`array` as follows:
+
+    .. code-block:: python
+
+        # Assume ``s`` is a :class:`GenericStructure` object.
+        s[s.mask.`mask_name`]
+
+    To view available mask names, see :class:`Masks`.
+
+    One of the most crucial annotations is the so-called "primary_polymer".
+    These atoms serve as a frame of reference for all other atoms in a structure.
+    The rest of the atoms are categorized as either ligand or solvent. Sometimes
+    the annotation process fails to identify certain atoms. In such cases, a
+    warning is logged. To view uncategorized atoms, one can use the following mask:
+
+    .. code-block:: python
+
+        s[s.mask.unk]
+
+    .. note::
+        Using ``__getitem__(item)`` like in ``s[s.mask.unk`` will return an
+        atom array. Use :meth:`subset` to obtain a new generic structure or
+        initialize a new ``GenericStructure(s[s.mask.unk] instance; it will be
+        equivalent.
+
     Methods ``__repr__`` and ``__str__`` output a string in the format:
     ``{_name}:{polymer_chain_ids};{ligand_chain_ids}|{altloc_ids}``
     where ``*ids`` are ","-separated.
@@ -62,6 +110,7 @@ class GenericStructure:
     __slots__ = (
         "_atom_marks",
         "_array",
+        "_graph",
         "_name",
         "_ligands",
         "_mask",
@@ -85,7 +134,9 @@ class GenericStructure:
         #: ID of a structure in `array`.
         self._name: str = name
 
-        atom_marks, _ligands = mark_atoms(self)
+        self._graph = to_graph(array, True)
+
+        atom_marks, _ligands = mark_atoms_g(self)
         atom_marks.flags.writeable = False
         #: Atom annotations: see :class:`lXtractor.core.config.AtomMark`.
         self._atom_marks = atom_marks
@@ -155,6 +206,9 @@ class GenericStructure:
     def __repr__(self) -> str:
         return self.id
 
+    def __getitem__(self, item: t.Any) -> bst.AtomArray:
+        return self._array.__getitem__(item)
+
     def _make_id(self) -> str:
         chains_pol = ",".join(sorted(self.chain_ids_polymer))
         chains_lig = ",".join(sorted(self.chain_ids_ligand))
@@ -168,6 +222,13 @@ class GenericStructure:
             categorizing each atom in this structure.
         """
         return self._atom_marks
+
+    @property
+    def graph(self) -> rx.PyGraph:
+        """
+        :return: A structure's graph representation.
+        """
+        return self._graph
 
     @property
     def id(self) -> str:
@@ -281,7 +342,7 @@ class GenericStructure:
         path2id: abc.Callable[[Path], str] = lambda p: p.name.split(".")[0],
         structure_id: str = DefaultConfig["unknowns"]["structure_id"],
         ligands: bool = True,
-        altloc: bool = False,
+        altloc: bool | str = False,
         **kwargs,
     ) -> Self:
         """
@@ -308,8 +369,10 @@ class GenericStructure:
         :param kwargs: Passed to ``load_structure``.
         :return: Parsed structure.
         """
-        if altloc:
-            kwargs["altloc"] = "all"
+        if isinstance(altloc, bool) and altloc:
+            altloc = "all"
+        if isinstance(altloc, str):
+            kwargs["altloc"] = altloc
         array = load_structure(inp, **kwargs)
         empty_id = DefaultConfig["unknowns"]["structure_id"]
         if hasattr(array, "altloc_id"):
@@ -369,61 +432,54 @@ class GenericStructure:
             (RES_DICT.get(a.res_name), a.res_name, a.res_id) for a in first_atoms
         )
 
-    def subset_with_ligands(
-        self, mask: np.ndarray, transfer_meta: bool = True, copy: bool = False
+    def subset(
+        self,
+        mask: np.ndarray,
+        ligands: bool = True,
+        copy: bool = False,
+        parse_ligands_in_subset: bool = True,
     ) -> Self:
         """
         Create a sub-structure preserving connected :attr:`ligands`.
 
+        .. warning::
+
+            If ``DefaultConfig["structure"]["primary_pol_type"]`` is set to auto,
+            and mask will select a polymer that is shorter than some existing
+            ligand polymer, this ligand polymer will become a primary polymer
+            in the substructure.
+
         :param mask: Boolean mask, ``True`` for atoms in :meth:`array`, used
             to create a sub-structure.
-        :param transfer_meta: Transfer a copy of existing metadata for
-            connected ligands.
+        :param ligands: Keep ligands that are connected to atoms specified by
+            `mask`.
         :param copy: Copy the atom array resulting from subsetting the original
             one.
+        :param parse_ligands_in_subset: Initialize a new instance with
+            ``ligands=True``.
         :return: A new instance with atoms defined by `mask` and connected
             ligands.
         """
-
-        # Filter connected ligands
-        ligands = list(
-            filter(
-                lambda lig: lig.is_locally_connected(mask),
-                self.ligands,
+        if ligands:
+            # Filter connected ligands
+            ligands = list(
+                filter(
+                    lambda lig: lig.is_locally_connected(mask),
+                    self.ligands,
+                )
             )
-        )
-        # Extend mask by atoms from the connected ligands
-        ligand_mask = reduce(
-            op.or_,
-            (lig.mask for lig in ligands),
-            np.zeros_like(self.array.res_id, dtype=bool),
-        )
+            # Extend mask by atoms from the connected ligands
+            ligand_mask = reduce(
+                op.or_,
+                (lig.mask for lig in ligands),
+                np.zeros_like(self.array.res_id, dtype=bool),
+            )
+        else:
+            ligand_mask = mask
         a = self.array[mask | ligand_mask]
-        return self.__class__(a, self.name, True)
-
-        # m = mask | ligand_mask
-        # # Create a new instance
-        # a = self.array[m]
-        # if copy:
-        #     a = a.copy()
-        # new = self.__class__(a, self._name, False, cfg=self.cfg)
-        # # Populate its ligands by subsetting the existing ones.
-        # for lig in ligands:
-        #     meta = lig.meta.copy() if transfer_meta else None
-        #     lig_ = Ligand(
-        #         new,
-        #         lig.mask[m],
-        #         lig.contact_mask[m],
-        #         lig.parent_contacts[m],
-        #         lig.ligand_idx[m],
-        #         lig.dist[m],
-        #         meta,
-        #     )
-        #     new._ligands.append(lig_)
-        #
-        # new._id = new._make_id()
-        #
-        # return new
+        if copy:
+            a = a.copy()
+        return self.__class__(a, self.name, parse_ligands_in_subset)
 
     def split_chains(
         self,
@@ -456,7 +512,7 @@ class GenericStructure:
         for chain_id in sorted(chain_ids):
             mask = a.chain_id == chain_id
             if ligands:
-                yield self.subset_with_ligands(mask, copy=copy)
+                yield self.subset(mask, copy=copy)
             else:
                 a_sub = a[mask]
                 if copy:
@@ -541,7 +597,7 @@ class GenericStructure:
             )
         mask = chain_mask & (self.array.res_id >= start) & (self.array.res_id <= end)
         if ligands:
-            return self.subset_with_ligands(mask)
+            return self.subset(mask)
         return self.__class__(self.array[mask], self._name)
 
     def extract_positions(
@@ -568,7 +624,7 @@ class GenericStructure:
                 chain_ids = [chain_ids]
             mask &= np.isin(a.chain_id, chain_ids)
         if len(self.ligands) > 0:
-            return self.subset_with_ligands(mask)
+            return self.subset(mask)
         return self.__class__(a[mask], self._name)
 
     def superpose(
@@ -655,6 +711,9 @@ class GenericStructure:
 class ProteinStructure(GenericStructure):
     """
     A structure type where primary polymer is peptide.
+
+    .. seealso::
+        :class:`GenericStructure` for general-purpose documentation.
     """
 
     def __init__(
@@ -671,6 +730,9 @@ class ProteinStructure(GenericStructure):
 class NucleotideStructure(GenericStructure):
     """
     A structure type where primary polymer is nucleotide.
+
+    .. seealso::
+        :class:`GenericStructure` for general-purpose documentation.
     """
 
     def __init__(
@@ -687,6 +749,9 @@ class NucleotideStructure(GenericStructure):
 class CarbohydrateStructure(GenericStructure):
     """
     A structure type where primary polymer is carbohydrate.
+
+    .. seealso::
+        :class:`GenericStructure` for general-purpose documentation.
     """
 
     def __init__(
@@ -771,6 +836,178 @@ def mark_atoms(
             ):
                 marks[m_lig] = AtomMark.LIGAND | pol_marks[lig.res_name[0]]
                 ligands.append(lig)
+
+    return marks, ligands
+
+
+def _get_one_chain(a: bst.AtomArray) -> str:
+    chain_ids = set(a.chain_id)
+    if len(chain_ids) != 1:
+        raise ValueError(f"Expected single chain, found {chain_ids}")
+    return chain_ids.pop()
+
+
+def _to_single_poly_mask(
+    a: bst.AtomArray,
+    poly_masks: abc.Sequence[npt.NDArray[np.bool_]],
+):
+    largest_idx = np.argmax([x.sum() for x in poly_masks])
+    pol_mask = poly_masks[largest_idx]
+    pol_chain = _get_one_chain(a[pol_mask])
+
+    for i, m in enumerate(poly_masks):
+        if i == largest_idx:
+            continue
+        a_sub = a[m]
+        # If chains match and not all atoms are hetero
+        if _get_one_chain(a_sub) == pol_chain and np.any(~a_sub.hetero):
+            pol_mask[m] = True
+
+    return pol_mask
+
+
+def _combine_poly_masks(
+    a: bst.AtomArray,
+    poly_masks: abc.Sequence[npt.NDArray[np.bool_]],
+):
+    poly_mask = np.full_like(a, False, dtype=np.bool_)
+    for m in poly_masks:
+        if np.sum(a[m].hetero) < m.sum() / 2:
+            poly_mask[m] = True
+
+    return poly_mask
+
+
+def _extended_residue_mask(a: bst.AtomArray, idx: list[int]) -> npt.NDArray[np.bool_]:
+    res_ids = np.unique(a[idx].res_id)
+    chain_ids = np.unique(a[idx].chain_id)
+    return np.isin(a.res_id, res_ids) & np.isin(a.chain_id, chain_ids)
+
+
+def mark_atoms_g(
+    s: GenericStructure, single_poly_chain: bool = False
+) -> (npt.NDArray[np.int_], list[Ligand]):
+    """
+    Mark structure atoms based on a molecular graph's representation by of
+    the :class:`lXtractor.core.config.AtomMark` categories.
+
+    Atoms are classified into five categories::
+
+        #. primary polymer: corresponds to ``PEP``, ``NUC`` or ``CARB``
+        categories.
+        #. solvent: ``SOLVENT``.
+        #. non polymer ligand: ``LIGAND``.
+        #. polymer ligand: A combination of ``LIGAND`` with one of the primary
+        polymer types, eg. ``AtomMark.LIGAND | AtomMark.NUC``.
+        #. unknown: ``UNK`` for atoms that couldn't be categorized.
+
+    The classification process depends on groups of atoms forming covalent bonds
+    with each other, or connected components in the molecular graph representation.
+    Each such component is assessed separately and its atoms are classified
+    as polymer, ligand, or solvent. If the primary polymer is set to "auto" in
+    config (``DefaultConfig["structure"]["primary_pol_type"]``), the polymer
+    with the largest number of monomers will be selected. The rest of the polymers
+    will become polymer ligands: special kind of ligand that can have multiple
+    residues. See :class:`lXtractore.core.ligand.Ligand` for details.
+
+    :param s:
+    :param single_poly_chain:
+    :return:
+    """
+    a = s.array
+    g = s.graph
+    marks = np.full(len(a), AtomMark.UNK)
+    n_monomers = DefaultConfig["structure"]["n_monomers"]
+    lig_pol_types = DefaultConfig["structure"]["ligand_pol_types"]
+    # Keep track of polymer masks and sizes for each polymer type
+    polymers = defaultdict(list)
+    polymer_sizes = defaultdict(int)
+
+    # Iterate over connected components (molecules) in a graph.
+    for cc_idx in map(list, rx.connected_components(g)):
+        # Make residue mask corresponding to all atoms from residues
+        # of the connected component atom indices
+        r_mask = _extended_residue_mask(a, cc_idx)
+        n_resi = bst.get_residue_count(a[r_mask])
+
+        # Check if the single residue CC is a solvent.
+        # Otherwise, it is a ligand candidate.
+        if n_resi == 1:
+            res_name = a[r_mask].res_name[0]
+            if res_name in DefaultConfig["residues"]["solvents"]:
+                marks[r_mask] = AtomMark.SOLVENT
+            continue
+
+        # If not solvent or polymer: continue
+        if n_resi < n_monomers:
+            continue
+
+        pol_type = determine_polymer_type(a[r_mask], n_monomers)
+        if pol_type != "x":
+            polymers[pol_type].append(r_mask)
+            polymer_sizes[pol_type] += n_resi
+
+    if not polymers or all(len(x) == 0 for x in polymers.values()):
+        LOGGER.warning("No polymer atoms identified. Marking as SOLVENT+UNK.")
+        return marks, []
+
+    # Determine primary polymer type
+    cfg_pol_type = DefaultConfig["structure"]["primary_pol_type"][0]
+    if cfg_pol_type == "a":
+        prim_pol_type = max(polymer_sizes.items(), key=lambda x: x[1])[0]
+    else:
+        prim_pol_type = cfg_pol_type
+
+    if not polymers[prim_pol_type]:
+        LOGGER.warning(
+            f"No primary polymer '{prim_pol_type}' atoms. Marking as SOLVENT+UNK."
+        )
+        return marks, []
+
+    # Force a single polymer chain or allow multiple ones
+    fn = _to_single_poly_mask if single_poly_chain else _combine_poly_masks
+    is_pol = fn(a, polymers[prim_pol_type])
+
+    if not np.any(is_pol):
+        LOGGER.warning(
+            f"No primary polymer '{prim_pol_type}' atoms. Marking as SOLVENT+UNK."
+        )
+        return marks, []
+
+    # Mark determined primary polymer atoms. Ligand polymers will be marked below.
+    marks[is_pol] = _POL_MARKS[prim_pol_type]
+
+    # Find unmarked atom indices and impose a subgraph based on them
+    remaining_idx = np.where(marks == AtomMark.UNK)[0]
+    sg = g.subgraph(remaining_idx)
+    ligands = []
+
+    # Iterate over the subgraph's connected components
+    for cc_idx in map(list, rx.connected_components(sg)):
+        # Obtain original indices; they are reset upon a subgraph creation
+        cc_idx = sg.subgraph(cc_idx).nodes()
+        # Obtain a mask pointing to CC residues that were not previously
+        # marked as polymer or solvent
+        r_mask = _extended_residue_mask(a, cc_idx)
+        n_resi = bst.get_residue_count(a[r_mask])
+
+        # Attempt making a ligand
+        lig = make_ligand(r_mask, is_pol, s)
+        if lig is None:
+            continue
+
+        ligands.append(lig)
+
+        if n_resi > 1:  # Handle polymer ligand
+            if lig.res_name[0] in lig_pol_types:
+                marks[r_mask] = AtomMark.LIGAND | _POL_MARKS[lig.res_name[0]]
+
+            else:
+                # Ligand is non-polymer but still has multiple residues.
+                # Users are warned about such cases.
+                marks[r_mask] = AtomMark.LIGAND
+        else:  # Handle a non-polymer ligand
+            marks[r_mask] = AtomMark.LIGAND
 
     return marks, ligands
 

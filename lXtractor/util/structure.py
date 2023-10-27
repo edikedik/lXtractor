@@ -7,7 +7,7 @@ import gzip
 import logging
 from collections import abc
 from io import IOBase, StringIO, BytesIO, BufferedReader
-from itertools import repeat, starmap, chain
+from itertools import repeat, starmap, chain, combinations
 from pathlib import Path
 
 import biotite.structure as bst
@@ -33,15 +33,17 @@ __all__ = (
     "filter_any_polymer",
     "filter_solvent_extended",
     "filter_to_common_atoms",
-    "mark_polymer_type",
-    "find_polymer_type",
+    "find_primary_polymer_type",
     "find_contacts",
+    "determine_polymer_type",
     "iter_canonical",
     "iter_residue_masks",
     "get_missing_atoms",
     "get_observed_atoms_frac",
     "load_structure",
+    "mark_polymer_type",
     "save_structure",
+    "to_graph",
 )
 LOGGER = logging.getLogger(__name__)
 
@@ -244,7 +246,18 @@ def _find_breaks(a: bst.AtomArray) -> npt.NDArray[np.int_]:
     )
 
 
-def _find_pol_type(a: bst.AtomArray, min_size: int = 2) -> str:
+def determine_polymer_type(a: bst.AtomArray, min_size: int = 2) -> str:
+    """
+    Determines polymer type of the supplied atom array.
+
+    It will probe polymer types in a sequence ``["p", "n", "c"]`` (protein,
+    nucleotide, carbohydrate). If it finds a polymer of the probed type,
+    it will be returned.
+
+    :param a: Arbitrary array of atoms.
+    :param min_size: A minimum number of monomers in a polymer.
+    :return: The first polymer type
+    """
     for p in ["p", "n", "c"]:
         if _is_polymer(a, min_size, p):
             return p
@@ -280,9 +293,7 @@ def mark_polymer_type(a: bst.AtomArray, min_size: int = 2) -> npt.NDArray[np.str
         return pol_types
 
     chunks = _split_array(a, _find_breaks(a))
-    return np.concatenate(
-        [np.full_like(x, _find_pol_type(x, min_size)) for x in chunks]
-    )
+    return np.concatenate([np.full_like(x, determine_polymer_type(x, min_size)) for x in chunks])
 
 
 def filter_polymer(
@@ -351,7 +362,7 @@ def filter_ligand(a: bst.AtomArray) -> np.ndarray:
     return ~(filter_any_polymer(a) | filter_solvent_extended(a))
 
 
-def find_polymer_type(
+def find_primary_polymer_type(
     a: bst.AtomArray, min_size: int = 2, residues: bool = False
 ) -> tuple[np.ndarray, str]:
     """
@@ -412,12 +423,8 @@ def find_contacts(
     bonds = DefaultConfig["bonds"]
 
     contacts = np.zeros_like(d_min, dtype=int)
-    contacts[
-        (d_min >= bonds["non_covalent_lower"]) & (d_min <= bonds["non_covalent_upper"])
-    ] = 1
-    contacts[
-        (d_min >= bonds["covalent_lower"]) & (d_min <= bonds["covalent_upper"])
-    ] = 2
+    nc_upper = bonds["NC-NC"][1]
+    contacts[d_min < nc_upper] = 1
     contacts[mask] = 0
 
     return contacts, d_min, d_argmin
@@ -705,17 +712,86 @@ def save_structure(array: bst.AtomArray, path: Path, **kwargs):
     return path
 
 
-def to_graph(a: bst.AtomArray) -> rx.PyGraph:
-    g = rx.PyGraph()
+def _get_element_combs(a: bst.AtomArray) -> abc.Iterator[str]:
+    """
+    Get valid combinations of elements that can form covalent bonds in the
+    provided atom array.
+    """
+    #
+    elements = sorted(unique_everseen(a.element))
+    el_combs = chain(((el, el) for el in elements), combinations(elements, 2))
+    el_combs = map(lambda x: "-".join(x), el_combs)
+    el_combs = filter(lambda x: x in DefaultConfig["bonds"], el_combs)
+    return el_combs
+
+
+def _is_valid_altloc(a1: bst.Atom, a2: bst.Atom) -> bool:
+    if not (hasattr(a1, "altloc_id") or hasattr(a2, "altloc_id")):
+        return True
+    a1_alt, a2_alt = a1.altloc_id, a2.altloc_id
+    return a1_alt in EMPTY_ALTLOC or a2_alt in EMPTY_ALTLOC or a1_alt == a2_alt
+
+
+def to_graph(a: bst.AtomArray, split_chains: bool = False) -> rx.PyGraph:
+    """
+    Create a molecular connectivity graph from an atom array.
+
+    Molecular graph is a undirected graph without multiedges, where nodes are
+    indices to atoms. Thus, node indices point directly to atoms in the provided
+    atom array, and the number of nodes equals the number of atoms. A pair of
+    nodes has an edge between them, if they form a covalent bond. The edges
+    are constructed according to atom-depended bond thresholds defined by the
+    global config. These distances are stored as edge values. See the docs of
+    `rustworkx` on how to manipulate the resulting graph object.
+
+    :param a: Atom array to guild a graph from.
+    :param split_chains: Edges between atoms from different chains are forbidden.
+    :return: A graph object where nodes are atom indices and edges represent
+        covalent bonds.
+    """
+    # Create initial graph object and populate nodes.
+    g = rx.PyGraph(multigraph=False)
     g.add_nodes_from(range(len(a)))
 
-    # Construct a KD tree to speed up neighbor searches
-    kdtree = KDTree(a.coord)
-    pairs = kdtree.query_pairs(r=DefaultConfig["bonds"]["covalent_upper"])
+    # Make bool masks for chains
+    if split_chains:
+        chain_ids = np.unique(a.chain_id)
+        chain_masks = (a.chain_id == c for c in chain_ids)
+    else:
+        chain_masks = [np.full_like(a, True, dtype=np.bool_)]
 
-    # Batch edge addition
-    edges = [(i, j, np.linalg.norm(a.coord[i] - a.coord[j])) for i, j in pairs]
-    g.add_edges_from(edges)
+    for chain_mask in chain_masks:
+        el_combs = _get_element_combs(a[chain_mask])
+        for pair in el_combs:
+            # Subset to atoms from an element pair.
+            el1, el2 = pair.split("-")
+            a_idx = np.where(np.isin(a.element, [el1, el2]) & chain_mask)[0]
+            if len(a_idx) == 0:
+                continue
+
+            # Build a KDTree object to speed up neighbor searches
+            kdtree = KDTree(a[a_idx].coord)
+            lower, upper = DefaultConfig["bonds"][pair]
+            # Query for pairs under distance threshold for non-covalent interaction
+            pairs = kdtree.query_pairs(r=upper)
+            if not pairs:
+                continue
+            valid_pairs = [(el1, el2), (el2, el1)]
+            edges = (
+                (
+                    a_idx[i],  # Original atom indices
+                    a_idx[j],
+                    np.linalg.norm(a.coord[a_idx[i]] - a.coord[a_idx[j]]),  # Dist
+                )
+                for i, j in pairs
+                # Pair is valid if element combinations are valid and if atom
+                # altlocs are compatible.
+                if (a[a_idx[i]].element, a[a_idx[j]].element) in valid_pairs
+                and _is_valid_altloc(a[a_idx[i]], a[a_idx[j]])
+            )
+            # Batch-add edges to the graph
+            edges = list(filter(lambda x: upper > x[-1] > lower, edges))
+            g.add_edges_from(edges)
 
     return g
 

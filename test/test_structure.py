@@ -2,7 +2,6 @@ from copy import deepcopy
 from pathlib import Path
 
 import biotite.structure as bst
-import numpy as np
 import pytest
 
 from lXtractor.core.config import AtomMark, DefaultConfig
@@ -12,6 +11,7 @@ from lXtractor.core.structure import (
     NucleotideStructure,
     ProteinStructure,
 )
+from test.common import ALL_STRUCTURES
 from test.conftest import EPS
 
 DATA = Path(__file__).parent / "data"
@@ -24,8 +24,11 @@ def peptide_dna_complex() -> Path:
     return path
 
 
-def test_init(simple_structure_path):
-    s = GenericStructure.read(simple_structure_path)
+@pytest.mark.parametrize('inp_path', ALL_STRUCTURES)
+def test_init(inp_path):
+    print(inp_path)
+    s = GenericStructure.read(inp_path)
+    assert isinstance(s, GenericStructure)
     assert len(s) > 0
 
 
@@ -101,6 +104,7 @@ def test_subsetting(simple_structure):
     assert len(seq) == 2
 
 
+@pytest.mark.skip()
 def test_write(simple_structure):
     # TODO: implement when providing paths is fixed in biotite
     pass
@@ -200,6 +204,7 @@ def test_atom_marks_extracting(peptide_dna_complex):
 
     s = NucleotideStructure.read(peptide_dna_complex)
     seg = s.extract_segment(22, 30, "D")
+    # DNA stays being a primary polymer, connected protein is a ligand polymer
     assert seg.chain_ids_polymer == ["D"]
     assert seg.chain_ids_ligand == ["A"]
     assert seg.mask.unk.sum() == 0

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import typing as t
 
 import numpy as np
@@ -9,11 +10,14 @@ from numpy import typing as npt
 
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import FormatError
-from lXtractor.util import find_polymer_type
+from lXtractor.util import find_primary_polymer_type
 from lXtractor.util.structure import find_contacts
 
 if t.TYPE_CHECKING:
     from lXtractor.core.structure import GenericStructure
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Ligand:
@@ -21,21 +25,27 @@ class Ligand:
     Ligand object is a part of the structure falling under certain criteria.
 
     Namely, a ligand is a non-polymer and non-solvent molecule or a single
-    monomer (thus, standalone amino acids are considered ligands, while peptides
-    of length >= 2 are not).
+    monomer. Such ligands will be designated using the format::
+
+        {res_name}_{res_id}:{chain_id}<-({parent})
+
+    If a ligand contains multiple monomers, by convention, this is a polymer ligand.
+    Such ligands should be named using the first letter of the polymer type;
+    one of the ``("p", "n", "c")``. In this case, it's ID will be of the following
+    format::
+
+        {polymer_type}_{min_res_id}-{max_res_id}:{chain_id}<-({parent})
+
+    This information is provided by :attr:`meta` and shouldn't be changed. However,
+    any additional fields can be stored in :attr:`meta` which will be retrieved
+    when constructing :meth:`summary`.
 
     Attributes :attr:`mask` and :attr:`contact_mask` are
     boolean masks allowing to obtain ligand and ligand-contacting atoms from
     :attr:`parent`.
 
-    All array-type attributes, have the number of elements equal to the number
-    of atoms in :attr:`parent`.
-
-    .. seealso::
-        `find_ligands`
-
-    Methods ``__repr__`` and ``__str__`` output a string in the format:
-    ``{res_name}_{res_id}:{chain_id}<-({parent})``.
+    ..seealso ::
+        :func:`make_ligand` to initialize a new ligand in an easy way.
     """
 
     __slots__ = (
@@ -262,7 +272,25 @@ def make_ligand(
     m_pol: npt.NDArray[np.bool_],
     structure: GenericStructure,
 ) -> Ligand | None:
-    # TODO: docs
+    """
+    Create a new :class:`Ligand` object. The criteria to qualify for a ligand
+    are defined by the global config (``DefaultConfig["ligand"]``).
+
+    Whether a ligand molecule is created is subject to several checks::
+
+        #. It has a certain number of atoms.
+        #. It has a certain number of contacts with the polymer.
+        #. It contacts a certain number of residues in the polymer.
+        #. Its atoms span a single chain.
+
+    If a ligand doesn't pass any of these checks, the function returns ``None``.
+
+    :param m_lig: A boolean mask pointing to putative ligand atoms.
+    :param m_pol: A boolean mask pointing to polymer atoms that supposedly
+        contact ligand atoms.
+    :param structure: A parent structure to which the masks can be applied.
+    :return: An instantiated ligand or ``None`` if the checks were not passed.
+    """
     a, cfg = structure.array, DefaultConfig["ligand"]
 
     if m_lig.sum() < cfg["min_atoms"]:
@@ -270,12 +298,16 @@ def make_ligand(
 
     lig_chains = bst.get_chains(a[m_lig])
     if len(lig_chains) != 1:
-        raise RuntimeError(
+        LOGGER.warning(
             f"Ligand must correspond to a single chain. "
             f"Found {len(lig_chains)}: {lig_chains}."
         )
+        return None
 
+    # Find contacts
     contacts, dist, ligand_idx = find_contacts(a, m_lig)
+    contacts[~m_pol] = 0
+    dist[~m_pol] = 0
     m_cont = contacts != 0
 
     # The number of residues connected to a ligand
@@ -291,10 +323,10 @@ def make_ligand(
     if lig_num_residues == 1:
         name, res_id = a[m_lig].res_name[0], a[m_lig].res_id[0]
     elif lig_num_residues > 1:
-        _, lig_poly_type = find_polymer_type(a[m_lig])
+        _, lig_poly_type = find_primary_polymer_type(a[m_lig])
         if lig_poly_type == "x":
-            raise RuntimeError(
-                "Expected a polymer ligand but could not determine the polymer type"
+            LOGGER.warning(
+                f"Ligand contains {lig_num_residues} residues but is not polymeric."
             )
         name = f"{lig_poly_type}{lig_num_residues}"
         res_id = f"{a[m_lig].res_id[0]}-{a[m_lig].res_id[-1]}"

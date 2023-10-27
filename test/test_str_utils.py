@@ -5,6 +5,7 @@ import biotite.structure as bst
 import biotite.structure.info as bstinfo
 import numpy as np
 import pytest
+import rustworkx as rx
 
 from test.common import ALL_STRUCTURES
 from lXtractor.core.config import STRUCTURE_FMT, EMPTY_ALTLOC
@@ -15,6 +16,7 @@ from lXtractor.util.structure import (
     load_structure,
     save_structure,
     iter_altloc_masks,
+    to_graph,
 )
 
 DATA = Path(__file__).parent / "data"
@@ -158,3 +160,10 @@ def test_iter_altloc_masks(inp_path):
     )
     m = np.vstack(masks)
     assert np.all(np.any(m, axis=0))
+
+
+@pytest.mark.parametrize("inp_path", ALL_STRUCTURES)
+def test_graph_construction(inp_path):
+    a = load_structure(inp_path)
+    g = to_graph(a)
+    assert isinstance(g, rx.PyGraph)

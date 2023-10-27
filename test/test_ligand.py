@@ -64,14 +64,14 @@ def test_find_ligands(path, expected):
             },
         ),
         (
-            DATA / '4TWC.mmtf.gz',
+            DATA / "4TWC.mmtf.gz",
             {
                 ("A", "37J", "A"),
                 ("B", "37J", "B"),
                 ("A", "BOG", "A"),
                 ("B", "BOG", "A"),
-            }
-        )
+            },
+        ),
     ],
 )
 def test_split_chains(path, expected):
@@ -84,6 +84,19 @@ def test_split_chains(path, expected):
         for lig in c.ligands:
             outputs.append((structure_chain_id, lig.res_name, lig.chain_id))
     assert set(outputs) == expected
+
+
+@pytest.mark.parametrize(
+    "inp_path,altloc,lig_names",
+    [(DATA / "1rdq.mmtf", ["A", "B"], [{"ADP_599:E"}, {"ATP_600:E"}])],
+)
+def test_split_altloc(inp_path, altloc, lig_names):
+    s = GenericStructure.read(inp_path, altloc=True)
+    for s_alt, alt_id, exp_lig in zip(s.split_altloc(), altloc, lig_names, strict=True):
+        alt_ids = s_alt.altloc_ids
+        assert len(alt_ids) == 2
+        assert alt_ids[-1] == alt_id
+        assert {lig.id.split("<-")[0] for lig in s_alt.ligands} == exp_lig
 
 
 @pytest.mark.parametrize("inp", [DATA / "3unk.cif"])
