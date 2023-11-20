@@ -98,7 +98,7 @@ class Chain:
 
     def _make_id(self) -> str:
         parent = "" if self.parent is None else f"<-({self.parent.id})"
-        return f"Chain({self.seq.id}){parent}"
+        return f"Chain({self.seq.id_strip_parents()}){parent}"
 
     @property
     def id(self) -> str:

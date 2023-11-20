@@ -302,7 +302,7 @@ class ChainStructure:
     def _make_id(self) -> str:
         alt_locs = self.structure.id.split("|")[-1]
         parent = "" if self.parent is None else f"<-({self.parent.id})"
-        return f"ChainStructure({self.seq.id}|{alt_locs}){parent}"
+        return f"ChainStructure({self.seq.id_strip_parents()}|{alt_locs}){parent}"
 
     @property
     def id(self) -> str:

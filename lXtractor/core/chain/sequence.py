@@ -115,14 +115,14 @@ class ChainSequence(lxs.Segment):
             return self[DefaultConfig["mapnames"]["enum"]]
         return list(range(self.start, self.end + 1))
 
-    @property
-    def seq(self) -> Self:
-        """
-        This property exists for functionality relying on the `.seq` attribute.
-
-        :return: This object.
-        """
-        return self
+    # @property
+    # def seq(self) -> Self:
+    #     """
+    #     This property exists for functionality relying on the `.seq` attribute.
+    #
+    #     :return: This object.
+    #     """
+    #     return self
 
     @property
     def seq1(self) -> str:
@@ -200,7 +200,7 @@ class ChainSequence(lxs.Segment):
         other: str | tuple[str, str] | ChainSequence | Alignment,
         align_method: AlignMethod = mafft_align,
         save: bool = True,
-        name: t.Optional[str] = None,
+        name: str | None = None,
         **kwargs,
     ) -> list[None | int]:
         """

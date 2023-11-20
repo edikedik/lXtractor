@@ -277,6 +277,12 @@ class Segment(abc.Sequence[NamedTupleT]):
         """
         return self._id
 
+    def id_strip_parents(self):
+        """
+        :return: An identifier of this segment without parent information.
+        """
+        return self.id.split('<-')[0]
+
     @property
     def item_type(self) -> _Item:
         """
