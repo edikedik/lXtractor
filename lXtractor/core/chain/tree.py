@@ -14,6 +14,7 @@ from toolz import groupby
 
 from lXtractor.core.chain import Chain, ChainSequence, ChainStructure, ChainList
 from lXtractor.core.exceptions import MissingData, FormatError
+from lXtractor.util.misc import all_logging_disabled
 
 T = t.TypeVar("T")
 CT = t.TypeVar("CT", ChainSequence, ChainStructure, Chain)
@@ -296,7 +297,8 @@ def make_str_tree(
                 if parent_name is None:
                     continue
                 if parent_name not in tree.nodes:
-                    parent_obj = make_filled(parent_name, node_example)
+                    with all_logging_disabled():
+                        parent_obj = make_filled(parent_name, node_example)
                     tree.add_node(parent_name, objs=[parent_obj])
                 tree.add_edge(parent_name, child_name)
                 if connect:
