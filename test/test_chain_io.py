@@ -17,7 +17,8 @@ def test_chainio(simple_structure, simple_chain_seq):
     seq = simple_chain_seq
     struc = ChainStructure(simple_structure)
     seq_child = seq.spawn_child(1, 2)
-    ch = Chain(seq, [struc], children=[Chain(seq_child)])
+    ch_child = Chain(seq_child)
+    ch = Chain(seq, [struc], children=[ch_child])
     io = ChainIO(tolerate_failures=False)
 
     # chain _seq io
@@ -79,7 +80,7 @@ def test_chainio(simple_structure, simple_chain_seq):
         segm_paths = list(dirs[fnames["segments_dir"]].glob("*"))
         assert len(segm_paths) == 1
         segm_dir = segm_paths.pop()
-        assert segm_dir.name == f"Chain({seq_child.id})"
+        assert segm_dir.name == ch_child.id
 
         c_r = list(io.read_chain(tmp, search_children=True))
         assert len(c_r) == 1

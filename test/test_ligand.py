@@ -113,3 +113,14 @@ def test_summary(inp, meta):
         assert set(meta_keys).issubset(set(s.index))
     else:
         assert len(set(meta_keys) & set(s.index)) == 0
+
+
+@pytest.mark.parametrize(
+    "inp,out", [(DATA / "5ACB.mmtf.gz", {("5I1", "C"), ("5I1", "D")})]
+)
+def test_covalent_ligand(inp, out):
+    s = GenericStructure.read(inp)
+    outputs = {(lig.res_name, lig.chain_id) for lig in s.ligands}
+    assert outputs == out
+
+

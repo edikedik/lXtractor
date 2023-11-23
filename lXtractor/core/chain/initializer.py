@@ -92,6 +92,7 @@ def _read_path(
     tolerate_failures: bool,
     supported_seq_ext: abc.Container[str],
     supported_str_ext: abc.Container[str],
+    altloc: str | None = "all",
 ) -> ChainSequence | list[ChainStructure] | None:
     from lXtractor.core.chain import ChainStructure, ChainSequence
 
@@ -100,13 +101,15 @@ def _read_path(
     if suffix in supported_seq_ext:
         return ChainSequence.from_file(path)
     if suffix in supported_str_ext:
-        # TODO: This takes only the first altloc but should take all of them
         # Read initial structures, split by chains ant altloc
         # and wrap into a ChainStructure
         pol_type = DefaultConfig["structure"]["primary_pol_type"][0]
         structure_cls = _STRUCTURE_TYPES[pol_type]
-        structure = next(structure_cls.read(path, altloc=True).split_altloc())
-        return list(map(ChainStructure, structure.split_chains(polymer=True)))
+        structure = structure_cls.read(path, altloc=altloc)
+        chains = chain.from_iterable(
+            c.split_altloc() for c in structure.split_chains(polymer=True)
+        )
+        return list(map(ChainStructure, chains))
     if tolerate_failures:
         return None
     raise InitError(f"Suffix {suffix} of the path {path} is not supported")
@@ -120,6 +123,8 @@ def _init(
     callbacks: list[SingletonCallback] | None,
 ) -> _O:
     from lXtractor.core.chain import Chain, ChainStructure, ChainSequence
+
+    LOGGER.debug(f'Initializing {inp}')
 
     res: _O
     match inp:

@@ -208,10 +208,3 @@ def test_atom_marks_extracting(peptide_dna_complex):
     assert seg.chain_ids_polymer == ["D"]
     assert seg.chain_ids_ligand == ["A"]
     assert seg.mask.unk.sum() == 0
-
-    # (!) No "stitch" mode implemented by default
-
-    # seg = seg.extract_positions([22, 23, 24, 26, 28, 29, 30], "D")
-    # assert seg.mask.unk.sum() == 0
-    # Should recognize position 25 as part of the polymer
-    # assert bst.get_residue_count(seg.array[seg.mask.primary_polymer]) == 7
