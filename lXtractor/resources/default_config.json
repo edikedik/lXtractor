@@ -49,7 +49,7 @@
       2.3
     ],
     "C-N": [
-      1.25,
+      1.2,
       1.6
     ],
     "C-O": [
@@ -233,7 +233,7 @@
   },
   "ligand": {
     "min_atom_connections": 5,
-    "min_atoms": 5,
+    "min_atoms": 6,
     "min_res_connections": 3
   },
   "mapnames": {
@@ -414,6 +414,7 @@
       "MAC",
       "MES",
       "MG",
+      "MGF",
       "MG8",
       "MLA",
       "MLI",

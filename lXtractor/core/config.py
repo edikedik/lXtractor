@@ -298,6 +298,8 @@ class AtomMark(IntFlag):
     NUC: int = 16
     #: Carbohydrate polymer atoms.
     CARB: int = 32
+    #: Covalent polymer modifications including ligands.
+    COVALENT: int = 64
 
 
 if __name__ == "__main__":

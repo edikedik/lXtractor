@@ -326,7 +326,8 @@ def make_ligand(
         _, lig_poly_type = find_primary_polymer_type(a[m_lig])
         if lig_poly_type == "x":
             LOGGER.warning(
-                f"Ligand contains {lig_num_residues} residues but is not polymeric."
+                f"Ligand of a structure {structure.name} contains "
+                f"{lig_num_residues} residues but is not polymeric."
             )
         name = f"{lig_poly_type}{lig_num_residues}"
         res_id = f"{a[m_lig].res_id[0]}-{a[m_lig].res_id[-1]}"
