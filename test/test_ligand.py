@@ -22,7 +22,7 @@ DATA = Path(__file__).parent / "data"
             {
                 ("ALA", ("D",)),
                 ("DGL", ("B", "D")),
-                ("GLY", ("C", "D")),
+                # ("GLY", ("C", "D")),  # num atoms too low
                 ("UXA", ("C", "D")),
             },
         ),
@@ -55,11 +55,11 @@ def test_find_ligands(path, expected):
             DATA / "7fsh.cif",
             {
                 ("B", "DGL", "B"),
-                ("C", "GLY", "C"),
+                # ("C", "GLY", "C"),
                 ("C", "UXA", "C"),
                 ("D", "ALA", "D"),
                 ("D", "DGL", "D"),
-                ("D", "GLY", "D"),
+                # ("D", "GLY", "D"),
                 ("D", "UXA", "D"),
             },
         ),

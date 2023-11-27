@@ -133,7 +133,6 @@ def tqdm_joblib(tqdm_object):
 def _apply_parallel_joblib(fn, it, verbose, desc, num_proc, total, **kwargs):
     assert num_proc > 1, "More than 1 CPU requested"
     if total is None and isinstance(it, abc.Sized):
-        print(total)
         total = len(it)
     if verbose:
         with tqdm_joblib(tqdm(desc=desc, total=total)):
