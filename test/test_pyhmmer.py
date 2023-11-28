@@ -5,7 +5,7 @@ import pytest
 from pyhmmer.easel import DigitalSequence, TextMSA
 from pyhmmer.plan7 import HMMFile
 
-from lXtractor.core.chain import ChainStructure, ChainSequence
+from lXtractor.chain import ChainStructure, ChainSequence
 from lXtractor.core.exceptions import MissingData
 from lXtractor.ext.hmm import PyHMMer
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from lXtractor.core.chain import ChainList, ChainStructure, ChainSequence, Chain
+from lXtractor.chain import ChainList, ChainStructure, ChainSequence, Chain
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.structure import GenericStructure
 from lXtractor.util.seq import read_fasta

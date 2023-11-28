@@ -17,7 +17,7 @@ from more_itertools import split_into, collapse, ilen
 from toolz import curry, compose_left
 from tqdm.auto import tqdm
 
-from lXtractor.core.chain import ChainList, map_numbering_many2many
+from lXtractor.chain import ChainList, map_numbering_many2many
 from lXtractor.core.config import STRUCTURE_EXT, DefaultConfig
 from lXtractor.core.exceptions import InitError
 from lXtractor.core.structure import (
@@ -39,7 +39,7 @@ _STRUCTURE_TYPES = {
 }
 
 if t.TYPE_CHECKING:
-    from lXtractor.core.chain import Chain, ChainStructure, ChainSequence
+    from lXtractor.chain import Chain, ChainStructure, ChainSequence
 
     CT = t.TypeVar("CT", ChainStructure, ChainSequence, Chain)
     _O: t.TypeAlias = ChainSequence | ChainStructure | list[ChainStructure] | None
@@ -94,7 +94,7 @@ def _read_path(
     supported_str_ext: abc.Container[str],
     altloc: str | None = "all",
 ) -> ChainSequence | list[ChainStructure] | None:
-    from lXtractor.core.chain import ChainStructure, ChainSequence
+    from lXtractor.chain import ChainStructure, ChainSequence
 
     suffix = parse_suffix(path)
 
@@ -122,7 +122,7 @@ def _init(
     supported_str_ext: list[str],
     callbacks: list[SingletonCallback] | None,
 ) -> _O:
-    from lXtractor.core.chain import Chain, ChainStructure, ChainSequence
+    from lXtractor.chain import Chain, ChainStructure, ChainSequence
 
     LOGGER.debug(f'Initializing {inp}')
 
@@ -345,7 +345,7 @@ class ChainInitializer:
         :return: A list of initialized chains.
         """
 
-        from lXtractor.core.chain import Chain
+        from lXtractor.chain import Chain
 
         # Process keys and values
         keys = self.from_iterable(

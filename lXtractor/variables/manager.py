@@ -21,7 +21,7 @@ from more_itertools import unzip, peekable, split_when, chunked
 from toolz import curry
 from tqdm.auto import tqdm
 
-import lXtractor.core.chain as lxc
+import lXtractor.chain as lxc
 from lXtractor.core import Ligand
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import MissingData

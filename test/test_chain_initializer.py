@@ -3,7 +3,7 @@ from itertools import chain
 
 import pytest
 
-from lXtractor.core.chain import ChainInitializer, ChainSequence, ChainStructure, Chain
+from lXtractor.chain import ChainInitializer, ChainSequence, ChainStructure, Chain
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import InitError
 

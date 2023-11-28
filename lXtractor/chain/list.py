@@ -16,14 +16,14 @@ from more_itertools import nth, peekable, unique_everseen
 from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
+from lXtractor.chain.base import is_chain_type_iterable, is_chain_type
 from lXtractor.core.base import Ord, ApplyT
-from lXtractor.core.chain.base import is_chain_type_iterable, is_chain_type
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import MissingData
 from lXtractor.util import apply
 
 if t.TYPE_CHECKING:
-    from lXtractor.core.chain import ChainSequence, ChainStructure, Chain
+    from lXtractor.chain import ChainSequence, ChainStructure, Chain
 
     CT = t.TypeVar("CT", ChainStructure, ChainSequence, Chain)
     CS = t.TypeVar("CS", ChainStructure, ChainSequence)
@@ -78,7 +78,7 @@ class ChainList(abc.MutableSequence[CT]):
 
     It behaves like a regular list with additional functionality.
 
-    >>> from lXtractor.core.chain.sequence import ChainSequence
+    >>> from lXtractor.chain import ChainSequence
     >>> s = ChainSequence.from_string('SEQUENCE', name='S')
     >>> x = ChainSequence.from_string('XXX', name='X')
     >>> x.meta['category'] = 'x'
@@ -290,7 +290,7 @@ class ChainList(abc.MutableSequence[CT]):
         """
         Simultaneously iterate over topological levels of children.
 
-        >>> from lXtractor.core.chain.sequence import ChainSequence
+        >>> from lXtractor.chain import ChainSequence
         >>> s = ChainSequence.from_string('ABCDE', name='A')
         >>> child1 = s.spawn_child(1, 4)
         >>> child2 = child1.spawn_child(2, 3)
@@ -332,7 +332,7 @@ class ChainList(abc.MutableSequence[CT]):
         Collapse all children of each object in this list into a single
         chain list.
 
-        >>> from lXtractor.core.chain.sequence import ChainSequence
+        >>> from lXtractor.chain import ChainSequence
         >>> s = ChainSequence.from_string('ABCDE', name='A')
         >>> child1 = s.spawn_child(1, 4)
         >>> child2 = child1.spawn_child(2, 3)
@@ -361,11 +361,12 @@ class ChainList(abc.MutableSequence[CT]):
         :return: An iterator over :class:`ChainSequence`'s.
         """
         # mypy doesn't know the type is known at runtime
-        from lXtractor.core import chain as lxc
+
+        from lXtractor import chain as lxc
 
         if len(self) > 0:
             x = self[0]
-            if isinstance(x, (lxc.chain.Chain, lxc.structure.ChainStructure)):
+            if isinstance(x, (lxc.Chain, lxc.ChainStructure)):
                 yield from (c.seq for c in self._chains)
             else:
                 yield from iter(self._chains)
@@ -377,7 +378,7 @@ class ChainList(abc.MutableSequence[CT]):
         :return: An generator over :class:`ChainStructure`'s.
         """
         # mypy doesn't know the type is known at runtime
-        from lXtractor.core import chain as lxc
+        from lXtractor import chain as lxc
 
         if len(self) > 0:
             x = self[0]
@@ -530,7 +531,7 @@ class ChainList(abc.MutableSequence[CT]):
         :return: A list of hits of the same type.
         """
 
-        from lXtractor.core import chain as lxc
+        from lXtractor import chain as lxc
 
         if len(self) > 0:
             x = self[0]
@@ -552,7 +553,7 @@ class ChainList(abc.MutableSequence[CT]):
 
     def filter(self, pred: abc.Callable[[CT], bool]) -> ChainList[CT]:
         """
-        >>> from lXtractor.core.chain.sequence import ChainSequence
+        >>> from lXtractor.chain import ChainSequence
         >>> cl = ChainList(
         ...     [ChainSequence.from_string('AAAX', name='A'),
         ...      ChainSequence.from_string('XXX', name='X')]

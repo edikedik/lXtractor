@@ -12,7 +12,7 @@ import networkx as nx
 from more_itertools import windowed
 from toolz import groupby
 
-from lXtractor.core.chain import Chain, ChainSequence, ChainStructure, ChainList
+from lXtractor.chain import Chain, ChainSequence, ChainStructure, ChainList
 from lXtractor.core.exceptions import MissingData, FormatError
 from lXtractor.util.misc import all_logging_disabled
 

@@ -3,7 +3,7 @@ from copy import deepcopy
 from itertools import chain
 from pathlib import Path
 
-from lXtractor.core.chain import Chain, ChainStructure, ChainSequence
+from lXtractor.chain import Chain, ChainStructure, ChainSequence
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.structure import GenericStructure
 

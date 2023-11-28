@@ -29,7 +29,7 @@ from toolz import itemfilter, valmap, groupby, valfilter, keymap
 import lXtractor.core.segment as lxs
 from lXtractor import resources as local
 from lXtractor.core.base import AbstractResource
-from lXtractor.core.chain import ChainSequence
+from lXtractor.chain import ChainSequence
 from lXtractor.core.exceptions import MissingData
 from lXtractor.util.io import fetch_to_file
 from lXtractor.util.misc import col2col

@@ -15,7 +15,7 @@ from lXtractor.core.exceptions import FormatError
 from lXtractor.util import fetch_files
 
 if t.TYPE_CHECKING:
-    from lXtractor.core.chain import ChainSequence, ChainStructure, Chain
+    from lXtractor.chain import ChainSequence, ChainStructure, Chain
 
     CT = t.TypeVar("CT", ChainSequence, ChainStructure, Chain)
 else:

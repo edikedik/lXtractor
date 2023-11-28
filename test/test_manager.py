@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 from pandas.errors import InvalidIndexError
 
-from lXtractor.core.chain import ChainSequence, ChainStructure, ChainList
+from lXtractor.chain import ChainSequence, ChainStructure, ChainList
 from lXtractor.core.structure import GenericStructure
 from lXtractor.variables import Dist
 from lXtractor.variables.calculator import GenericCalculator

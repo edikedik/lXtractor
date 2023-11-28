@@ -9,11 +9,10 @@ from pathlib import Path
 import pandas as pd
 from typing_extensions import Self
 
+from lXtractor.chain import ChainSequence, ChainStructure
+from lXtractor.chain.base import topo_iter
+from lXtractor.chain.list import ChainList, _wrap_children
 from lXtractor.core.base import SeqReader, ApplyT, FilterT
-from lXtractor.core.chain.base import topo_iter
-from lXtractor.core.chain.list import ChainList, _wrap_children
-from lXtractor.core.chain.sequence import ChainSequence
-from lXtractor.core.chain.structure import ChainStructure
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import (
     AmbiguousMapping,

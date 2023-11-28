@@ -4,8 +4,8 @@ from tempfile import TemporaryDirectory
 
 from more_itertools import consume
 
-from lXtractor.core.chain import ChainStructure, ChainIO, Chain, ChainSequence
-from lXtractor.core.chain.io import read_chains, ChainIOConfig
+from lXtractor.chain import ChainStructure, ChainIO, Chain, ChainSequence
+from lXtractor.chain import read_chains, ChainIOConfig
 from lXtractor.core.config import DefaultConfig
 from lXtractor.util.io import get_files, get_dirs
 

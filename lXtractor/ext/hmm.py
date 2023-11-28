@@ -28,7 +28,7 @@ from pyhmmer.plan7 import (
 )
 
 from lXtractor.core.base import AbstractResource
-from lXtractor.core.chain import ChainSequence, ChainStructure, Chain
+from lXtractor.chain import ChainSequence, ChainStructure, Chain
 from lXtractor.core.exceptions import MissingData
 from lXtractor.util import fetch_to_file
 
@@ -379,7 +379,7 @@ class Pfam(AbstractResource):
         self,
         dump: bool = True,
         rm_raw: bool = True,
-    ):
+    ) -> pd.DataFrame:
         """
         Parse fetched raw data into a single pandas :class:`DataFrame`.
 
@@ -409,7 +409,7 @@ class Pfam(AbstractResource):
         accessions: abc.Container[str] | None = None,
         categories: abc.Container[str] | None = None,
         hmm: bool = True,
-    ):
+    ) -> pd.DataFrame:
         """
         Read parsed Pfam data.
 
@@ -438,7 +438,9 @@ class Pfam(AbstractResource):
         self._df = df
         return df
 
-    def load_hmm(self, df: pd.DataFrame | None = None, path: Path | None = None):
+    def load_hmm(
+        self, df: pd.DataFrame | None = None, path: Path | None = None
+    ) -> pd.DataFrame:
         """
         Load HMM models according to accessions in passed `df` and create a
         column "PyHMMer" with loaded models.

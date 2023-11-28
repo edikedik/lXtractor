@@ -1,7 +1,7 @@
 import pytest
 from toolz import curry, identity
 
-from lXtractor.core.chain import ChainList, ChainSequence, ChainStructure, Chain
+from lXtractor.chain import ChainList, ChainSequence, ChainStructure, Chain
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.segment import Segment
 

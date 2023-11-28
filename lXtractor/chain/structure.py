@@ -12,11 +12,11 @@ from biotite import structure as bst
 from more_itertools import unzip
 from typing_extensions import Self
 
+from lXtractor.chain import ChainList, ChainSequence
+from lXtractor.chain.base import topo_iter
+from lXtractor.chain.list import _wrap_children
 from lXtractor.core import Ligand
 from lXtractor.core.base import ApplyT, FilterT
-from lXtractor.core.chain.base import topo_iter
-from lXtractor.core.chain.list import _wrap_children, ChainList
-from lXtractor.core.chain.sequence import ChainSequence
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import LengthMismatch, InitError, MissingData
 from lXtractor.core.structure import GenericStructure

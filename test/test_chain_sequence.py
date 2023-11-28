@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from lXtractor.core.alignment import Alignment
-from lXtractor.core.chain import ChainSequence
+from lXtractor.chain import ChainSequence
 from lXtractor.core.config import DefaultConfig
 from lXtractor.util.io import get_files, get_dirs
 from lXtractor.util.seq import read_fasta, biotite_align, mafft_align

@@ -1,7 +1,7 @@
 import pytest
 from toolz import curry
 
-from lXtractor.core.chain import ChainStructure
+from lXtractor.chain import ChainStructure
 from lXtractor.variables.base import SequenceVariable
 from lXtractor.variables.calculator import GenericCalculator
 from lXtractor.variables.sequential import SeqEl, make_str, PFP

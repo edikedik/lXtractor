@@ -7,7 +7,7 @@ from itertools import chain, tee
 from lXtractor.util.typing import is_iterable_of, is_type
 
 if t.TYPE_CHECKING:
-    from lXtractor.core.chain import ChainSequence, ChainStructure, Chain
+    from lXtractor.chain import ChainSequence, ChainStructure, Chain
 
     # CT = t.TypeVar('CT', bound=t.Union[ChainSequence, ChainStructure, Chain])
     CT = t.TypeVar('CT', ChainSequence, ChainStructure, Chain)
@@ -59,7 +59,7 @@ def is_chain_type_iterable(
 ) -> t.TypeGuard[
     abc.Iterable[Chain] | abc.Iterable[ChainSequence] | abc.Iterable[ChainStructure]
 ]:
-    from lXtractor.core import chain as lxc
+    from lXtractor import chain as lxc
 
     if not isinstance(s, abc.Iterable):
         return False
@@ -73,7 +73,7 @@ def is_chain_type_iterable(
 
 
 def is_chain_type(s: t.Any) -> t.TypeGuard[CTU]:
-    from lXtractor.core import chain as lxc
+    from lXtractor import chain as lxc
 
     return any(
         is_type(s, _t) for _t in [lxc.ChainSequence, lxc.ChainStructure, lxc.Chain]

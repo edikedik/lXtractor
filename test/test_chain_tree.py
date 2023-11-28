@@ -1,7 +1,7 @@
 import pytest
 
-from lXtractor.core.chain import ChainSequence, ChainList, Chain, ChainStructure
-from lXtractor.core.chain.tree import (
+from lXtractor.chain import ChainSequence, ChainList, Chain, ChainStructure
+from lXtractor.chain import (
     list_ancestors,
     list_ancestors_names,
     make_obj_tree,

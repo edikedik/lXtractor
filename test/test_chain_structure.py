@@ -6,7 +6,7 @@ import biotite.structure as bst
 import pandas as pd
 import pytest
 
-from lXtractor.core.chain import ChainStructure, ChainSequence
+from lXtractor.chain import ChainStructure, ChainSequence
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import InitError, NoOverlap, LengthMismatch, MissingData
 from lXtractor.util.io import get_files, get_dirs

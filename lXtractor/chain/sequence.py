@@ -25,8 +25,8 @@ from lXtractor.core.base import (
     ApplyT,
     FilterT,
 )
-from lXtractor.core.chain.base import topo_iter
-from lXtractor.core.chain.list import _wrap_children, add_category, ChainList
+from lXtractor.chain.base import topo_iter
+from lXtractor.chain.list import _wrap_children, add_category, ChainList
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import (
     MissingData,
@@ -46,7 +46,7 @@ from lXtractor.util import (
 )
 
 if t.TYPE_CHECKING:
-    from lXtractor.core.chain import Chain, ChainStructure
+    from lXtractor.chain import Chain, ChainStructure
 
 # TODO: add "drop_index()" method for a segment
 # It "reenumerates" the segment from the new start (1 by default)
@@ -563,7 +563,7 @@ class ChainSequence(lxs.Segment):
             <lXtractor.core.chain.chain.Chain.add_structure>`
         :return:
         """
-        from lXtractor.core.chain import Chain
+        from lXtractor.chain import Chain
 
         c = Chain.from_seq(self)
         if transfer_children:

@@ -11,8 +11,8 @@ import biotite.structure as bst
 import numpy as np
 from toolz import curry
 
-from lXtractor.core.chain import ChainStructure
-from lXtractor.core.chain.structure import filter_selection_extended, subset_to_matching
+from lXtractor.chain import ChainStructure
+from lXtractor.chain import filter_selection_extended, subset_to_matching
 from lXtractor.core.exceptions import MissingData, LengthMismatch, InitError
 from lXtractor.util import apply
 from lXtractor.util.seq import biotite_align

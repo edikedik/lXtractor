@@ -11,10 +11,7 @@ from pathlib import Path
 from toolz import curry, merge, valfilter, valmap
 from tqdm.auto import tqdm
 
-from lXtractor.core.chain import ChainList
-from lXtractor.core.chain.chain import Chain
-from lXtractor.core.chain.sequence import ChainSequence
-from lXtractor.core.chain.structure import ChainStructure
+from lXtractor.chain import ChainList, Chain, ChainSequence, ChainStructure
 from lXtractor.core.config import DefaultConfig
 from lXtractor.util import get_dirs, apply, path_tree
 
