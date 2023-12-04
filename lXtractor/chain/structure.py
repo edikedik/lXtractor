@@ -380,40 +380,6 @@ class ChainStructure:
         """
         return self.structure.altloc_ids[0]
 
-    # @classmethod
-    # def from_structure(
-    #     cls,
-    #     structure: bst.AtomArray | GenericStructure,
-    #     name: str | None = None,
-    #     chain_id: str | None = None,
-    #     **kwargs,
-    # ) -> ChainStructure:
-    #     # TODO: should deprecate
-    #     """
-    #     :param structure: An `AtomArray` or `GenericStructure`,
-    #         corresponding to a single protein chain.
-    #     :param name: ID of the provided structure.
-    #     :param chain_id: Chain identifier. If not provided, will take the first
-    #         atom's chain ID from the provided structure.
-    #     :param kwargs: Passed to initializer. Avoid using `_name`, `chain_id`,
-    #         or `structure` since they are supplied internally within this
-    #         method.
-    #     :return: Initialized chain structure.
-    #     """
-    #     if isinstance(structure, bst.AtomArray):
-    #         structure = GenericStructure(structure, )
-    #
-    #     if structure.is_empty:
-    #         return cls(None)
-    #
-    #     chain_id = chain_id or (
-    #         structure.chain_ids_polymer.pop()
-    #         if structure.chain_ids_polymer
-    #         else structure.chain_ids.pop()
-    #     )
-    #
-    #     return cls(pdb_id, chain_id, structure, **kwargs)
-
     @classmethod
     def make_empty(cls) -> ChainStructure:
         """
