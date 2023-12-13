@@ -57,7 +57,11 @@ version.path = "lXtractor/__about__.py"
 ignore-vcs = true
 packages = ["lXtractor"]
 exclude = [
-    "*.gz"
+    "*.gz",
+    "lXtractor/resources/.*",
+    "lXtractor/resources/Pfam",
+    "lXtractor/resources/CCD.msgpack",
+    "lXtractor/resources/sifts.tsv"
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -75,24 +79,6 @@ exclude_lines = [
     "no cov",
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
-]
-
-[tool.pylint.format]
-max-line-length = "88"
-good-names = "i, j, k, x, df, l, m, n, f, fn, e"
-
-[tool.pylint."MESSAGES CONTROL"]
-disable = [
-    "too-few-public-methods",
-    "too-many-public-methods",
-    "too-many-arguments",
-    "too-many-locals",
-    "too-many-instance-attributes",
-    "logging-fstring-interpolation",
-    "invalid-name",
-    "eval-used",
-    "exec-used",
-    "broad-except"
 ]
 
 [tool.ruff]
