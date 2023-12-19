@@ -711,13 +711,16 @@ class ChainStructure:
         mnames = DefaultConfig["metadata"]
         unk = DefaultConfig["unknowns"]
         bname = fnames["structure_base_name"]
-        stems = {p.name.split(".")[0]: p.name for p in files.values()}
+        stems = {
+            p.name.split(".")[0]: p.name
+            for p in files.values()
+            if p.suffix not in [".npy", ".json"]
+        }
         if bname not in stems:
             raise InitError(
                 f"{base_dir} must contain {bname}.fmt "
                 f'where "fmt" is supported structure format'
             )
-
         seq = ChainSequence.read(base_dir, search_children=False)
         s_id = seq.meta.get(mnames["structure_id"], unk["structure_id"])
         chain_id = seq.meta.get(mnames["structure_chain_id"], unk["chain_id"])

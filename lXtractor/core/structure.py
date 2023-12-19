@@ -10,6 +10,7 @@ from collections import abc, defaultdict
 from dataclasses import dataclass
 from functools import reduce
 from io import IOBase
+from os import PathLike
 from pathlib import Path
 
 import biotite.structure as bst
@@ -17,13 +18,16 @@ import numpy as np
 import numpy.typing as npt
 import rustworkx as rx
 from more_itertools import unique_everseen
+from toolz import keyfilter
 from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
 from lXtractor.core.base import ResNameDict
 from lXtractor.core.config import AtomMark, DefaultConfig, EMPTY_ALTLOC
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
-from lXtractor.core.ligand import Ligand, make_ligand
+from lXtractor.core.ligand import Ligand, make_ligand, ligands_from_atom_marks
+from lXtractor.util import get_files
+from lXtractor.util.misc import json_to_molgraph, graph_reindex_nodes, molgraph_to_json
 from lXtractor.util.structure import (
     filter_selection,
     load_structure,
@@ -32,7 +36,9 @@ from lXtractor.util.structure import (
     iter_residue_masks,
     mark_polymer_type,
     to_graph,
-    determine_polymer_type,
+    find_first_polymer_type,
+    extend_residue_mask,
+    compare_coord,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -124,7 +130,9 @@ class GenericStructure:
         self,
         array: bst.AtomArray,
         name: str,
-        ligands: bool | list[Ligand] = True,
+        ligands: abc.Sequence[Ligand] | None = None,
+        atom_marks: npt.NDArray[int] | PathLike | None = None,
+        graph: rx.PyGraph | dict | PathLike | None = None,
     ):
         """
         :param array: Atom array object.
@@ -137,27 +145,59 @@ class GenericStructure:
         #: ID of a structure in `array`.
         self._name: str = name
 
-        self._graph = to_graph(array, True)
+        if isinstance(graph, rx.PyGraph):
+            self._graph = graph
+        elif isinstance(graph, dict | PathLike):
+            self._graph = json_to_molgraph(graph)
+        else:
+            self._graph = to_graph(array, True)
 
-        atom_marks, primary_pol_type, _ligands = mark_atoms_g(self)
-        atom_marks.flags.writeable = False
-        #: Atom annotations: see :class:`lXtractor.core.config.AtomMark`.
-        self._atom_marks = atom_marks
+        if len(self._graph) != len(self._array):
+            raise LengthMismatch(
+                f"The number of nodes in a graph ({len(self._graph)}) does not match "
+                f"the number of atoms in the array ({len(self._array)})."
+            )
+
+        if atom_marks is None:
+            atom_marks, primary_pol_type, _ligands = mark_atoms_g(self)
+            atom_marks.flags.writeable = False
+            self._atom_marks = atom_marks
+
+            if isinstance(ligands, list):
+                _ligands = ligands
+        else:
+            if isinstance(atom_marks, PathLike):
+                atom_marks = np.load(atom_marks)
+            if not isinstance(atom_marks, np.ndarray):
+                raise TypeError(
+                    f"Expected `atom_marks` to be an array, got {type(atom_marks)}"
+                )
+            if len(atom_marks) != len(array):
+                raise LengthMismatch(
+                    "The lengths of `atom_marks` and `array` must match. "
+                    f"Got {len(atom_marks)} and {len(array)}."
+                )
+            self._atom_marks = atom_marks
+            # determine primary polymer type
+            primary_pol_type = find_first_polymer_type(atom_marks)
+            if not isinstance(ligands, list):
+                _ligands = list(ligands_from_atom_marks(self))
+            else:
+                _ligands = ligands
+
+        if any(not isinstance(x, Ligand) for x in _ligands):
+            raise TypeError(
+                "Some entries in supplied `ligands` are not of the `Ligand` type"
+            )
+        #: A tuple of ligands
+        self._ligands: tuple[Ligand, ...] = tuple(
+            sorted(_ligands, key=lambda x: (x.res_name, x.res_id, x.chain_id))
+        )
 
         if np.any(atom_marks == AtomMark.UNK):
             num_unk = np.sum(atom_marks == AtomMark.UNK)
             LOGGER.warning(f"Structure {name} has {num_unk} uncategorized atoms.")
 
-        if isinstance(ligands, bool):
-            _ligands = _ligands if ligands else []
-        else:
-            if any(not isinstance(x, Ligand) for x in ligands):
-                raise TypeError(
-                    "Some entries in supplied `ligands` are not of the `Ligand` type"
-                )
-            _ligands = ligands
-        #: A list of ligands
-        self._ligands = _ligands
         ligand_pep = atom_marks == (AtomMark.PEP | AtomMark.LIGAND)
         ligand_nuc = atom_marks == (AtomMark.NUC | AtomMark.LIGAND)
         ligand_carb = atom_marks == (AtomMark.CARB | AtomMark.LIGAND)
@@ -198,9 +238,11 @@ class GenericStructure:
     def __eq__(self, other: t.Any) -> bool:
         if isinstance(other, GenericStructure):
             return (
-                self._name == other._name
-                and len(self) == len(other)
-                and np.all(self.array == other.array)
+                    self._name == other._name
+                    and len(self) == len(other)
+                    and np.all(self.atom_marks == other.atom_marks)
+                    and compare_coord(self.array, other.array)
+                    and self.ligands == other.ligands
             )
         return False
 
@@ -312,7 +354,7 @@ class GenericStructure:
         return list(unique_everseen(lig.chain_id for lig in self.ligands))
 
     @property
-    def ligands(self) -> list[Ligand]:
+    def ligands(self) -> tuple[Ligand, ...]:
         """
         :return: A list of ligands.
         """
@@ -347,12 +389,21 @@ class GenericStructure:
         return bst.get_residue_count(self.array) == 1
 
     @classmethod
+    def make_empty(
+        cls, structure_id: str = DefaultConfig["unknowns"]["structure_id"]
+    ) -> Self:
+        """
+        :param structure_id: (Optional) ID of the created array.
+        :return: An instance with empty :meth:`array`.
+        """
+        return cls(bst.AtomArray(0), structure_id, [])
+
+    @classmethod
     def read(
         cls,
         inp: IOBase | Path | str | bytes,
         path2id: abc.Callable[[Path], str] = lambda p: p.name.split(".")[0],
         structure_id: str = DefaultConfig["unknowns"]["structure_id"],
-        ligands: bool = True,
         altloc: bool | str = False,
         **kwargs,
     ) -> Self:
@@ -373,7 +424,6 @@ class GenericStructure:
         :param structure_id: A structure unique identifier (e.g., PDB ID). If
             not provided and the input is ``Path``, will use ``path2id`` to
             infer the ID. Otherwise, will use a constant placeholder.
-        :param ligands: Search for ligands.
         :param altloc: Parse alternative locations and populate
             ``array.altloc_id`` attribute.
         :param kwargs: Passed to ``load_structure``.
@@ -394,43 +444,58 @@ class GenericStructure:
                 f"{inp} is likely an NMR structure. "
                 f"NMR structures are not supported."
             )
-        return cls(array, structure_id, ligands)
+        if isinstance(inp, Path):
+            files = get_files(inp.parent)
+            name = inp.stem.split(".")[0]
+            marks_name, graph_name = f"{name}.npy", f"{name}.json"
+            marks = files.get(marks_name, None)
+            graph = files.get(graph_name, None)
+        else:
+            marks, graph = None, None
 
-    @classmethod
-    def make_empty(
-        cls, structure_id: str = DefaultConfig["unknowns"]["structure_id"]
-    ) -> Self:
-        """
-        :param structure_id: (Optional) ID of the created array.
-        :return: An instance with empty :meth:`array`.
-        """
-        return cls(bst.AtomArray(0), structure_id, False)
+        return cls(array, structure_id, ligands=None, atom_marks=marks, graph=graph)
 
-    def write(self, path: Path) -> Path:
+    def write(
+        self, path: PathLike | str, atom_marks: bool = True, graph: bool = True
+    ) -> Path:
         """
-        A one-line wrapper around :func:`lXtractor.util.structure.save_structure`.
+        Save this structure to a file. The format is automatically determined
+        from the given path.
+
+        Additional files are saved using the same filename alongside the
+        structure file. The filename will resolve to "structure" in all the
+        following cases and result in "structure.npy" and "structure.json"
+        files saved to the same dir::
+
+            path="/path/to/structure.pdb"
+            path="/path/to/structure.mmtf.gz"
+            path="/path/to/structure.with.many.dots.pdb.gz"
+
+        .. seealso::
+            :func:`lXtractor.util.structure.save_structure`.
 
         :param path: A path or a path-like object compatible with :func:`open`.
-        :return: Path if writing was successful.
+            Must not point to an existing directory. Must provide the structure
+            format as an extension.
+        :param atom_marks: Save an array of atom marks in the `npy` format.
+        :param graph: Save molecular connectivity graph in the `json` format.
+        :return: Path to the saved structure if writing was successful.
         """
-        return save_structure(self.array, path)
-
-    def rm_solvent(self, copy: bool = False):
-        """
-        :param copy: Copy the resulting substructure.
-        :return: A substructure with solvent molecules removed.
-        """
-        array = self.array[~self.mask.solvent]
-
-        if copy:
-            array = array.copy()
-
-        return self.__class__(array, self.name, len(self.ligands) > 0)
+        if not isinstance(path, Path):
+            path = Path(path)
+        saved_path = save_structure(self.array, path)
+        stem = path.stem.split(".")[0]
+        if atom_marks:
+            np.save(path.parent / f"{stem}.npy", self.atom_marks)
+        if graph:
+            json_path = path.parent / f"{stem}.json"
+            molgraph_to_json(self.graph, path=json_path)
+        return saved_path
 
     def get_sequence(self) -> abc.Generator[tuple[str, str, int]]:
         """
-        :return: A tuple with (1) one-letter code, (2) three-letter code,
-            (3) residue number of each residue in :meth:`array_polymer`.
+        :return: A generator over tuples, where each residue is described by:
+            (1) one-letter code, (2) three-letter code, (3) residue number.
         """
         if self.is_empty:
             return []
@@ -454,16 +519,16 @@ class GenericStructure:
         self,
         mask: np.ndarray,
         ligands: bool = True,
+        reinit_ligands: bool = False,
         copy: bool = False,
-        parse_ligands_in_subset: bool = True,
     ) -> Self:
         """
-        Create a sub-structure preserving connected :attr:`ligands`.
+        Create a sub-structure potentially preserving connected :meth:`ligands`.
 
         .. warning::
 
             If ``DefaultConfig["structure"]["primary_pol_type"]`` is set to auto,
-            and mask will select a polymer that is shorter than some existing
+            and `mask` points to a polymer that is shorter than some existing
             ligand polymer, this ligand polymer will become a primary polymer
             in the substructure.
 
@@ -471,13 +536,19 @@ class GenericStructure:
             to create a sub-structure.
         :param ligands: Keep ligands that are connected to atoms specified by
             `mask`.
+        :param reinit_ligands: Reinitialize ligands upon creating a sub-structure,
+            rather than filtering existing ligands connected to atoms specified
+            by `mask`. Takes precedence over the `ligands` option. This option
+            is used in :meth:`split_altloc`.
         :param copy: Copy the atom array resulting from subsetting the original
             one.
-        :param parse_ligands_in_subset: Initialize a new instance with
-            ``ligands=True``.
         :return: A new instance with atoms defined by `mask` and connected
             ligands.
         """
+
+        if reinit_ligands:
+            ligands = False
+
         if ligands:
             # Filter connected ligands
             ligands = list(
@@ -494,32 +565,68 @@ class GenericStructure:
             )
         else:
             ligand_mask = mask
-        a = self.array[mask | ligand_mask]
+
+        _mask = mask | ligand_mask
+        a = self.array[_mask]
+        g = graph_reindex_nodes(self.graph.subgraph(np.where(_mask)[0]))
+        m = self.atom_marks[_mask]
         if copy:
             a = a.copy()
-        return self.__class__(a, self.name, parse_ligands_in_subset)
+            m = m.copy()
 
-    def split_chains(
-        self,
-        *,
-        copy: bool = False,
-        polymer: bool = False,
-        ligands: bool = True,
-    ) -> abc.Iterator[Self]:
+        s = self.__class__(
+            a, self.name, ligands=True if reinit_ligands else [], atom_marks=m, graph=g
+        )
+
+        if ligands:
+            new_ligands = []
+            names = DefaultConfig["metadata"]
+            retain_names = [
+                names["res_name"],
+                names["res_id"],
+                names["structure_chain_id"],
+            ]
+            for lig in ligands:
+                meta = keyfilter(lambda x: x in retain_names, lig.meta)
+                new_ligands.append(
+                    Ligand(
+                        s,
+                        lig.mask[_mask],
+                        lig.contact_mask[_mask],
+                        lig.ligand_idx[_mask],
+                        lig.dist[_mask],
+                        meta,
+                    )
+                )
+            s._ligands = tuple(
+                sorted(new_ligands, key=lambda x: (x.res_name, x.res_id, x.chain_id))
+            )
+            s._id = s._make_id()
+
+        return s
+
+    def rm_solvent(self, copy: bool = False):
+        """
+        :param copy: Copy the resulting substructure.
+        :return: A substructure with solvent molecules removed.
+        """
+        return self.subset(~self.mask.solvent, ligands=True, copy=copy)
+
+    def split_chains(self, polymer: bool = False, **kwargs) -> abc.Iterator[Self]:
         """
         Split into separate chains. Splitting is done using
         :func:`biotite.structure.get_chain_starts`.
 
         .. note::
-            Preserved ligands may have a different ``chain_id``
+            Preserved ligands may have a different ``chain_id``.
 
-        :param copy: Copy atom arrays resulting from subsetting based on
-            chain annotation.
+        .. note::
+            If there is a single chain, this method will return ``self``.
+
         :param polymer: Use only primary polymer chains for splitting.
-        :param ligands: A flag indicating whether to preserve connected ligands.
+        :param kwargs: Passed to :meth:`subset`.
         :return: An iterable over chains found in :attr:`array`.
         """
-        # TODO: the chains are subset from copy and are not copies themselves
 
         if polymer:
             chain_ids = self.chain_ids_polymer
@@ -528,17 +635,15 @@ class GenericStructure:
 
         # a = self.array.copy() if copy else self.array
         a = self.array
+        if len(chain_ids) == 1:
+            yield self
+            return
+
         for chain_id in sorted(chain_ids):
             mask = a.chain_id == chain_id
-            if ligands:
-                yield self.subset(mask, copy=copy)
-            else:
-                a_sub = a[mask]
-                if copy:
-                    a_sub = a_sub.copy()
-                yield self.__class__(a_sub, self.name)
+            yield self.subset(mask, **kwargs)
 
-    def split_altloc(self, *, copy: bool = True) -> abc.Iterator[Self]:
+    def split_altloc(self, **kwargs) -> abc.Iterator[Self]:
         """
         Split into substructures based on altloc IDs. Atoms missing altloc
         annotations are distributed into every substructure. Thus, even if
@@ -546,10 +651,11 @@ class GenericStructure:
         this method will produce two substructed identical except for this
         atom.
 
-        If :meth:`array` does not specify any altloc ID, yields the same
-        structure.
+        .. note::
+            If :meth:`array` does not specify any altloc ID, the method yields
+            ``self``.
 
-        :param copy: Copy ``AtomArray``s of substructures.
+        :param kwargs: Passed to :meth:`subset`.
         :return: An iterator over objects of the same type initialized by
             atoms having altloc annotations.
         """
@@ -558,20 +664,15 @@ class GenericStructure:
             yield self
             return
 
+        if "reinit_ligands" not in kwargs:
+            kwargs["reinit_ligands"] = True
+
         no_alt_mask = np.isin(self.array.altloc_id, EMPTY_ALTLOC)
         for altloc in ids[1:]:
-            a = self.array[no_alt_mask | (self.array.altloc_id == altloc)]
-            if copy:
-                a = a.copy()
-            yield self.__class__(a, self._name, ligands=bool(self.ligands))
+            m = no_alt_mask | (self.array.altloc_id == altloc)
+            yield self.subset(m, **kwargs)
 
-    def extract_segment(
-        self,
-        start: int,
-        end: int,
-        chain_id: str,
-        ligands: bool = True,
-    ) -> Self:
+    def extract_segment(self, start: int, end: int, chain_id: str, **kwargs) -> Self:
         """
         Create a sub-structure encompassing some continuous segment bounded by
         existing position boundaries.
@@ -579,7 +680,7 @@ class GenericStructure:
         :param start: Residue number to start from (inclusive).
         :param end: Residue number to stop at (inclusive).
         :param chain_id: Chain to extract a segment from.
-        :param ligands: A flag indicating whether to preserve connected ligands.
+        :param kwargs: Passed to :meth:`subset`.
         :return: A new Generic structure with residues in ``[start, end]``.
         """
         if self.is_empty:
@@ -615,20 +716,20 @@ class GenericStructure:
                 f"of the structure positions {self_start, self_end}"
             )
         mask = chain_mask & (self.array.res_id >= start) & (self.array.res_id <= end)
-        if ligands:
-            return self.subset(mask)
-        return self.__class__(self.array[mask], self._name)
+        return self.subset(mask, **kwargs)
 
     def extract_positions(
         self,
         pos: abc.Sequence[int],
         chain_ids: abc.Sequence[str] | str | None = None,
+        **kwargs,
     ) -> Self:
         """
         Extract specific positions from this structure.
 
         :param pos: A sequence of positions (res_id) to extract.
         :param chain_ids: Optionally, a single chain ID or a sequence of such.
+        :param kwargs: Passed to :meth:`subset`.
         :return: A new instance with extracted residues.
         """
 
@@ -642,9 +743,7 @@ class GenericStructure:
             if isinstance(chain_ids, str):
                 chain_ids = [chain_ids]
             mask &= np.isin(a.chain_id, chain_ids)
-        if len(self.ligands) > 0:
-            return self.subset(mask)
-        return self.__class__(a[mask], self._name)
+        return self.subset(mask, **kwargs)
 
     def superpose(
         self,
@@ -740,10 +839,12 @@ class ProteinStructure(GenericStructure):
         array: bst.AtomArray,
         structure_id: str,
         ligands: bool | list[Ligand] = True,
+        atom_marks: npt.NDArray[int] | PathLike | None = None,
+        graph: rx.PyGraph | dict | PathLike | None = None,
     ):
         with DefaultConfig.temporary_namespace():
             DefaultConfig["structure"]["primary_pol_type"] = "p"
-            super().__init__(array, structure_id, ligands)
+            super().__init__(array, structure_id, ligands, atom_marks, graph)
 
 
 class NucleotideStructure(GenericStructure):
@@ -759,10 +860,12 @@ class NucleotideStructure(GenericStructure):
         array: bst.AtomArray,
         structure_id: str,
         ligands: bool | list[Ligand] = True,
+        atom_marks: npt.NDArray[int] | PathLike | None = None,
+        graph: rx.PyGraph | dict | PathLike | None = None,
     ):
         with DefaultConfig.temporary_namespace():
             DefaultConfig["structure"]["primary_pol_type"] = "n"
-            super().__init__(array, structure_id, ligands)
+            super().__init__(array, structure_id, ligands, atom_marks, graph)
 
 
 class CarbohydrateStructure(GenericStructure):
@@ -778,10 +881,12 @@ class CarbohydrateStructure(GenericStructure):
         array: bst.AtomArray,
         structure_id: str,
         ligands: bool | list[Ligand] = True,
+        atom_marks: npt.NDArray[int] | PathLike | None = None,
+        graph: rx.PyGraph | dict | PathLike | None = None,
     ):
         with DefaultConfig.temporary_namespace():
             DefaultConfig["structure"]["primary_pol_type"] = "c"
-            super().__init__(array, structure_id, ligands)
+            super().__init__(array, structure_id, ligands, atom_marks, graph)
 
 
 def mark_atoms(
@@ -897,12 +1002,6 @@ def _combine_poly_masks(
     return poly_mask
 
 
-def _extended_residue_mask(a: bst.AtomArray, idx: list[int]) -> npt.NDArray[np.bool_]:
-    res_ids = np.unique(a[idx].res_id)
-    chain_ids = np.unique(a[idx].chain_id)
-    return np.isin(a.res_id, res_ids) & np.isin(a.chain_id, chain_ids)
-
-
 def mark_atoms_g(
     s: GenericStructure, single_poly_chain: bool = False
 ) -> (npt.NDArray[np.int_], str, list[Ligand]):
@@ -946,7 +1045,7 @@ def mark_atoms_g(
     for cc_idx in map(list, rx.connected_components(g)):
         # Make residue mask corresponding to all atoms from residues
         # of the connected component atom indices
-        r_mask = _extended_residue_mask(a, cc_idx)
+        r_mask = extend_residue_mask(a, cc_idx)
         n_resi = bst.get_residue_count(a[r_mask])
 
         # Check if the single residue CC is a solvent.
@@ -961,7 +1060,7 @@ def mark_atoms_g(
         if n_resi < n_monomers:
             continue
 
-        pol_type = determine_polymer_type(a[r_mask], n_monomers)
+        pol_type = find_first_polymer_type(a[r_mask], n_monomers)
         if pol_type != "x":
             polymers[pol_type].append(r_mask)
             polymer_sizes[pol_type] += n_resi
@@ -998,11 +1097,12 @@ def mark_atoms_g(
 
     ligands = []
 
+    # Detect covalently bound solvent or ligand atoms.
     het_pol_idx = np.where(a.hetero & is_pol)[0]
     if len(het_pol_idx) > 0:
         starts_het_pol = np.unique(bst.get_residue_starts_for(a, het_pol_idx))
         for r_mask in bst.get_residue_masks(a, starts_het_pol):
-            het_pol_type = determine_polymer_type(a[r_mask], min_size=1)
+            het_pol_type = find_first_polymer_type(a[r_mask], min_size=1)
             if het_pol_type == prim_pol_type:
                 continue
             lig = make_ligand(r_mask, is_pol & ~r_mask, s)
@@ -1023,7 +1123,7 @@ def mark_atoms_g(
         cc_idx = sg.subgraph(cc_idx).nodes()
         # Obtain a mask pointing to CC residues that were not previously
         # marked as polymer or solvent
-        r_mask = _extended_residue_mask(a, cc_idx)
+        r_mask = extend_residue_mask(a, cc_idx)
         # Avoid creating duplicated ligands by storing already assessed atom
         # indices
         r_mask[list(cc_idx_viewed)] = False
@@ -1038,18 +1138,46 @@ def mark_atoms_g(
         if lig is None:
             continue
 
-        ligands.append(lig)
+        multiples_flag = False  # indicates whether ligand is split below
 
         if n_resi > 1:  # Handle polymer ligand
             if lig.res_name[0] in lig_pol_types:
                 marks[r_mask] = AtomMark.LIGAND | _POL_MARKS[lig.res_name[0]]
-
             else:
                 # Ligand is non-polymer but still has multiple residues.
                 # Users are warned about such cases.
-                marks[r_mask] = AtomMark.LIGAND
+
+                # Split into separate residues if polymer type is undetermined.
+                # It's likely that a ligand appears as a single CC due to
+                # structure artifacts, eg, molecules with different altloc
+                # occupying the same spatial region.
+                if lig.res_name[0] == "x":
+                    multiples_flag = True
+                    starts = np.unique(bst.get_residue_starts_for(a, cc_idx))
+                    for r_mask in bst.get_residue_masks(a, starts):
+                        lig = make_ligand(r_mask, is_pol & ~r_mask, s)
+                        if lig is not None:
+                            marks[r_mask] = AtomMark.LIGAND
+                            ligands.append(lig)
+                # Otherwise, despite polymeric nature of a ligand, it's
+                # unsupported by the config and will be marked as a regular
+                # ligand.
+                else:
+                    marks[r_mask] = AtomMark.LIGAND
         else:  # Handle a non-polymer ligand
             marks[r_mask] = AtomMark.LIGAND
+
+        if not multiples_flag:
+            ligands.append(lig)
+
+    ligand_mask = reduce(
+        op.or_,
+        (lig.mask for lig in ligands),
+        np.zeros_like(a.res_id, dtype=bool),
+    )
+    for lig in ligands:
+        lig.contact_mask[ligand_mask] = False
+        lig.dist[ligand_mask] = -1
 
     return marks, prim_pol_type, ligands
 

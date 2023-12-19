@@ -4,15 +4,19 @@ Miscellaneous utilities that couldn't be properly categorized.
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import typing as t
 from collections import namedtuple, abc
 from concurrent.futures import ProcessPoolExecutor
 from itertools import groupby
+from os import PathLike
+from pathlib import Path
 
 import joblib
 import numpy as np
 import pandas as pd
+import rustworkx as rx
 from toolz import valmap, compose_left
 from tqdm.auto import tqdm
 
@@ -24,7 +28,9 @@ __all__ = (
     "is_empty",
     "col2col",
     "valgroup",
-    "all_logging_disabled"
+    "all_logging_disabled",
+    "json_to_molgraph",
+    "graph_reindex_nodes",
 )
 
 T = t.TypeVar("T")
@@ -255,6 +261,60 @@ def all_logging_disabled(highest_level=logging.CRITICAL):
         yield
     finally:
         logging.disable(previous_level)
+
+
+def json_to_molgraph(inp: dict | PathLike) -> rx.PyGraph:
+    """
+    Converts a JSON-formatted molecular graph into a PyGraph object.
+    This graph is a dictionary with two keys: "num_nodes" and "edges".
+    The former indicates the number of atoms in a structure, whereas the latter
+    is a list of edge tuples.
+
+    :param inp: A dictionary or a path to a JSON file produced using
+        `rustworkx.node_link_json`.
+    :return: A graph with nodes and edges initialized in order given in `inp`.
+        Any associated data will be omitted.
+    """
+    if not isinstance(inp, dict):
+        with open(inp) as f:
+            inp: dict = json.load(f)
+    g = rx.PyGraph()
+    g.add_nodes_from(range(inp["num_nodes"]))
+    g.add_edges_from_no_data(list(map(tuple, inp["edges"])))
+    return g
+
+
+@t.overload
+def molgraph_to_json(g: rx.PyGraph, path: PathLike) -> Path:
+    ...
+
+
+@t.overload
+def molgraph_to_json(g: rx.PyGraph, path: None) -> dict:
+    ...
+
+
+def molgraph_to_json(g: rx.PyGraph, path: PathLike | None = None) -> dict | Path:
+    d = {"num_nodes": len(g), "edges": list(g.edge_list())}
+    if path is not None:
+        with open(path, "w") as f:
+            json.dump(d, f)
+        return Path(path)
+    return d
+
+
+def graph_reindex_nodes(g: rx.PyGraph) -> rx.PyGraph:
+    """
+    Reindex the graph nodes so that node data equals to node indices.
+
+    :param g: An arbitrary PyGraph.
+    :return: A PyGraph of the same size and having the same edges but with
+        reindexed nodes.
+    """
+    gg = rx.PyGraph()
+    gg.add_nodes_from(g.node_indexes())
+    gg.add_edges_from_no_data(g.edge_list())
+    return gg
 
 
 if __name__ == "__main__":

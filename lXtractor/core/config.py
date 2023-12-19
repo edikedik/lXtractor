@@ -17,6 +17,9 @@ _RESOURCES = Path(__file__).parent.parent / "resources"
 _DEFAULT_CONFIG_PATH = _RESOURCES / "default_config.json"
 _USER_CONFIG_PATH = _RESOURCES / "user_config.json"
 
+EMPTY_ALTLOC = ("", " ", ".")
+
+
 MetaColumns = (
     # TODO: move to docs
     # Taken from https://bioservices.readthedocs.io/en/main/_modules/bioservices/uniprot.html#UniProt
@@ -302,6 +305,8 @@ class AtomMark(IntFlag):
     COVALENT: int = 64
 
 
+POL_MARKS = (("p", AtomMark.PEP), ("n", AtomMark.NUC), ("c", AtomMark.CARB))
+
+
 if __name__ == "__main__":
     raise RuntimeError
-EMPTY_ALTLOC = ("", " ", ".")

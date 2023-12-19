@@ -10,23 +10,30 @@ from io import IOBase, StringIO, BytesIO, BufferedReader
 from itertools import repeat, starmap, chain, combinations
 from pathlib import Path
 
-import biotite.structure as bst
 import biotite.structure.info as bstinfo
 import biotite.structure.io as bstio
 import numpy as np
-import numpy.typing as npt
 import rustworkx as rx
+from biotite import structure as bst
 from more_itertools import unzip, windowed, unique_everseen
+from numpy import typing as npt
 from scipy.spatial import KDTree
 from toolz import compose_left
 
-from lXtractor.core.config import DefaultConfig, STRUCTURE_FMT, EMPTY_ALTLOC
+from lXtractor.core.config import (
+    DefaultConfig,
+    STRUCTURE_FMT,
+    EMPTY_ALTLOC,
+    POL_MARKS,
+)
 from lXtractor.core.exceptions import LengthMismatch, MissingData, FormatError
 from lXtractor.util.io import parse_suffix
 from lXtractor.util.typing import is_sequence_of
 
 __all__ = (
     "calculate_dihedral",
+    "compare_coord",
+    "compare_arrays",
     "filter_selection",
     "filter_ligand",
     "filter_polymer",
@@ -35,8 +42,9 @@ __all__ = (
     "filter_to_common_atoms",
     "find_primary_polymer_type",
     "find_contacts",
-    "determine_polymer_type",
+    "find_first_polymer_type",
     "iter_canonical",
+    "extend_residue_mask",
     "iter_residue_masks",
     "get_missing_atoms",
     "get_observed_atoms_frac",
@@ -76,6 +84,40 @@ def calculate_dihedral(
 
     res: float = np.arctan2(y, x)
     return res
+
+
+def compare_coord(a: bst.AtomArray, b: bst.AtomArray, eps: float = 1e-3):
+    """
+    Compare coordinates between atoms of two atom arrays.
+
+    :param a: The first atom array.
+    :param b: The second atom array.
+    :param eps: Comparison tolerance.
+    :return: ``True`` if the two arrays are of the same length and the absolute
+        difference between coordinates of the corresponding atom pairs is
+        within `eps`.
+    """
+    return len(a) == len(b) and compare_arrays(a.coord, b.coord, eps)
+
+
+def compare_arrays(
+    a: npt.NDArray[float | int], b: npt.NDArray[float | int], eps: float = 1e-3
+):
+    """
+    Compare two numerical arrays.
+
+    :param a: The first array.
+    :param b: The second array.
+    :param eps: Comparison tolerance.
+    :return: ``True`` if the absolute difference between the two arrays is
+        within `eps`.
+    :raises LengthMismatch: If the two arrays are not of the same shape.
+    """
+    if a.shape != b.shape:
+        raise LengthMismatch(
+            f"Different shapes of two arrays ({a.shape} vs. {b.shape})."
+        )
+    return np.all(np.abs(a - b) <= eps)
 
 
 def check_het_continuity(array: bst.AtomArray):
@@ -246,22 +288,64 @@ def _find_breaks(a: bst.AtomArray) -> npt.NDArray[np.int_]:
     )
 
 
-def determine_polymer_type(a: bst.AtomArray, min_size: int = 2) -> str:
+def find_first_polymer_type(
+    a: bst.AtomArray | npt.NDArray[int],
+    min_size: int = 2,
+    order: tuple[str, str, str] = ("p", "n", "c"),
+) -> str:
     """
-    Determines polymer type of the supplied atom array.
+    Determines polymer type of the supplied atom array or an array of atom marks.
 
-    It will probe polymer types in a sequence ``["p", "n", "c"]`` (protein,
-    nucleotide, carbohydrate). If it finds a polymer of the probed type,
+    Probe polymer types in a sequence in a given order.
+    If a polymer with at least `min_size` atoms of the probed type is found,
     it will be returned.
 
-    :param a: Arbitrary array of atoms.
+    .. hint::
+        The function serves as a good quick-check when a single polymer type is
+        expected, which should always be true when `a` is an array of atom marks.
+
+    :param a: An arbitrary array of atoms.
     :param min_size: A minimum number of monomers in a polymer.
-    :return: The first polymer type
+    :param order: An order of the polymers to probe.
+    :return: The first polymer type to accommodate `min_size` requirement.
     """
-    for p in ["p", "n", "c"]:
-        if _is_polymer(a, min_size, p):
+    if isinstance(a, bst.AtomArray):
+        for p in order:
+            if _is_polymer(a, min_size, p):
+                return p
+        return "x"
+    pol_marks = dict(POL_MARKS)
+    for p in order:
+        if np.sum(a == pol_marks[p]) >= min_size:
             return p
     return "x"
+
+
+def find_primary_polymer_type(
+    a: bst.AtomArray, min_size: int = 2, residues: bool = False
+) -> tuple[np.ndarray, str]:
+    """
+    Find the major polymer type, i.e., the one with the largest number of
+    atoms or monomers.
+
+    :param a: An arbitrary atom array.
+    :param min_size: Minimum number of monomers for a polymer.
+    :param residues: ``True`` if the dominant polymer should be picked according
+        to the number of residues. Otherwise, the number of atoms will be used.
+    :return: A binary mask pointing at the polymer atoms in `a` and the polymer
+        type -- "c" (carbohydrate), "n" (nucleotide), or "p" (peptide). If no
+        polymer atoms were found, polymer type will be designated as "x".
+    """
+    pol_types = mark_polymer_type(a, min_size)
+    is_nuc, is_pep, is_carb = (pol_types == p for p in ["n", "p", "c"])
+    key = (lambda x: get_residue_count(a[x[0]])) if residues else (lambda x: x[0].sum())
+    is_pol, pol_type = max(
+        [(is_carb, "c"), (is_nuc, "n"), (is_pep, "p")],
+        key=key,
+    )
+    if np.any(is_pol):
+        return is_pol, pol_type
+    return is_pol, "x"
 
 
 def mark_polymer_type(a: bst.AtomArray, min_size: int = 2) -> npt.NDArray[np.str_]:
@@ -293,7 +377,9 @@ def mark_polymer_type(a: bst.AtomArray, min_size: int = 2) -> npt.NDArray[np.str
         return pol_types
 
     chunks = _split_array(a, _find_breaks(a))
-    return np.concatenate([np.full_like(x, determine_polymer_type(x, min_size)) for x in chunks])
+    return np.concatenate(
+        [np.full_like(x, find_first_polymer_type(x, min_size)) for x in chunks]
+    )
 
 
 def filter_polymer(
@@ -362,72 +448,61 @@ def filter_ligand(a: bst.AtomArray) -> np.ndarray:
     return ~(filter_any_polymer(a) | filter_solvent_extended(a))
 
 
-def find_primary_polymer_type(
-    a: bst.AtomArray, min_size: int = 2, residues: bool = False
-) -> tuple[np.ndarray, str]:
-    """
-    Find the major polymer type, i.e., the one with the largest number of
-    atoms or monomers.
-
-    :param a: An arbitrary atom array.
-    :param min_size: Minimum number of monomers for a polymer.
-    :param residues: ``True`` if the dominant polymer should be picked according
-        to the number of residues. Otherwise, the number of atoms will be used.
-    :return: A binary mask pointing at the polymer atoms in `a` and the polymer
-        type -- "c" (carbohydrate), "n" (nucleotide), or "p" (peptide). If no
-        polymer atoms were found, polymer type will be designated as "x".
-    """
-    pol_types = mark_polymer_type(a, min_size)
-    is_nuc, is_pep, is_carb = (pol_types == p for p in ["n", "p", "c"])
-    key = (lambda x: get_residue_count(a[x[0]])) if residues else (lambda x: x[0].sum())
-    is_pol, pol_type = max(
-        [(is_carb, "c"), (is_nuc, "n"), (is_pep, "p")],
-        key=key,
-    )
-    if np.any(is_pol):
-        return is_pol, pol_type
-    return is_pol, "x"
-
-
 def find_contacts(
     a: bst.AtomArray,
     mask: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Find contacts between a subset of atoms within the structure and the rest
-    of the structure.
+    of the structure. An atom is considered to be in contact with another atom
+    if the distance between them is below the threshold for the non-covalent
+    bond specified in config (``DefaultConfig["bonds"]["NC-NC"][1]``).
 
     :param a: Atom array.
     :param mask: A boolean mask ``True`` for atoms for which to find contacts.
     :return: A tuple with three arrays of size equal to the `a`'s number of atoms:
 
-        #. Contacts.
-        #. Distances.
-        #. Index of an atom within ``a[mask]`` closest the structure's atom.
+        #. Contact mask: ``True`` for ``a[~mask]`` atoms in contact with
+            ``a[mask]``.
+        #. Distances: for ``a[mask]`` atoms to the closest ``a[~mask]`` atom.
+        #. Indices: of these closest ``a[~mask]`` atoms within the `mask`.
 
-        In the first array, ``0`` indicate the lack of contact, ``1`` indicate
-        a non-covalent contact, and ``2`` indicate a covalent contact.
+        Suppose that ``mask`` specifies a ligand. Then, for ``i``-th atom in `a`,
+        ``contacts[i]``, ``distances[i]``, ``indices[i]`` indicate whether
+        ``a[i]`` has a contact, the precise distance from ``a[i]`` atom to the
+        closest ligand atom, and an index of this ligand atom, respectively.
 
-        For ``i``-th atom in `a`, ``contacts[i]``, ``distances[i]``,
-        ``indices[i]`` indicate whether ``a[i]`` has a contact, the distance
-        from this atom to the ``a[mask]`` atom whose index is specified by
-        ``a[mask][distances[i]]``.
     """
 
     # An MxL matrix where L is the number of atoms in the structure and M is the
     # number of atoms in the ligand residue
-    d = np.linalg.norm(a[mask].coord[:, np.newaxis] - a.coord, axis=-1)
+    coord = np.round(a.coord, decimals=2)
+    # d = np.linalg.norm(a[mask].coord[:, np.newaxis] - a.coord, axis=-1)
+    d = np.linalg.norm(coord[mask, np.newaxis] - coord, axis=-1)
     d_min = np.min(d, axis=0)  # min distance from sub atoms to the rest
     d_argmin = np.argmin(d, axis=0)  # sub atom indices contacting structure
 
     bonds = DefaultConfig["bonds"]
 
-    contacts = np.zeros_like(d_min, dtype=int)
+    contacts = np.zeros_like(d_min, dtype=bool)
     nc_upper = bonds["NC-NC"][1]
-    contacts[d_min < nc_upper] = 1
-    contacts[mask] = 0
+    contacts[d_min < nc_upper] = True
 
     return contacts, d_min, d_argmin
+
+
+def extend_residue_mask(a: bst.AtomArray, idx: list[int]) -> npt.NDArray[np.bool_]:
+    """
+    Extend a residue mask for given atoms.
+
+    :param a: An arbitrary atom array.
+    :param idx: Indices pointing to atoms at which to extend the mask.
+    :return: The extended mask, where ``True`` indicates that the atom belongs
+        to the same residue as indicated by `idx`.
+    """
+    res_ids = np.unique(a[idx].res_id)
+    chain_ids = np.unique(a[idx].chain_id)
+    return np.isin(a.res_id, res_ids) & np.isin(a.chain_id, chain_ids)
 
 
 def iter_residue_masks(

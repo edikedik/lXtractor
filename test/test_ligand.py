@@ -102,7 +102,7 @@ def test_split_altloc(inp_path, altloc, lig_names):
 @pytest.mark.parametrize("inp", [DATA / "3unk.cif"])
 @pytest.mark.parametrize("meta", [True, False])
 def test_summary(inp, meta):
-    s = GenericStructure.read(inp, ligands=True)
+    s = GenericStructure.read(inp)
     assert len(s.ligands) == 1
     lig = s.ligands[0]
     s = lig.summary(meta=meta)

@@ -2,16 +2,23 @@ from __future__ import annotations
 
 import logging
 import typing as t
+from collections import abc
 
 import numpy as np
 import pandas as pd
+import rustworkx as rx
 from biotite import structure as bst
 from numpy import typing as npt
+from toolz import keyfilter
 
-from lXtractor.core.config import DefaultConfig
-from lXtractor.core.exceptions import FormatError
-from lXtractor.util import find_primary_polymer_type
-from lXtractor.util.structure import find_contacts
+from lXtractor.core.config import DefaultConfig, AtomMark, POL_MARKS
+from lXtractor.core.exceptions import FormatError, LengthMismatch
+from lXtractor.util.structure import (
+    find_contacts,
+    find_first_polymer_type,
+    extend_residue_mask,
+    compare_arrays,
+)
 
 if t.TYPE_CHECKING:
     from lXtractor.core.structure import GenericStructure
@@ -53,7 +60,6 @@ class Ligand:
         "parent",
         "mask",
         "contact_mask",
-        "parent_contacts",
         "ligand_idx",
         "dist",
         "meta",
@@ -64,27 +70,22 @@ class Ligand:
         parent: GenericStructure,
         mask: np.ndarray,
         contact_mask: np.ndarray,
-        parent_contacts: np.ndarray,
         ligand_idx: np.ndarray,
         dist: np.ndarray,
         meta: dict[str, str] | None = None,
     ):
-        if not len(parent) == len(mask) == len(contact_mask):
-            raise FormatError(
-                "The number of atoms in parent, the mask size and parent_contacts size "
-                f"must all have the same len. Got {len(parent)}, "
-                f"{len(mask)}, and {len(contact_mask)}, resp."
+        sizes = [
+            ("parent", len(parent)),
+            ("mask", len(mask)),
+            ("contact_mask", len(contact_mask)),
+            ("ligand_idx", len(ligand_idx)),
+            ("dist", len(dist)),
+        ]
+        if len(set(x[1] for x in sizes)) != 1:
+            raise LengthMismatch(
+                f"The sizes of all input arrays must match. Got {sizes}"
             )
-        if not len(parent_contacts) == len(ligand_idx) == len(dist):
-            raise FormatError(
-                "The number of contact atoms, ligand indices and distances must match. "
-                f"Got {len(parent_contacts)}, {len(parent_contacts)}, and {len(dist)}, "
-                "resp."
-            )
-        if len(parent_contacts[parent_contacts != 0]) == 0:
-            raise FormatError(
-                "Ligand must have at least one contact atom in parent structure. Got 0."
-            )
+
         names = DefaultConfig["metadata"]
         for k in [names["res_name"], names["res_id"], names["structure_chain_id"]]:
             if k not in meta:
@@ -110,10 +111,6 @@ class Ligand:
         #: latter to its ligand-contacting atoms.
         self.contact_mask: np.ndarray = contact_mask
 
-        #: An integer array where numbers indicate contact types.
-        #: ``1`` signifies a non-covalent contact, ``2`` -- a covalent one.
-        self.parent_contacts = parent_contacts
-
         #: An integer array with indices pointing to ligand atoms contacting
         #: the parent structure.
         self.ligand_idx = ligand_idx
@@ -129,6 +126,17 @@ class Ligand:
 
     def __repr__(self) -> str:
         return self.id
+
+    def __eq__(self, other: t.Any) -> bool:
+        if not isinstance(other, Ligand):
+            return False
+        return (
+            self.id == other.id
+            and np.all(self.mask == other.mask)
+            and np.all(self.contact_mask == other.contact_mask)
+            and np.all(self.ligand_idx == other.ligand_idx)
+            and compare_arrays(self.dist, other.dist)
+        )
 
     @property
     def id(self) -> str:
@@ -305,10 +313,9 @@ def make_ligand(
         return None
 
     # Find contacts
-    contacts, dist, ligand_idx = find_contacts(a, m_lig)
-    contacts[~m_pol] = 0
-    dist[~m_pol] = 0
-    m_cont = contacts != 0
+    m_cont, dist, ligand_idx = find_contacts(a, m_lig)
+    m_cont[~m_pol] = 0
+    dist[~m_pol] = -1
 
     # The number of residues connected to a ligand
     num_residues = bst.get_residue_count(a[m_cont & m_pol])
@@ -323,7 +330,8 @@ def make_ligand(
     if lig_num_residues == 1:
         name, res_id = a[m_lig].res_name[0], a[m_lig].res_id[0]
     elif lig_num_residues > 1:
-        _, lig_poly_type = find_primary_polymer_type(a[m_lig])
+        lig_poly_type = find_first_polymer_type(a[m_lig])
+        # _, lig_poly_type = find_primary_polymer_type(a[m_lig])
         if lig_poly_type == "x":
             LOGGER.warning(
                 f"Ligand of a structure {structure.name} contains "
@@ -341,7 +349,63 @@ def make_ligand(
         names["structure_chain_id"]: lig_chains[0],
     }
 
-    return Ligand(structure, m_lig, m_cont, contacts, ligand_idx, dist, meta)
+    return Ligand(structure, m_lig, m_cont, ligand_idx, dist, meta)
+
+
+def ligands_from_atom_marks(
+    structure: GenericStructure,
+) -> abc.Generator[Ligand, None, None]:
+    a, m, g = structure.array, structure.atom_marks, structure.graph
+    assert len(a) == len(m)
+
+    pol_type = find_first_polymer_type(m)
+    if pol_type == "x":
+        LOGGER.warning(
+            f"Failed to determine polymer type for structure {structure.name}. "
+            f"Returning empty ligands."
+        )
+        return
+    pol_marks = dict(POL_MARKS)
+    pol_mask = m == pol_marks[pol_type]
+
+    # For atoms marked as ligands, it's safe to iterate over residues
+    # to recreate ligands.
+    ligand_mask = (m == AtomMark.LIGAND) | (m == (AtomMark.LIGAND | AtomMark.COVALENT))
+    ligand_idx = np.where(ligand_mask)[0]
+    starts = np.unique(bst.get_residue_starts_for(a, ligand_idx))
+    for r_mask in bst.get_residue_masks(a, starts):
+        lig = make_ligand(r_mask, pol_mask & ~r_mask, structure)
+        if lig is not None:
+            yield lig
+
+    # For polymer ligands, one should either iterate over connected components
+    # or series of consecutive residues.
+    lig_poly_m = (
+        (m == AtomMark.LIGAND | AtomMark.PEP)
+        | (m == AtomMark.LIGAND | AtomMark.NUC)
+        | (m == AtomMark.LIGAND | AtomMark.CARB)
+    )
+    if not np.any(lig_poly_m):
+        return
+
+    # The process follows the same logic as as in `mark_atoms_g`.
+    sg = g.subgraph(np.where(lig_poly_m)[0])
+    cc_idx_viewed = set()
+
+    for cc_idx in map(list, rx.connected_components(sg)):
+        cc_idx = sg.subgraph(cc_idx).nodes()
+        r_mask = extend_residue_mask(a, cc_idx)
+        r_mask[list(cc_idx_viewed)] = False
+
+        if not np.any(r_mask):
+            continue
+
+        cc_idx_viewed |= set(np.where(r_mask)[0])
+
+        # Attempt making a ligand
+        lig = make_ligand(r_mask, pol_mask & ~r_mask, structure)
+        if lig is not None:
+            yield lig
 
 
 if __name__ == "__main__":

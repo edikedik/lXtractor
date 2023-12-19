@@ -34,6 +34,8 @@ from lXtractor.variables.base import (
     LigandVariable,
 )
 
+# TODO: get proper target by using `seq_name` from a seq var definition
+
 T = t.TypeVar("T")
 LigInp: t.TypeAlias = tuple[lxc.ChainStructure, Ligand]
 Inp: t.TypeAlias = lxc.ChainSequence | lxc.ChainStructure | LigInp

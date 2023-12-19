@@ -1,7 +1,9 @@
 from copy import deepcopy
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import biotite.structure as bst
+import numpy as np
 import pytest
 
 from lXtractor.core.config import AtomMark, DefaultConfig
@@ -11,6 +13,7 @@ from lXtractor.core.structure import (
     NucleotideStructure,
     ProteinStructure,
 )
+from lXtractor.util import compare_arrays
 from test.common import ALL_STRUCTURES
 from test.conftest import EPS
 
@@ -24,12 +27,43 @@ def peptide_dna_complex() -> Path:
     return path
 
 
-@pytest.mark.parametrize('inp_path', ALL_STRUCTURES)
+@pytest.mark.parametrize("inp_path", ALL_STRUCTURES)
 def test_init(inp_path):
     print(inp_path)
     s = GenericStructure.read(inp_path)
     assert isinstance(s, GenericStructure)
     assert len(s) > 0
+
+    # test reinit with the same atom marks
+    ss = GenericStructure(s.array, s.name, ligands=None, atom_marks=s.atom_marks)
+    assert s == ss
+
+    # test reinit with the same graph
+    ss = GenericStructure(s.array, s.name, ligands=None, graph=s.graph)
+    assert s == ss
+
+
+@pytest.mark.parametrize("inp", ALL_STRUCTURES[:6])
+def test_io(inp):
+    s = ProteinStructure.read(inp)
+
+    with TemporaryDirectory() as d:
+        basename = inp.stem.split('.')[0]
+        path = Path(d) / f"{basename}.mmtf.gz"
+        s.write(path)
+
+        ss = ProteinStructure.read(path)
+
+        assert s.name == ss.name == basename
+        assert len(s) == len(ss)
+        assert np.all(s.atom_marks == ss.atom_marks)
+        assert len(s.ligands) == len(ss.ligands)
+        for l1, l2 in zip(s.ligands, ss.ligands):
+            assert l1.id == l2.id
+            assert np.all(l1.mask == l2.mask)
+            assert np.all(l1.contact_mask == l2.contact_mask)
+            assert np.all(l1.ligand_idx == l2.ligand_idx)
+            assert compare_arrays(l1.dist, l2.dist, eps=1e-2)
 
 
 def test_degenerate(simple_structure):
@@ -104,12 +138,6 @@ def test_subsetting(simple_structure):
     assert len(seq) == 2
 
 
-@pytest.mark.skip()
-def test_write(simple_structure):
-    # TODO: implement when providing paths is fixed in biotite
-    pass
-
-
 def test_superpose(chicken_src_str):
     a = chicken_src_str
     bb_atoms = ["N", "CA", "C"]
@@ -179,7 +207,7 @@ def test_atom_marks_splitting(peptide_dna_complex):
 @pytest.mark.parametrize(
     "str_path",
     # sorted(chain(DATA.glob("*mmtf*"), DATA.glob("*cif*"), DATA.glob("*pdb*"))),
-    [Path('/home/edik/Projects/lXtractor/test/data/4TWC.mmtf.gz')]
+    [Path("/home/edik/Projects/lXtractor/test/data/4TWC.mmtf.gz")],
 )
 def test_atom_marks_no_unk(str_path):
     s = GenericStructure.read(str_path, altloc=True)
@@ -191,9 +219,10 @@ def test_atom_marks_no_unk(str_path):
 def test_atom_marks_extracting(peptide_dna_complex):
     s = GenericStructure.read(peptide_dna_complex)
     seg = s.extract_segment(110, 125, "A")
-    # DNA becomes a primary polymer, while peptide segment becomes a ligand
-    assert seg.chain_ids_polymer == ["C", "D"]
-    assert seg.mask.ligand_pep.sum() > 0
+    # DNA stays being a polymer ligand since peptide is a primary polymer
+    assert seg.chain_ids_polymer == ["A"]
+    assert seg.chain_ids_ligand == ["C", "D"]
+    assert seg.mask.ligand_nuc.sum() > 0
 
     s = ProteinStructure.read(peptide_dna_complex)
     seg = s.extract_segment(110, 125, "A")
