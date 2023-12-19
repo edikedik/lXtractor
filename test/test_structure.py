@@ -207,7 +207,7 @@ def test_atom_marks_splitting(peptide_dna_complex):
 @pytest.mark.parametrize(
     "str_path",
     # sorted(chain(DATA.glob("*mmtf*"), DATA.glob("*cif*"), DATA.glob("*pdb*"))),
-    [Path("/home/edik/Projects/lXtractor/test/data/4TWC.mmtf.gz")],
+    [DATA / "4TWC.mmtf.gz"],
 )
 def test_atom_marks_no_unk(str_path):
     s = GenericStructure.read(str_path, altloc=True)

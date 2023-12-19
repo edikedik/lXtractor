@@ -8,9 +8,12 @@ from lXtractor.ext import CCD
 from lXtractor.ext.ccd import Field
 
 
+DATA = Path(__file__).parent / "data"
+
+
 @pytest.fixture
 def ccd_data() -> Path:
-    return Path("./data/CCD/components.cif.gz")
+    return DATA / "CCD" / "components.cif.gz"
 
 
 @pytest.mark.skip("Takes too long")
