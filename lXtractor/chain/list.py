@@ -309,6 +309,15 @@ class ChainList(abc.MutableSequence[CT]):
             zip_longest(*map(lambda c: c.iter_children(), self._chains), fillvalue=[]),
         )
 
+    def iter_ids(self) -> abc.Iterator[str]:
+        """
+        Iterate over ids of this chain list.
+
+        :return: An iterator over chain ids.
+        """
+        for c in self._chains:
+            yield c.id
+
     def get_level(self, n: int) -> ChainList[CT]:
         """
         Get a specific level of a hierarchical tree starting from this list::
@@ -413,6 +422,13 @@ class ChainList(abc.MutableSequence[CT]):
     @property
     def structure_sequences(self) -> ChainList[ChainSequence]:
         return ChainList(self.iter_structure_sequences())
+
+    @property
+    def ids(self) -> list[str]:
+        """
+        :return: A list of ids for all chains in this list.
+        """
+        return list(self.iter_ids())
 
     @staticmethod
     def _get_seg_matcher(
