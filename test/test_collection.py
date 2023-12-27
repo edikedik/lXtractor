@@ -49,22 +49,24 @@ def iter_parent_child_ids(chains: lxc.ChainList):
 
 
 @pytest.fixture()
-def chain_structures(simple_chain_structure):
+def chain_structures(simple_chain_structure) -> lxc.ChainList[lxc.ChainStructure]:
     c = simple_chain_structure.spawn_child(1, 20)
     c.spawn_child(5, 10)
-    return lxc.ChainList([c])
+    return lxc.ChainList([simple_chain_structure])
 
 
 @pytest.fixture()
-def chain_sequences(chain_structures):
+def chain_sequences(chain_structures) -> lxc.ChainList[lxc.ChainSequence]:
     c = chain_structures[0].seq
     c.spawn_child(1, 20)
     return lxc.ChainList([c])
 
 
 @pytest.fixture()
-def chains(chain_structures):
+def chains(chain_structures) -> lxc.ChainList[lxc.Chain]:
     c = lxc.Chain(chain_structures[0].seq, structures=chain_structures)
+    cc = c.spawn_child(1, 20)
+    cc.spawn_child(1, 10)
     return lxc.ChainList([c])
 
 
@@ -102,13 +104,14 @@ def test_add_chains(cls, chain_sequences, chain_structures, chains):
         cs = chains
         ct = 3
 
-    col.add_chains(cs, load=True)
     ids = get_all_ids(cs)
-    added_ids = col.get_chain_ids()
+    col.add(cs, load=True)
 
-    assert added_ids == ids
+    added_ids = col.get_ids()
 
-    ids_level0 = col.get_chain_ids(level=0, chain_type=ct)
+    assert set(added_ids) == set(ids)
+
+    ids_level0 = col.get_ids(level=0, chain_type=ct)
     assert ids_level0 == [c.id for c in cs]
 
     # Test parent information incorporated correctly
@@ -121,6 +124,19 @@ def test_add_chains(cls, chain_sequences, chain_structures, chains):
 def test_add_chains_structures(chains):
     # Test if structures are correctly added in chain collection
     col = ChainCollection()
-    col.add_chains(chains)
+    col.add(chains)
     df = col.get_table("structures", as_df=True)
-    assert chains.structures.ids == df["structure_id"].tolist()
+    init_ids = set(chains.structures.ids + chains.collapse_children().structures.ids)
+    assert init_ids == set(df["structure_id"])
+
+
+def test_rm_chains(chains):
+    col = ChainCollection()
+    col.add(chains, load=True)
+    assert len(col.loaded) == len(chains)
+    col.remove(chains)
+    assert len(col.loaded) == 0
+
+    for table_name in ["chains", "parents", "variables", "structures"]:
+        df = col.get_table(table_name, as_df=True)
+        assert len(df) == 0
