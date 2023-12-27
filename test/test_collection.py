@@ -10,12 +10,12 @@ from lXtractor.collection import (
     ChainCollection,
     StructureCollection,
 )
+from lXtractor.variables import SeqEl
 
 GET_TABLE_NAMES = """SELECT name FROM sqlite_master WHERE type='table';"""
 TABLE_NAMES = (
     "chain_types",
     "var_types",
-    "var_rtypes",
     "chains",
     "parents",
     "variables",
@@ -137,6 +137,24 @@ def test_rm_chains(chains):
     col.remove(chains)
     assert len(col.loaded) == 0
 
+    # Cascading must clear all tables
     for table_name in ["chains", "parents", "variables", "structures"]:
         df = col.get_table(table_name, as_df=True)
         assert len(df) == 0
+
+
+def test_add_vs(chain_sequences):
+    col = SequenceCollection()
+    col.add(chain_sequences)
+    c = chain_sequences[0]
+    cc = c.spawn_child(1, 2)
+    inputs = [
+        (c, SeqEl(1), True, "A"),
+        (c, SeqEl(2), False, "Squeak"),
+        (cc, SeqEl(1), True, "A"),
+    ]
+    col.vs_add(inputs)
+    df = col.get_table("variables", as_df=True)
+    assert len(df) == 1
+    ids = set(df.chain_id)
+    assert ids == {c.id}

@@ -7,14 +7,17 @@ from os import PathLike
 from pathlib import Path
 
 import pandas as pd
+from more_itertools import spy
 
 import lXtractor.chain as lxc
-from lXtractor.core.exceptions import FormatError
 from lXtractor.util.typing import is_sequence_of
+from lXtractor.variables.base import SequenceVariable, StructureVariable, LigandVariable
+from lXtractor.variables.manager import CalcRes
 
 LOGGER = logging.getLogger(__name__)
 _CT = t.TypeVar("_CT", lxc.ChainSequence, lxc.ChainStructure, lxc.Chain)
 _CT_MAP = {lxc.ChainSequence: 1, lxc.ChainStructure: 2, lxc.Chain: 3}
+_VT_MAP = {SequenceVariable: 1, StructureVariable: 2, LigandVariable: 3}
 
 
 def _verify_chain_types(objs: abc.Sequence[t.Any], ct: t.Type[_CT]) -> None:
@@ -50,7 +53,7 @@ class Collection(t.Generic[_CT]):
     def _execute(
         self,
         statement: str,
-        params: abc.Sequence | dict[str, t.Any] = (),
+        params: abc.Iterable | dict[str, t.Any] = (),
         many: bool = False,
         script: bool = False,
     ) -> sqlite3.Cursor:
@@ -68,22 +71,30 @@ class Collection(t.Generic[_CT]):
             LOGGER.error(f"Failed to execute statement {statement}")
             raise
 
+    @staticmethod
+    def _peek_data_size(
+        data: abc.Iterable[abc.Sequence[t.Any]],
+    ) -> tuple[int, abc.Iterable[abc.Sequence[t.Any]]]:
+        if isinstance(data, abc.Sequence):
+            if not data:
+                return -1, data
+            return len(data[0]), data
+        head, it = spy(data)
+        if not head:
+            return -1, it
+        return len(head[0]), it
+
     def _insert(
         self,
         table_name: str,
-        data: abc.Sequence[abc.Sequence[t.Any]],
+        data: abc.Iterable[abc.Sequence[t.Any]],
         columns: abc.Sequence[str] = None,
         omit_first_id: bool = False,
     ):
-        if len(data) == 0:
+        data_size, data = self._peek_data_size(data)
+        if data_size == -1:
+            LOGGER.warning(f"Attempting to insert empty `data` for {table_name}")
             return
-        data_sizes = set(map(len, data))
-        if len(data_sizes) > 1:
-            raise FormatError(
-                f"Attempting to insert rows with unequal number of "
-                f"elements ({data_sizes})."
-            )
-        data_size = data_sizes.pop()
         placeholders = ", ".join("?" for _ in range(data_size))
         if columns is None:
             columns = self._column_names_for(table_name)
@@ -102,10 +113,6 @@ class Collection(t.Generic[_CT]):
             var_type_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
             var_type_name TEXT NOT NULL UNIQUE
         ); """
-        make_var_return_types = """ CREATE TABLE IF NOT EXISTS var_rtypes (
-            rtype_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-            rtype_name TEXT NOT NULL UNIQUE
-        ) ; """
 
         make_chains = """ CREATE TABLE IF NOT EXISTS chains (
             id TEXT PRIMARY KEY,
@@ -125,15 +132,15 @@ class Collection(t.Generic[_CT]):
         ); """
         make_variables = """ CREATE TABLE IF NOT EXISTS variables (
             chain_id INTEGER NOT NULL,
-            variable_name TEXT NOT NULL,
+            variable_id TEXT NOT NULL,
+            variable_calculated BOOL NOT NULL,
             variable_value TEXT,
             variable_type_id INTEGER NOT NULL,
-            variable_rtype_id INTEGER NOT NULL,
+            variable_rtype TEXT NOT NULL,
             FOREIGN KEY (chain_id) REFERENCES chains (id)
                 ON UPDATE CASCADE
                 ON DELETE CASCADE
             FOREIGN KEY (variable_type_id) REFERENCES var_types (var_type_id)
-            FOREIGN KEY (variable_rtype_ID) REFERENCES var_rtypes (rtype_id)
         ); """
         make_paths = """ CREATE TABLE IF NOT EXISTS paths (
             chain_id INTEGER NOT NULL PRIMARY KEY,
@@ -148,7 +155,6 @@ class Collection(t.Generic[_CT]):
         for statement in [
             make_chain_types,
             make_var_types,
-            make_var_return_types,
             make_chains,
             make_parents,
             make_variables,
@@ -157,23 +163,8 @@ class Collection(t.Generic[_CT]):
             self._execute(statement)
 
         inserts = [
-            (
-                "chain_types",
-                (
-                    ("ChainSequence",),
-                    ("ChainStructure",),
-                    ("Chain",),
-                ),
-            ),
-            ("var_types", (("SequenceVariable",), ("StructureVariable",))),
-            (
-                "var_rtypes",
-                (
-                    ("str",),
-                    ("float",),
-                    ("int",),
-                ),
-            ),
+            ("chain_types", ((x.__name__,) for x in _CT_MAP)),
+            ("var_types", ((x.__name__,) for x in _VT_MAP)),
         ]
         for table_name, data in inserts:
             if self._num_rows_for(table_name) == 1:
@@ -259,6 +250,39 @@ class Collection(t.Generic[_CT]):
         ids = [(x,) for x in ids]
         self._execute("DELETE FROM chains WHERE id=?", ids, many=True)
         self.unload(chains)
+
+    @staticmethod
+    def _get_var_type(v: t.Any):
+        if isinstance(v, SequenceVariable):
+            return 1
+        if isinstance(v, StructureVariable):
+            return 2
+        if isinstance(v, LigandVariable):
+            return 3
+        raise TypeError(f"Unsupported variable type {v.type}")
+
+    def vs_add(
+        self,
+        vs: abc.Iterable[CalcRes],
+        miscalculated: bool = False,
+    ) -> None:
+        existing = self.get_ids()
+        vs = filter(lambda x: x[0].id in existing, vs)
+        if not miscalculated:
+            vs = filter(lambda x: x[2], vs)
+        data = (
+            (
+                x[0].id,  # Chain ID
+                x[1].id,  # Variable ID
+                x[2],  # Is calculated?
+                x[3],  # Calculation result
+                self._get_var_type(x[1]),  # Variable type
+                str(x[1].rtype.__name__),  # Return type
+            )
+            for x in vs
+        )
+        data = list(data)
+        self._insert("variables", data)
 
 
 class SequenceCollection(Collection[lxc.ChainSequence]):
