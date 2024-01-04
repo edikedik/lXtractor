@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 import lXtractor.chain as lxc
+from lXtractor.chain import ChainIO
 from lXtractor.collection import (
     Collection,
     SequenceCollection,
@@ -30,17 +31,20 @@ COLLECTION_TYPES = (
 )
 
 
-def get_all_ids(chains: lxc.ChainList):
+def get_all_ids(chains: lxc.ChainList, nested_structures=True):
     if not chains:
         return []
     if isinstance(chains[0], lxc.Chain):
-        return (
+        ids = (
             chains.ids
             + chains.structures.ids
             + chains.collapse_children().ids
-            + chains.collapse_children().structures.ids
         )
-    return [c.id for c in chains] + [c.id for c in chains.collapse_children()]
+        print(ids)
+        if nested_structures:
+            ids += chains.collapse_children().structures.ids
+        return ids
+    return chains.ids + chains.collapse_children().ids
 
 
 def iter_parent_child_ids(chains: lxc.ChainList):
@@ -158,3 +162,48 @@ def test_add_vs(chain_sequences):
     assert len(df) == 1
     ids = set(df.chain_id)
     assert ids == {c.id}
+
+
+@pytest.mark.parametrize("cls", COLLECTION_TYPES)
+def test_link(cls, chain_sequences, chain_structures, chains):
+    col = cls()
+
+    if cls is SequenceCollection or cls is Collection:
+        cs = chain_sequences
+    elif cls is StructureCollection:
+        cs = chain_structures
+    else:
+        cs = chains
+
+    # 0. paths exists and is empty
+    df = col.get_table("paths", as_df=True)
+    assert len(df) == 0
+
+    # 1. Adding nothing does nothing
+    col.link(iter([]))
+    df = col.get_table("paths", as_df=True)
+    assert len(df) == 0
+
+    # 2. Adding random path does nothing
+    col.link((Path("tmp.txt"),))
+    df = col.get_table("paths", as_df=True)
+    assert len(df) == 0
+
+    # 3. Adding existing chains
+    io = ChainIO()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        paths = list(io.write(cs, Path(tmpdir), write_children=True))
+
+        # 3.1 Chains were not added, so adding existing paths does nothing
+        col.link(paths)
+        df = col.get_table("paths", as_df=True)
+        assert len(df) == 0
+
+        # 3.2 Adding valid paths to existing chains works for all of them
+        col.add(cs)
+        col.link(paths)
+        df = col.get_table("paths", as_df=True)
+        assert len(df) > 0
+        added_ids = set(df.chain_id)
+        chain_ids = set(get_all_ids(cs, nested_structures=False))
+        assert added_ids == chain_ids

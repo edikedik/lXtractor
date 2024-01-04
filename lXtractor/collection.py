@@ -1,8 +1,9 @@
 import logging
+import os
 import sqlite3
 import typing as t
 from collections import abc
-from itertools import chain
+from itertools import chain, tee
 from os import PathLike
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from lXtractor.variables.base import SequenceVariable, StructureVariable, Ligand
 from lXtractor.variables.manager import CalcRes
 
 LOGGER = logging.getLogger(__name__)
+_T = t.TypeVar("_T")
 _CT = t.TypeVar("_CT", lxc.ChainSequence, lxc.ChainStructure, lxc.Chain)
 _CT_MAP = {lxc.ChainSequence: 1, lxc.ChainStructure: 2, lxc.Chain: 3}
 _VT_MAP = {SequenceVariable: 1, StructureVariable: 2, LigandVariable: 3}
@@ -73,8 +75,8 @@ class Collection(t.Generic[_CT]):
 
     @staticmethod
     def _peek_data_size(
-        data: abc.Iterable[abc.Sequence[t.Any]],
-    ) -> tuple[int, abc.Iterable[abc.Sequence[t.Any]]]:
+        data: abc.Iterable[abc.Sequence[_T]],
+    ) -> tuple[int, abc.Iterable[abc.Sequence[_T]]]:
         if isinstance(data, abc.Sequence):
             if not data:
                 return -1, data
@@ -87,14 +89,15 @@ class Collection(t.Generic[_CT]):
     def _insert(
         self,
         table_name: str,
-        data: abc.Iterable[abc.Sequence[t.Any]],
+        data: abc.Iterable[abc.Sequence[_T]],
         columns: abc.Sequence[str] = None,
         omit_first_id: bool = False,
-    ):
+        execute: bool = True,
+    ) -> tuple[str | None, abc.Iterable[abc.Sequence[_T]]]:
         data_size, data = self._peek_data_size(data)
         if data_size == -1:
             LOGGER.warning(f"Attempting to insert empty `data` for {table_name}")
-            return
+            return None, data
         placeholders = ", ".join("?" for _ in range(data_size))
         if columns is None:
             columns = self._column_names_for(table_name)
@@ -102,7 +105,9 @@ class Collection(t.Generic[_CT]):
             columns = columns[1:]
         columns = ", ".join(columns)
         statement = f"INSERT INTO {table_name}({columns}) VALUES({placeholders})"
-        self._execute(statement, data, many=True)
+        if execute:
+            self._execute(statement, data, many=True)
+        return statement, data
 
     def _setup(self):
         make_chain_types = """ CREATE TABLE IF NOT EXISTS chain_types (
@@ -131,7 +136,7 @@ class Collection(t.Generic[_CT]):
                 ON DELETE CASCADE 
         ); """
         make_variables = """ CREATE TABLE IF NOT EXISTS variables (
-            chain_id INTEGER NOT NULL,
+            chain_id TEXT NOT NULL,
             variable_id TEXT NOT NULL,
             variable_calculated BOOL NOT NULL,
             variable_value TEXT,
@@ -143,7 +148,7 @@ class Collection(t.Generic[_CT]):
             FOREIGN KEY (variable_type_id) REFERENCES var_types (var_type_id)
         ); """
         make_paths = """ CREATE TABLE IF NOT EXISTS paths (
-            chain_id INTEGER NOT NULL PRIMARY KEY,
+            chain_id TEXT NOT NULL PRIMARY KEY,
             chain_path TEXT NOT NULL,
             FOREIGN KEY (chain_id) REFERENCES chains (id)
                 ON UPDATE CASCADE
@@ -237,6 +242,7 @@ class Collection(t.Generic[_CT]):
         self._chains = tuple(self.loaded.filter(lambda x: x.id not in ids))
 
     def remove(self, chains: abc.Sequence[_CT] | abc.Sequence[str]) -> None:
+        # TODO: removing from other tables here?
         if not chains:
             return
         if isinstance(chains[0], (lxc.Chain, lxc.ChainSequence, lxc.ChainStructure)):
@@ -284,6 +290,41 @@ class Collection(t.Generic[_CT]):
         data = list(data)
         self._insert("variables", data)
 
+    def _expand_structures(self, chain_path: Path) -> abc.Iterable[Path]:
+        """The method is only relevant for :class:`ChainCollection`, where
+        associated structure paths must be included as well"""
+        yield from iter([])
+
+    def _expand_children(self, chain_path: Path) -> abc.Iterator[Path]:
+        for root, dirs, _ in os.walk(chain_path):
+            root = Path(root)
+            if root.name == "segments":
+                yield from (root / x for x in dirs)
+
+    def link(
+        self,
+        paths: abc.Iterable[Path | str | PathLike],
+    ) -> None:
+        existing_ids = self.get_ids()
+
+        paths = filter(lambda x: x.exists() and x.is_dir(), map(Path, paths))
+        p1, p2, p3 = tee(paths, 3)
+        paths = chain(
+            p1,
+            chain.from_iterable(map(self._expand_children, p2)),
+            chain.from_iterable(map(self._expand_structures, p3)),
+        )
+        paths = filter(lambda x: x.name in existing_ids, paths)
+
+        data = ((x.name, str(x)) for x in paths)
+        statement, data = self._insert("paths", data, execute=False)
+        if statement is None:
+            return
+        statement += (
+            " ON CONFLICT(chain_id) DO UPDATE SET chain_path=excluded.chain_path"
+        )
+        self._execute(statement, data, many=True)
+
 
 class SequenceCollection(Collection[lxc.ChainSequence]):
     def _verify_chain_types(self, chains: abc.Sequence[t.Any]) -> None:
@@ -329,6 +370,9 @@ class ChainCollection(Collection[lxc.Chain]):
             chain.from_iterable(((c.id, s.id) for s in c.structures) for c in chains)
         )
         self._insert("structures", data)
+
+    def _expand_structures(self, chain_path: Path) -> abc.Iterator[Path]:
+        yield from chain_path.glob("structures/*")
 
 
 if __name__ == "__main__":
