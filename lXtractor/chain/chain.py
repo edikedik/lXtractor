@@ -367,36 +367,35 @@ class Chain:
 
     def write(
         self,
-        base_dir: Path,
+        dest: Path,
         *,
         str_fmt: str = "mmtf.gz",
         write_children: bool = True,
-    ):
+    ) -> Path:
         """
         Create a disk dump of this chain data.
         Created dumps can be reinitialized via :meth:`read`.
 
-        :param base_dir: A writable dir to hold the data.
+        :param dest: A writable dir to hold the data.
         :param str_fmt: A format to write :attr:`structures` in.
         :param write_children: Recursively write :attr:`children`.
-        :return: Nothing.
+        :return: Path to the directory where the files are written.
         """
-        base_dir.mkdir(parents=True, exist_ok=True)
+        dest.mkdir(parents=True, exist_ok=True)
+
         fnames = DefaultConfig["filenames"]
-        self.seq.write(base_dir, write_children=False)
+        self.seq.write(dest, write_children=False)
 
         if self.structures:
-            str_dir = base_dir / fnames["structures_dir"]
+            str_dir = dest / fnames["structures_dir"]
             str_dir.mkdir(exist_ok=True)
             for s in self.structures:
                 s.write(str_dir / s.id, str_fmt, write_children=False)
 
         for c in self.children:
-            c.write(
-                base_dir / fnames["segments_dir"] / c.id,
-                str_fmt=str_fmt,
-                write_children=write_children,
-            )
+            c.write(dest / fnames["segments_dir"] / c.id, str_fmt=str_fmt,
+                    write_children=write_children)
+        return dest
 
     def add_structure(
         self,

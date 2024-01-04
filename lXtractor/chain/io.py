@@ -57,8 +57,7 @@ def _read_obj(
 @curry
 def _write_obj(obj: CT, path: Path, tolerate_failures: bool, **kwargs) -> Path | None:
     try:
-        obj.write(path, **kwargs)
-        return path
+        return obj.write(path, **kwargs)
     except Exception as e:
         LOGGER.warning(f"Failed to write {obj} to {path}")
         LOGGER.exception(e)
@@ -180,7 +179,6 @@ class ChainIO:
         :param verbose: Output logging and progress bar.
         :param tolerate_failures: Errors when reading/writing do not raise
             an exception.
-        :param dump_names: File names container.
         """
         #: The number of parallel processes
         self.num_proc = num_proc
@@ -298,7 +296,7 @@ class ChainIO:
         :return: Whatever `write` method returns.
         """
         if isinstance(objs, (ChainSequence, ChainStructure, Chain)):
-            objs.write(base)
+            yield objs.write(base)
         else:
             _write = _write_obj(tolerate_failures=self.tolerate_failures, **kwargs)
 

@@ -1008,32 +1008,34 @@ class ChainSequence(lxs.Segment):
 
     def write(
         self,
-        base_dir: Path,
+        dest: Path,
         *,
         write_children: bool = False,
-    ):
+    ) -> Path:
         """
         Dump this chain sequence. Creates `sequence.tsv` and `meta.tsv`
         in `base_dir` using :meth:`write_seq` and :meth:`write_meta`.
 
-        :param base_dir: Destination directory.
+        :param dest: Destination directory.
         :param write_children: Recursively write children.
-        :return: Nothing.
+        :return: Path to the directory where the files are written.
         """
-        base_dir.mkdir(exist_ok=True, parents=True)
-        self.write_seq(base_dir / DefaultConfig["filenames"]["sequence"])
+
+        dest.mkdir(exist_ok=True, parents=True)
+
+        self.write_seq(dest / DefaultConfig["filenames"]["sequence"])
+
         if self.meta:
-            self.write_meta(base_dir / DefaultConfig["filenames"]["meta"])
+            self.write_meta(dest / DefaultConfig["filenames"]["meta"])
             if self.variables:
-                self.variables.write(base_dir / DefaultConfig["filenames"]["variables"])
+                self.variables.write(dest / DefaultConfig["filenames"]["variables"])
+
         if write_children:
             for child in self.children:
-                child_dir = (
-                    base_dir
-                    / DefaultConfig["filenames"]["segments_dir"]
-                    / (child.name or DefaultConfig["unknowns"]["name"])
-                )
+                child_dir = dest / DefaultConfig["filenames"]["segments_dir"] / child.id
                 child.write(child_dir, write_children=write_children)
+
+        return dest
 
     def summary(self, meta: bool = True, children: bool = False) -> pd.DataFrame:
         parent_id = self.parent.id if self.parent is not None else np.NaN

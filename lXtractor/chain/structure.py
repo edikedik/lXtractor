@@ -747,11 +747,11 @@ class ChainStructure:
 
     def write(
         self,
-        base_dir: Path,
+        dest: Path,
         fmt: str = "mmtf.gz",
         *,
         write_children: bool = False,
-    ):
+    ) -> Path:
         """
         Write this object into a directory. It will create the following files:
 
@@ -761,31 +761,32 @@ class ChainStructure:
 
         Existing files will be overwritten.
 
-        :param base_dir: A writable dir to save files to.
+        :param dest: A writable dir to save files to.
         :param fmt: Structure format to use. Supported formats are "pdb", "cif",
             and "mmtf". Adding ".gz" (eg, "mmtf.gz") will lead to gzip
             compression.
         :param write_children: Recursively write :attr:`children`.
-        :return: Nothing.
+        :return: Path to the directory where the files are written.
         """
 
         if self.is_empty:
             raise MissingData("Attempting to write an empty chain structure")
 
-        base_dir.mkdir(exist_ok=True, parents=True)
+        dest.mkdir(exist_ok=True, parents=True)
 
         fnames = DefaultConfig["filenames"]
 
-        self.seq.write(base_dir)
-        self.structure.write(base_dir / f"{fnames['structure_base_name']}.{fmt}")
+        self.seq.write(dest)
+        self.structure.write(dest / f"{fnames['structure_base_name']}.{fmt}")
         if self.variables:
-            self.variables.write(base_dir / fnames["variables"])
+            self.variables.write(dest / fnames["variables"])
 
         if write_children:
             for child in self.children:
-                child_name = child.seq.name or DefaultConfig["unknowns"]["name"]
-                child_dir = base_dir / fnames["segments_dir"] / child_name
+                child_dir = dest / fnames["segments_dir"] / child.id
                 child.write(child_dir, fmt, write_children=True)
+
+        return dest
 
     def summary(
         self, meta: bool = True, children: bool = False, ligands: bool = False

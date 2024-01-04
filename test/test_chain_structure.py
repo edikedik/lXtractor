@@ -117,17 +117,19 @@ def test_io(test_structure, fmt):
     with TemporaryDirectory() as tmp:
         fnames, mnames = DefaultConfig["filenames"], DefaultConfig["metadata"]
         tmp = Path(tmp)
-        s.write(tmp, fmt=fmt, write_children=True)
+        path = s.write(tmp, fmt=fmt, write_children=True)
 
-        files = get_files(tmp)
-        dirs = get_dirs(tmp)
+        files = get_files(path)
+        dirs = get_dirs(path)
+
+        print(files, dirs)
 
         assert f"{fnames['structure_base_name']}.{fmt}" in files
         assert fnames["sequence"] in files
         assert fnames["meta"] in files
         assert fnames["segments_dir"] in dirs
 
-        s_r = ChainStructure.read(tmp, search_children=True)
+        s_r = ChainStructure.read(path, search_children=True)
         assert s_r.seq is not None
         assert s_r.structure is not None
         assert s_r.structure.name == s.structure.name
