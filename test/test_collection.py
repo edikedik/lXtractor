@@ -40,7 +40,6 @@ def get_all_ids(chains: lxc.ChainList, nested_structures=True):
             + chains.structures.ids
             + chains.collapse_children().ids
         )
-        print(ids)
         if nested_structures:
             ids += chains.collapse_children().structures.ids
         return ids
@@ -109,7 +108,7 @@ def test_add_chains(cls, chain_sequences, chain_structures, chains):
         ct = 3
 
     ids = get_all_ids(cs)
-    col.add(cs, load=True)
+    col.add(cs)
 
     added_ids = col.get_ids()
 
@@ -157,7 +156,7 @@ def test_add_vs(chain_sequences):
         (c, SeqEl(2), False, "Squeak"),
         (cc, SeqEl(1), True, "A"),
     ]
-    col.vs_add(inputs)
+    col.add_vs(inputs)
     df = col.get_table("variables", as_df=True)
     assert len(df) == 1
     ids = set(df.chain_id)

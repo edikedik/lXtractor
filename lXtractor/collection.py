@@ -1,5 +1,6 @@
 import logging
 import os
+import pickle
 import sqlite3
 import typing as t
 from collections import abc
@@ -9,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 from more_itertools import spy
+from toolz import curry
 
 import lXtractor.chain as lxc
 from lXtractor.util.typing import is_sequence_of
@@ -30,6 +32,7 @@ def _verify_chain_types(objs: abc.Sequence[t.Any], ct: t.Type[_CT]) -> None:
 class Collection(t.Generic[_CT]):
     def __init__(self, loc: str | PathLike = ":memory:"):
         self._loc = loc if loc == ":memory:" else Path(loc)
+        self._create_chain_converters()
         self._db = self._connect()
         self._setup()
         self._chains: tuple[_CT, ...] = ()
@@ -38,8 +41,14 @@ class Collection(t.Generic[_CT]):
     def loaded(self) -> lxc.ChainList[_CT]:
         return lxc.ChainList(self._chains)
 
+    def _create_chain_converters(self):
+        dump_pickle = curry(pickle.dumps, protocol=5)
+        for c in _CT_MAP:
+            sqlite3.register_adapter(c, dump_pickle)
+        sqlite3.register_converter("chain_data", pickle.loads)
+
     def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self._loc)
+        return sqlite3.connect(self._loc, detect_types=sqlite3.PARSE_DECLTYPES)
 
     def _close(self) -> None:
         self._db.close()
@@ -123,6 +132,7 @@ class Collection(t.Generic[_CT]):
             id TEXT PRIMARY KEY,
             chain_type INTEGER NOT NULL,
             level INTEGER NOT NULL,
+            data chain_data,
             FOREIGN KEY (chain_type) REFERENCES chain_types(type_id)
         ); """
         make_parents = """ CREATE TABLE IF NOT EXISTS parents (
@@ -212,7 +222,7 @@ class Collection(t.Generic[_CT]):
     def _insert_chains_data(
         self, chains: lxc.ChainList[_CT], chain_type: int, level: int
     ):
-        data = [(c.id, chain_type, level) for c in chains]
+        data = [(c.id, chain_type, level, None) for c in chains]
         self._insert("chains", data)
 
     def _add_chains_data(self, chains: lxc.ChainList[_CT], chain_type: int) -> None:
@@ -224,7 +234,18 @@ class Collection(t.Generic[_CT]):
         data = [(child.parent.id, child.id) for child in chains.collapse_children()]
         self._insert("parents", data)
 
-    def add(self, chains: abc.Sequence[_CT], load: bool = False):
+    def _add_chain_objects(self, chains: lxc.ChainList[_CT]) -> None:
+        all_chains = chains + chains.collapse_children()
+        id2children = {c.id: c.children for c in all_chains}
+        for c in all_chains:
+            c.children = lxc.ChainList([])
+        statement = "UPDATE chains SET data=? WHERE id=?"
+        data = ((c, c.id) for c in all_chains)
+        self._execute(statement, data, many=True)
+        for c in all_chains:
+            c.children = id2children[c.id]
+
+    def add(self, chains: abc.Sequence[_CT]):
         if not chains:
             return
         self._verify_chain_types(chains)
@@ -232,8 +253,7 @@ class Collection(t.Generic[_CT]):
         chains = lxc.ChainList[_CT](self._filter_absent_chains(chains))
         self._add_chains_data(chains, chain_type)
         self._add_parents_data(chains)
-        if load:
-            self._chains += tuple(chains)
+        self._add_chain_objects(chains)
 
     def unload(self, chains: abc.Sequence[_CT] | abc.Sequence[str]) -> None:
         if not chains:
@@ -249,8 +269,7 @@ class Collection(t.Generic[_CT]):
             cl = lxc.ChainList(chains)
             ids = cl.ids + cl.collapse_children().ids
             if isinstance(cl[0], lxc.Chain):
-                ids += cl.structures.ids
-                ids += cl.collapse_children().structures.ids
+                ids += (cl.structures.ids + cl.collapse_children().structures.ids)
         else:
             ids = chains
         ids = [(x,) for x in ids]
@@ -267,7 +286,7 @@ class Collection(t.Generic[_CT]):
             return 3
         raise TypeError(f"Unsupported variable type {v.type}")
 
-    def vs_add(
+    def add_vs(
         self,
         vs: abc.Iterable[CalcRes],
         miscalculated: bool = False,
@@ -360,9 +379,9 @@ class ChainCollection(Collection[lxc.Chain]):
     def _insert_chains_data(
         self, chains: lxc.ChainList[_CT], chain_type: int, level: int
     ) -> None:
-        data_chains = ((c.id, chain_type, level) for c in chains)
+        data_chains = ((c.id, chain_type, level, None) for c in chains)
         data_structures = chain.from_iterable(
-            ((s.id, 2, level) for s in c.structures) for c in chains
+            ((s.id, 2, level, None) for s in c.structures) for c in chains
         )
         self._insert("chains", list(chain(data_chains, data_structures)))
         # Add chain--structure relationships
