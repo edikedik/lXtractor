@@ -627,6 +627,9 @@ class ChainList(abc.MutableSequence[CT]):
         for g, gg in groupby(self._chains, key):
             yield g, self.__class__([x[1] for x in gg])
 
+    def sort(self, key: abc.Callable[[CT], T] = lambda x: x.id) -> ChainList[CT]:
+        return self.__class__(sorted(self._chains, key=key))
+
 
 def _wrap_children(children: abc.Iterable[CT] | None) -> ChainList[CT]:
     if children:
