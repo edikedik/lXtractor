@@ -98,6 +98,15 @@ class Chain:
         for c in self.children:
             c.parent = self
 
+    def __eq__(self, other: t.Any) -> bool:
+        if isinstance(other, Chain):
+            return (
+                self.id == other.id
+                and self.seq == other.seq
+                and self.structures == other.structures
+            )
+        return False
+
     def _make_id(self) -> str:
         parent = "" if self.parent is None else f"<-({self.parent.id})"
         return f"Chain({self.seq.id_strip_parents()}){parent}"
@@ -393,8 +402,11 @@ class Chain:
                 s.write(str_dir / s.id, str_fmt, write_children=False)
 
         for c in self.children:
-            c.write(dest / fnames["segments_dir"] / c.id, str_fmt=str_fmt,
-                    write_children=write_children)
+            c.write(
+                dest / fnames["segments_dir"] / c.id,
+                str_fmt=str_fmt,
+                write_children=write_children,
+            )
         return dest
 
     def add_structure(
@@ -439,7 +451,10 @@ class Chain:
         if add_to_children and len(self.children) > 0:
             for c in self.children:
                 sub = structure.spawn_child(
-                    c.seq.start, c.seq.end, c.name, map_from=map_name,
+                    c.seq.start,
+                    c.seq.end,
+                    c.name,
+                    map_from=map_name,
                 )
                 c.add_structure(sub, map_to_seq=False, add_to_children=True)
 
