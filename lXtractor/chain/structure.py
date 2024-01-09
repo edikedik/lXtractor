@@ -240,8 +240,8 @@ class ChainStructure:
         if isinstance(other, ChainStructure):
             return (
                 self.id == other.id
-                and self.structure == other.structure
                 and self.seq == other.seq
+                and self.structure == other.structure
             )
         return False
 
