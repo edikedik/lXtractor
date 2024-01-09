@@ -4,7 +4,7 @@ import pickle
 import sqlite3
 import typing as t
 from collections import abc
-from itertools import chain, tee
+from itertools import chain, tee, groupby
 from os import PathLike
 from pathlib import Path
 
@@ -13,6 +13,7 @@ from more_itertools import spy
 from toolz import curry
 
 import lXtractor.chain as lxc
+from lXtractor.chain import make_str_tree
 from lXtractor.util.typing import is_sequence_of
 from lXtractor.variables.base import SequenceVariable, StructureVariable, LigandVariable
 from lXtractor.variables.manager import CalcRes
@@ -35,11 +36,11 @@ class Collection(t.Generic[_CT]):
         self._create_chain_converters()
         self._db = self._connect()
         self._setup()
-        self._chains: tuple[_CT, ...] = ()
+        self._chains: lxc.ChainList[_CT] = lxc.ChainList([])
 
     @property
     def loaded(self) -> lxc.ChainList[_CT]:
-        return lxc.ChainList(self._chains)
+        return self._chains
 
     def _create_chain_converters(self):
         dump_pickle = curry(pickle.dumps, protocol=5)
@@ -186,9 +187,11 @@ class Collection(t.Generic[_CT]):
                 self._insert(table_name, data, omit_first_id=True)
 
     def get_table(
-        self, name: str, as_df: bool = False, **kwargs
+        self, name: str, as_df: bool = False, where: str | None = None, **kwargs
     ) -> list[str] | pd.DataFrame | abc.Iterator[pd.DataFrame]:
         statement = f"SELECT * FROM {name}"
+        if where:
+            statement += f" WHERE {where}"
         if as_df:
             return pd.read_sql(statement, self._db, **kwargs)
         return self._execute(statement).fetchall()
@@ -203,6 +206,15 @@ class Collection(t.Generic[_CT]):
             statement += f" AND chain_type = {chain_type}"
         res = self._execute(statement)
         return [x[0] for x in res.fetchall()]
+
+    def get_children_of(
+        self, ids: abc.Sequence[str]
+    ) -> abc.Generator[list[str], None, None]:
+        placeholders = ",".join(["?"] * len(ids))
+        statement = f"SELECT * from parents WHERE chain_id_parent IN ({placeholders})"
+        res = self._execute(statement, ids).fetchall()
+        for query in ids:
+            yield [child_id for parent_id, child_id in res if parent_id == query]
 
     def _verify_chain_types(self, chains: t.Any) -> None:
         pass
@@ -245,7 +257,7 @@ class Collection(t.Generic[_CT]):
         for c in all_chains:
             c.children = id2children[c.id]
 
-    def add(self, chains: abc.Sequence[_CT]):
+    def add(self, chains: abc.Sequence[_CT], load: bool = False):
         if not chains:
             return
         self._verify_chain_types(chains)
@@ -254,12 +266,81 @@ class Collection(t.Generic[_CT]):
         self._add_chains_data(chains, chain_type)
         self._add_parents_data(chains)
         self._add_chain_objects(chains)
+        if load:
+            self._chains += chains
+
+    def _recover_structures(self, chains: lxc.ChainList[_CT]) -> None:
+        # Valid only for ChainCollection
+        pass
+
+    def _get_all_children(self, chains: lxc.ChainList[_CT]) -> abc.Sequence[str]:
+        max_level = self._execute("SELECT MAX(level) from chains").fetchone()[0]
+        children = []
+        ids = chains.ids
+        for _ in range(max_level):
+            tree_level = list(chain.from_iterable(self.get_children_of(ids)))
+            if len(tree_level) == 0:
+                break
+            children += tree_level
+            ids = tree_level
+        return list(set(children))
+
+    def _recover_children(self, chains: lxc.ChainList[_CT]) -> None:
+        if not chains:
+            return None
+
+        chain_type = _CT_MAP[chains[0].__class__]
+        child_ids = self._get_all_children(chains)
+        _chains = chains.filter(lambda x: x.id in child_ids or x.id in chains.ids)
+        absent = [x for x in child_ids if x not in _chains.ids]
+        if absent:
+            _chains += self.load(
+                chain_type,
+                ids=absent,
+                keep=False,
+                recover_tree=False,
+                load_structures=False,
+            )
+        make_str_tree(_chains, connect=True)
+
+    def clean_loaded(self):
+        self._chains = lxc.ChainList([])
+
+    def load(
+        self,
+        chain_type: int,
+        level: int = 0,
+        ids: abc.Sequence[str] | None = None,
+        keep: bool = False,
+        recover_tree: bool = True,
+        load_structures: bool = True,
+    ) -> lxc.ChainList:
+        params = (chain_type,)
+        statement = "SELECT data FROM chains WHERE chain_type=?"
+        if level:
+            params += (level,)
+            statement += " AND level=?"
+        if ids is not None:
+            if len(ids) == 0:
+                return lxc.ChainList([])
+            params += tuple(ids)
+            placeholders = ",".join(["?"] * len(ids))
+            statement += f" AND id IN ({placeholders})"
+        res = self._execute(statement, params)
+        chains = lxc.ChainList(x[0] for x in res)
+        if recover_tree:
+            self._recover_children(chains)
+        if load_structures:
+            self._recover_structures(chains)
+        if keep:
+            self._chains += chains
+        return chains
 
     def unload(self, chains: abc.Sequence[_CT] | abc.Sequence[str]) -> None:
         if not chains:
             return
         ids = chains if isinstance(chains[0], str) else lxc.ChainList(chains).ids
-        self._chains = tuple(self.loaded.filter(lambda x: x.id not in ids))
+        self._chains = self.loaded.filter(lambda x: x.id not in ids)
 
     def remove(self, chains: abc.Sequence[_CT] | abc.Sequence[str]) -> None:
         # TODO: removing from other tables here?
@@ -269,7 +350,7 @@ class Collection(t.Generic[_CT]):
             cl = lxc.ChainList(chains)
             ids = cl.ids + cl.collapse_children().ids
             if isinstance(cl[0], lxc.Chain):
-                ids += (cl.structures.ids + cl.collapse_children().structures.ids)
+                ids += cl.structures.ids + cl.collapse_children().structures.ids
         else:
             ids = chains
         ids = [(x,) for x in ids]
@@ -390,8 +471,48 @@ class ChainCollection(Collection[lxc.Chain]):
         )
         self._insert("structures", data)
 
+    def _add_chain_objects(self, chains: lxc.ChainList[lxc.Chain]) -> None:
+        all_chains = chains + chains.collapse_children()
+        structures = all_chains.structures
+        id2children = {c.id: c.children for c in all_chains}
+        id2structures = {c.id: c.structures for c in all_chains}
+        for c in all_chains:
+            c.children = lxc.ChainList([])
+            c.structures = lxc.ChainList([])
+        statement = "UPDATE chains SET data=? WHERE id=?"
+        data = ((c, c.id) for c in chain(all_chains, structures))
+        self._execute(statement, data, many=True)
+        for c in all_chains:
+            c.children = id2children[c.id]
+            c.structures = id2structures[c.id]
+
     def _expand_structures(self, chain_path: Path) -> abc.Iterator[Path]:
         yield from chain_path.glob("structures/*")
+
+    def _recover_structures(self, chains: lxc.ChainList[_CT]) -> None:
+        if not chains:
+            return None
+
+        id2chain = {c.id: c for c in chains + chains.collapse_children()}
+        placeholders = _make_placeholders(len(id2chain))
+        statement = f"SELECT * FROM structures where chain_id in ({placeholders})"
+        res = self._execute(statement, list(id2chain)).fetchall()
+        if not res:
+            return None
+
+        for g, gg in groupby(res, lambda x: x[0]):
+            structures = self.load(
+                2,
+                ids=[x[1] for x in gg],
+                keep=False,
+                recover_tree=False,
+                load_structures=False,
+            )
+            id2chain[g].structures = lxc.ChainList(structures)
+
+
+def _make_placeholders(n: int) -> str:
+    return ",".join(["?"] * n)
 
 
 if __name__ == "__main__":

@@ -35,11 +35,7 @@ def get_all_ids(chains: lxc.ChainList, nested_structures=True):
     if not chains:
         return []
     if isinstance(chains[0], lxc.Chain):
-        ids = (
-            chains.ids
-            + chains.structures.ids
-            + chains.collapse_children().ids
-        )
+        ids = chains.ids + chains.structures.ids + chains.collapse_children().ids
         if nested_structures:
             ids += chains.collapse_children().structures.ids
         return ids
@@ -206,3 +202,19 @@ def test_link(cls, chain_sequences, chain_structures, chains):
         added_ids = set(df.chain_id)
         chain_ids = set(get_all_ids(cs, nested_structures=False))
         assert added_ids == chain_ids
+
+
+def test_load(chains):
+    col = ChainCollection()
+    col.add(chains)
+    df = col.get_table("chains", as_df=True)
+    assert not df.data.isna().any()
+    assert len(col.loaded) == 0
+
+    # loading without level loads all chains
+    loaded = col.load(3)
+    assert loaded == chains + chains.collapse_children()
+    # loading only the first level should load exactly one chain
+    loaded = col.load(3, level=1)
+    assert len(loaded) == 1
+    assert loaded == next(chains.iter_children())
