@@ -81,9 +81,7 @@ def test_setup(cls, loc):
     table_names = set(TABLE_NAMES)
     if cls is ChainCollection:
         table_names.add("structures")
-    with col._db as cur:
-        names = cur.execute(GET_TABLE_NAMES)
-        assert set(x[0] for x in names) == table_names
+    assert table_names == set(col.list_tables())
 
     if handle is not None:
         handle.close()

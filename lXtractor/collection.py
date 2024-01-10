@@ -186,6 +186,13 @@ class Collection(t.Generic[_CT]):
             if self._num_rows_for(table_name) == 1:
                 self._insert(table_name, data, omit_first_id=True)
 
+    def list_tables(self) -> list[str]:
+        """
+        :return: An unsorted list of table names in this collection.
+        """
+        res = self._execute("SELECT name FROM sqlite_master WHERE type='table';")
+        return [x[0] for x in res.fetchall()]
+
     def get_table(
         self, name: str, as_df: bool = False, where: str | None = None, **kwargs
     ) -> list[str] | pd.DataFrame | abc.Iterator[pd.DataFrame]:
