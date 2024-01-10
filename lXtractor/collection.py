@@ -108,7 +108,7 @@ class Collection(t.Generic[_CT]):
         if data_size == -1:
             LOGGER.warning(f"Attempting to insert empty `data` for {table_name}")
             return None, data
-        placeholders = ", ".join("?" for _ in range(data_size))
+        placeholders = _make_placeholders(data_size)
         if columns is None:
             columns = self._column_names_for(table_name)
         if omit_first_id:
@@ -210,7 +210,7 @@ class Collection(t.Generic[_CT]):
     def get_children_of(
         self, ids: abc.Sequence[str]
     ) -> abc.Generator[list[str], None, None]:
-        placeholders = ",".join(["?"] * len(ids))
+        placeholders = _make_placeholders(len(ids))
         statement = f"SELECT * from parents WHERE chain_id_parent IN ({placeholders})"
         res = self._execute(statement, ids).fetchall()
         for query in ids:
@@ -324,7 +324,7 @@ class Collection(t.Generic[_CT]):
             if len(ids) == 0:
                 return lxc.ChainList([])
             params += tuple(ids)
-            placeholders = ",".join(["?"] * len(ids))
+            placeholders = _make_placeholders(len(ids))
             statement += f" AND id IN ({placeholders})"
         res = self._execute(statement, params)
         chains = lxc.ChainList(x[0] for x in res)
@@ -512,7 +512,7 @@ class ChainCollection(Collection[lxc.Chain]):
 
 
 def _make_placeholders(n: int) -> str:
-    return ",".join(["?"] * n)
+    return ", ".join(["?"] * n)
 
 
 if __name__ == "__main__":
