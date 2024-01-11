@@ -6,10 +6,10 @@ import typing as t
 from collections import abc
 from itertools import chain, tee, groupby
 from os import PathLike
-from pathlib import Path
+from pathlib import Path, PosixPath
 
 import pandas as pd
-from more_itertools import spy
+from more_itertools import spy, unzip
 from toolz import curry
 
 import lXtractor.chain as lxc
@@ -30,10 +30,34 @@ def _verify_chain_types(objs: abc.Sequence[t.Any], ct: t.Type[_CT]) -> None:
         raise TypeError(f"All chains must have the same type {ct}")
 
 
+def _create_chain_converters():
+    dump_pickle = curry(pickle.dumps, protocol=5)
+    for c in _CT_MAP:
+        sqlite3.register_adapter(c, dump_pickle)
+    sqlite3.register_converter("chain_data", pickle.loads)
+
+    sqlite3.register_adapter(PosixPath, str)
+    sqlite3.register_converter("path", lambda x: Path(x.decode("utf-8")))
+
+
+def _get_var_type(v: t.Any):
+    if isinstance(v, SequenceVariable):
+        return 1
+    if isinstance(v, StructureVariable):
+        return 2
+    if isinstance(v, LigandVariable):
+        return 3
+    raise TypeError(f"Unsupported variable type {v.type}")
+
+
+def _make_placeholders(n: int) -> str:
+    return ", ".join(["?"] * n)
+
+
 class Collection(t.Generic[_CT]):
     def __init__(self, loc: str | PathLike = ":memory:"):
         self._loc = loc if loc == ":memory:" else Path(loc)
-        self._create_chain_converters()
+        _create_chain_converters()
         self._db = self._connect()
         self._setup()
         self._chains: lxc.ChainList[_CT] = lxc.ChainList([])
@@ -41,12 +65,6 @@ class Collection(t.Generic[_CT]):
     @property
     def loaded(self) -> lxc.ChainList[_CT]:
         return self._chains
-
-    def _create_chain_converters(self):
-        dump_pickle = curry(pickle.dumps, protocol=5)
-        for c in _CT_MAP:
-            sqlite3.register_adapter(c, dump_pickle)
-        sqlite3.register_converter("chain_data", pickle.loads)
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self._loc, detect_types=sqlite3.PARSE_DECLTYPES)
@@ -160,7 +178,7 @@ class Collection(t.Generic[_CT]):
         ); """
         make_paths = """ CREATE TABLE IF NOT EXISTS paths (
             chain_id TEXT NOT NULL PRIMARY KEY,
-            chain_path TEXT NOT NULL,
+            chain_path path NOT NULL,
             FOREIGN KEY (chain_id) REFERENCES chains (id)
                 ON UPDATE CASCADE
                 ON DELETE CASCADE
@@ -349,30 +367,24 @@ class Collection(t.Generic[_CT]):
         ids = chains if isinstance(chains[0], str) else lxc.ChainList(chains).ids
         self._chains = self.loaded.filter(lambda x: x.id not in ids)
 
-    def remove(self, chains: abc.Sequence[_CT] | abc.Sequence[str]) -> None:
-        # TODO: removing from other tables here?
-        if not chains:
+    def remove(
+        self,
+        targets: abc.Sequence[_CT] | abc.Sequence[str],
+        table: str = "chains",
+        column: str = "id",
+    ) -> None:
+        if not targets:
             return
-        if isinstance(chains[0], (lxc.Chain, lxc.ChainSequence, lxc.ChainStructure)):
-            cl = lxc.ChainList(chains)
+        if isinstance(targets[0], (lxc.Chain, lxc.ChainSequence, lxc.ChainStructure)):
+            cl = lxc.ChainList(targets)
             ids = cl.ids + cl.collapse_children().ids
             if isinstance(cl[0], lxc.Chain):
                 ids += cl.structures.ids + cl.collapse_children().structures.ids
         else:
-            ids = chains
+            ids = targets
         ids = [(x,) for x in ids]
-        self._execute("DELETE FROM chains WHERE id=?", ids, many=True)
-        self.unload(chains)
-
-    @staticmethod
-    def _get_var_type(v: t.Any):
-        if isinstance(v, SequenceVariable):
-            return 1
-        if isinstance(v, StructureVariable):
-            return 2
-        if isinstance(v, LigandVariable):
-            return 3
-        raise TypeError(f"Unsupported variable type {v.type}")
+        self._execute(f"DELETE FROM {table} WHERE {column}=?", ids, many=True)
+        self.unload(targets)
 
     def add_vs(
         self,
@@ -389,7 +401,7 @@ class Collection(t.Generic[_CT]):
                 x[1].id,  # Variable ID
                 x[2],  # Is calculated?
                 x[3],  # Calculation result
-                self._get_var_type(x[1]),  # Variable type
+                _get_var_type(x[1]),  # Variable type
                 str(x[1].rtype.__name__),  # Return type
             )
             for x in vs
@@ -423,7 +435,7 @@ class Collection(t.Generic[_CT]):
         )
         paths = filter(lambda x: x.name in existing_ids, paths)
 
-        data = ((x.name, str(x)) for x in paths)
+        data = ((x.name, x) for x in paths)
         statement, data = self._insert("paths", data, execute=False)
         if statement is None:
             return
@@ -431,6 +443,58 @@ class Collection(t.Generic[_CT]):
             " ON CONFLICT(chain_id) DO UPDATE SET chain_path=excluded.chain_path"
         )
         self._execute(statement, data, many=True)
+
+    def _update(
+        self,
+        table: str,
+        target_cols: abc.Iterable[str],
+        target_values: abc.Iterable[tuple],
+        condition_cols: abc.Iterable[str],
+        condition_values: abc.Iterable[tuple],
+    ):
+        setters = ", ".join(f"{name}=?" for name in target_cols)
+        conditions = " AND ".join(f"{name}=?" for name in condition_cols)
+        statement = f"UPDATE {table} SET {setters} WHERE {conditions}"
+        data = (target + cond for target, cond in zip(target_values, condition_values))
+        self._execute(statement, data, many=True)
+
+    def update_parents(self, values: abc.Iterable[tuple[str, str]]) -> None:
+        """
+        Update parent-child relationships.
+
+        :param values: Iterable of (parent_id, child_id).
+        """
+        targets, conditions = map(lambda xs: ((x,) for x in xs), unzip(values))
+        self._update(
+            "parents", ["chain_id_parent"], targets, ["chain_id_child"], conditions
+        )
+
+    def update_variables(
+        self, values: abc.Iterable[tuple[str, str, str]], set_calculated: bool = True
+    ) -> None:
+        """
+        Update variable calculation results.
+
+        :param values: Iterable of (chain_id, variable_id, variable_value).
+        :param set_calculated: Set the flag that a variable is calculated to
+            ``True``.
+        """
+        vs1, vs2 = tee(values)
+        conditions = (x[:2] for x in vs1)
+        if set_calculated:
+            target_cols = ["variable_calculated", "variable_value"]
+            targets = ((True, x[-1]) for x in vs2)
+        else:
+            target_cols = ["variable_value"]
+            targets = (x[2:] for x in vs2)
+        targets = list(targets)
+        self._update(
+            "variables",
+            target_cols,
+            targets,
+            ["chain_id", "variable_id"],
+            conditions,
+        )
 
 
 class SequenceCollection(Collection[lxc.ChainSequence]):
@@ -516,10 +580,6 @@ class ChainCollection(Collection[lxc.Chain]):
                 load_structures=False,
             )
             id2chain[g].structures = lxc.ChainList(structures)
-
-
-def _make_placeholders(n: int) -> str:
-    return ", ".join(["?"] * n)
 
 
 if __name__ == "__main__":

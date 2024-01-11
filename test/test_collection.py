@@ -201,6 +201,16 @@ def test_link(cls, chain_sequences, chain_structures, chains):
         chain_ids = set(get_all_ids(cs, nested_structures=False))
         assert added_ids == chain_ids
 
+    # 4. Test for updating behavior
+    with tempfile.TemporaryDirectory() as tmpdir:
+        paths = list(io.write((cs[0], ), Path(tmpdir)))
+        col.link(paths)
+        df = col.get_table("paths", as_df=True)
+        sub = df.loc[df.chain_id == cs[0].id, "chain_path"]
+        assert len(sub) == 1
+        path = sub[0]
+        assert path.exists() and path == paths[0]
+
 
 def test_load(chains):
     col = ChainCollection()
@@ -216,3 +226,34 @@ def test_load(chains):
     loaded = col.load(3, level=1)
     assert len(loaded) == 1
     assert loaded == next(chains.iter_children())
+
+
+def test_update_parents(chains):
+    col = ChainCollection()
+    col.add(chains)
+    p, c1, c2 = chains + chains.collapse_children()
+    # initial c1 <- p, c2 <- c1
+    col.update_parents([(p.id, "X")])
+    upd = (p.id, c2.id)
+    col.update_parents([upd])
+    parents = col.get_table("parents")
+    assert upd in parents
+
+
+@pytest.mark.parametrize("set_calculated", [True, False])
+def test_update_variables(chain_sequences, set_calculated):
+    col = SequenceCollection()
+    col.add(chain_sequences)
+    c = chain_sequences[0]
+    v1, v2 = SeqEl(1), SeqEl(2)
+    vs_inp = [
+        (c, v1, True, "A"),
+        (c, v2, False, "Squeak"),
+    ]
+    col.add_vs(vs_inp, miscalculated=True)
+    col.update_variables([(c.id, v2.id, "Peek")], set_calculated)
+    df = col.get_table("variables", as_df=True)
+    assert len(df) == 2
+    row = df[df.variable_id == v2.id].iloc[0]
+    assert row.variable_value == "Peek"
+    assert row.variable_calculated == set_calculated
