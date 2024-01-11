@@ -56,6 +56,10 @@ def _make_placeholders(n: int) -> str:
 
 class Collection(t.Generic[_CT]):
     def __init__(self, loc: str | PathLike = ":memory:"):
+        """
+        :param loc: Location of the data collection. By default, will use RAM
+            to store the data.
+        """
         self._loc = loc if loc == ":memory:" else Path(loc)
         _create_chain_converters()
         self._db = self._connect()
@@ -64,6 +68,9 @@ class Collection(t.Generic[_CT]):
 
     @property
     def loaded(self) -> lxc.ChainList[_CT]:
+        """
+        :return: A chain list of currently loaded objects.
+        """
         return self._chains
 
     def _connect(self) -> sqlite3.Connection:
@@ -211,9 +218,44 @@ class Collection(t.Generic[_CT]):
         res = self._execute("SELECT name FROM sqlite_master WHERE type='table';")
         return [x[0] for x in res.fetchall()]
 
+    @staticmethod
+    def list_chain_type_codes() -> list[tuple[t.Type, int]]:
+        """
+        :return: A list of tuples (chain_type, chain_code) where chain_code is
+            an integer associated with a chain_type in lXtractor data
+            collections.
+        """
+        return list(_CT_MAP.items())
+
     def get_table(
         self, name: str, as_df: bool = False, where: str | None = None, **kwargs
     ) -> list[str] | pd.DataFrame | abc.Iterator[pd.DataFrame]:
+        """
+        Get a table from the data collection.
+
+        >>> col = Collection()
+        >>> col.get_table("chains")
+        []
+        >>> c = lxc.ChainSequence.from_string("AAA", name="X")
+        >>> col.add([c])
+        >>> df = col.get_table("chains", as_df=True)
+        >>> df.id.iloc[0] == c.id
+        True
+
+        Note that the chain object is automatically loaded:
+
+        >>> c_in_db = df.data.iloc[0]
+        >>> c == c_in_db
+        True
+
+        :param name: Table name. See :meth:`list_tables` for available tables.
+        :param as_df: Convert the table to a pandas dataframe.
+        :param where: Specify conditions to filter the data. Do not add
+            "WHERE" keyword.
+        :param kwargs: Passed to pandas :func:`read_sql`. Used only if `as_df`
+            is ``True``.
+        :return: The requested table.
+        """
         statement = f"SELECT * FROM {name}"
         if where:
             statement += f" WHERE {where}"
@@ -224,6 +266,17 @@ class Collection(t.Generic[_CT]):
     def get_ids(
         self, level: int | None = None, chain_type: str | int | None = None
     ) -> list[str]:
+        """
+        Get a list of chain identifiers currently stored in this collection.
+
+        :param level: The optional topological level in the ancestral tree.
+            ``0`` corresponds to "root" objects that don't have any parents,
+            ``1`` corresponds to "child" objects that have a parent with the
+            level ``0``, and so on.
+        :param chain_type: The chain type encoded as integer.
+            See :meth:`list_chain_type_codes` for related correspondence.
+        :return: A list of chain identifiers.
+        """
         statement = "SELECT id FROM chains"
         if level is not None:
             statement += f" WHERE level = {level}"
@@ -235,6 +288,17 @@ class Collection(t.Generic[_CT]):
     def get_children_of(
         self, ids: abc.Sequence[str]
     ) -> abc.Generator[list[str], None, None]:
+        """
+        Get a generator over lists of children corresponding to the given ids.
+
+        >>> col = Collection()
+        >>> c = lxc.ChainSequence.from_string("")
+
+        :param ids: A list of chain identifiers.
+        :return: A generator over lists of children, where each list corresponds
+            to an identifier in `ids`. If an identifier is missing or doesn't
+            have associated children, yields empty list.
+        """
         placeholders = _make_placeholders(len(ids))
         statement = f"SELECT * from parents WHERE chain_id_parent IN ({placeholders})"
         res = self._execute(statement, ids).fetchall()
@@ -282,7 +346,14 @@ class Collection(t.Generic[_CT]):
         for c in all_chains:
             c.children = id2children[c.id]
 
-    def add(self, chains: abc.Sequence[_CT], load: bool = False):
+    def add(self, chains: abc.Sequence[_CT], load: bool = False) -> None:
+        """
+        Add chains to this collection.
+
+        :param chains: A list of chains to add.
+        :param load: Add chains to a list of currently loaded chains accessible
+            via :meth:`loaded`.
+        """
         if not chains:
             return
         self._verify_chain_types(chains)
@@ -329,6 +400,9 @@ class Collection(t.Generic[_CT]):
         make_str_tree(_chains, connect=True)
 
     def clean_loaded(self):
+        """
+        Clean currently loaded chain objects from :meth:`loaded`.
+        """
         self._chains = lxc.ChainList([])
 
     def load(
@@ -340,6 +414,24 @@ class Collection(t.Generic[_CT]):
         recover_tree: bool = True,
         load_structures: bool = True,
     ) -> lxc.ChainList:
+        """
+        Load chains into RAM and return.
+
+        :param chain_type: An integer-encoded chain type. See
+            :meth:`list_chain_type_codes` for related correspondence.
+        :param level: An optional topological level in the ancestral tree.
+        :param ids: A list of target IDs, which chains should be loaded.
+        :param keep: Keep loaded chains in :meth:`loaded`. Note that for this
+            to work, chains loaded here must be of the same type.
+        :param recover_tree: Recover parent-child relationships for loaded
+            chains. This will populate ``parent`` and ``children`` attributes
+            and also load any children into memory, too. This should be set
+            to ``True``; otherwise, loaded chains that initially had some
+            parent will have different IDs.
+        :param load_structures: Load structures associated with a chain
+            sequence. Valid only for :class:`ChainCollection`.
+        :return: A chain list of loaded chain objects.
+        """
         params = (chain_type,)
         statement = "SELECT data FROM chains WHERE chain_type=?"
         if level:
@@ -362,6 +454,11 @@ class Collection(t.Generic[_CT]):
         return chains
 
     def unload(self, chains: abc.Sequence[_CT] | abc.Sequence[str]) -> None:
+        """
+        Remove some chains from currently :meth:`loaded`.
+
+        :param chains: A sequence of chain objects or their identifiers.
+        """
         if not chains:
             return
         ids = chains if isinstance(chains[0], str) else lxc.ChainList(chains).ids
@@ -373,6 +470,18 @@ class Collection(t.Generic[_CT]):
         table: str = "chains",
         column: str = "id",
     ) -> None:
+        """
+        A general-purpose interface for removing data. It will remove rows from
+        a table in this collection if they contain `targets` in a specified
+        `column`. By default, removes chains from the collection. Removing a
+        chain from the ``chains`` table will also remove any associated data
+        from other tables and :meth:`unload` it, but not vice versa.
+
+        :param targets: A sequence of chain objects or values to remove.
+        :param table: Table name to remove the data from. See :meth:`list_tables`
+            for available tables.
+        :param column: A column name to remove the data from.
+        """
         if not targets:
             return
         if isinstance(targets[0], (lxc.Chain, lxc.ChainSequence, lxc.ChainStructure)):
@@ -391,6 +500,14 @@ class Collection(t.Generic[_CT]):
         vs: abc.Iterable[CalcRes],
         miscalculated: bool = False,
     ) -> None:
+        """
+        Add variables' calculation results.
+
+        :param vs: An iterable of over tuples produced by
+            :meth:`lXtractor.variables.manager.Manager.calculate`.
+        :param miscalculated: If ``True``, adds only successfully calculated
+            variables.
+        """
         existing = self.get_ids()
         vs = filter(lambda x: x[0].id in existing, vs)
         if not miscalculated:
@@ -424,6 +541,12 @@ class Collection(t.Generic[_CT]):
         self,
         paths: abc.Iterable[Path | str | PathLike],
     ) -> None:
+        """
+        Link chains to existing paths in the filesystem. This method will
+        automatically find and link any embedded child segments and structures.
+
+        :param paths: An iterable over paths to stored chain objects.
+        """
         existing_ids = self.get_ids()
 
         paths = filter(lambda x: x.exists() and x.is_dir(), map(Path, paths))
