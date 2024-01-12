@@ -7,6 +7,8 @@ lXtractor/resources/*
 !lXtractor/resources/all21.msgpack
 !lXtractor/resources/default_config.json
 !lXtractor/resources/user_config.json
+!lXtractor/resources/collection_config.json
+!lXtractor/resources/collection_user_config.json
 tok.txt
 todo.md
 *.ipynb

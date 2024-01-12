@@ -414,6 +414,8 @@ class Collection(t.Generic[_CT]):
         recover_tree: bool = True,
         load_structures: bool = True,
     ) -> lxc.ChainList:
+        # TODO: add "recover" call if `recover_tree=False` and update docs
+
         """
         Load chains into RAM and return.
 

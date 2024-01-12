@@ -4,6 +4,7 @@ A module encompassing various settings of lXtractor objects.
 from __future__ import annotations
 
 import json
+import typing as t
 from collections import UserDict, abc
 from contextlib import contextmanager
 from copy import deepcopy
@@ -265,7 +266,7 @@ class Config(UserDict):
             json.dump({}, f, indent=4)
 
     def update_with(
-        self, other: abc.Mapping[str, abc.Mapping[str, list[str] | str | float]] | Path
+        self, other: abc.Mapping[str, t.Any] | Path
     ):
         if isinstance(other, Path):
             with other.open() as f:
@@ -273,7 +274,10 @@ class Config(UserDict):
         else:
             for k, v in other.items():
                 if k in self:
-                    self[k].update(v)
+                    if isinstance(self[k], abc.Mapping) and isinstance(v, abc.Mapping):
+                        self[k].update(v)
+                    else:
+                        self[k] = v
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.data})"

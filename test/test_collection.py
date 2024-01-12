@@ -11,6 +11,8 @@ from lXtractor.collection import (
     ChainCollection,
     StructureCollection,
 )
+from lXtractor.collection_constructor import ConstructorConfig
+from lXtractor.core.exceptions import MissingData
 from lXtractor.variables import SeqEl
 
 GET_TABLE_NAMES = """SELECT name FROM sqlite_master WHERE type='table';"""
@@ -203,7 +205,7 @@ def test_link(cls, chain_sequences, chain_structures, chains):
 
     # 4. Test for updating behavior
     with tempfile.TemporaryDirectory() as tmpdir:
-        paths = list(io.write((cs[0], ), Path(tmpdir)))
+        paths = list(io.write((cs[0],), Path(tmpdir)))
         col.link(paths)
         df = col.get_table("paths", as_df=True)
         sub = df.loc[df.chain_id == cs[0].id, "chain_path"]
@@ -257,3 +259,20 @@ def test_update_variables(chain_sequences, set_calculated):
     row = df[df.variable_id == v2.id].iloc[0]
     assert row.variable_value == "Peek"
     assert row.variable_calculated == set_calculated
+
+
+def test_constructor_config():
+    cfg = ConstructorConfig(source="SIFTS")
+    assert "references" in cfg.list_fields()
+    assert "references" in cfg.list_missing_fields()
+    assert cfg["source"] == "SIFTS"
+
+    with pytest.raises(MissingData):
+        cfg.verify()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cfg_path = Path(tmpdir) / "config.json"
+        cfg.save(cfg_path)
+
+        _cfg = ConstructorConfig(user_config_path=cfg_path)
+        assert cfg == _cfg

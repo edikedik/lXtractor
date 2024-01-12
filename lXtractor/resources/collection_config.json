@@ -1,0 +1,12 @@
+{
+  "batch_size": "auto",
+  "collection_type": null,
+  "max_proc": -1,
+  "output_dir": "./collection",
+  "parallel_backend": "multiprocessing",
+  "references": null,
+  "referencing_method": null,
+  "seq_dir": "./sequences",
+  "str_dir": "./structures",
+  "source": null
+}
