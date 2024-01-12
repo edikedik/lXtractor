@@ -368,7 +368,7 @@ class ChainStructure:
         return len(self) == 0
 
     @property
-    def ligands(self) -> list[Ligand]:
+    def ligands(self) -> tuple[Ligand, ...]:
         """
         :return: A list of connected ligands.
         """

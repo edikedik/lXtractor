@@ -937,7 +937,6 @@ class ChainSequence(lxs.Segment):
         :param base_dir: A path to a dump dir.
         :param search_children: Recursively search for child segments and
             populate the :attr:`children`
-        :param dump_names: A container (dataclass) with filenames.
         :return: Initialized chain sequence.
         """
         files = get_files(base_dir)
