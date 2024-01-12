@@ -1,7 +1,10 @@
-lXtractor.protocols module
---------------------------
+lXtractor.protocols package
+===========================
 
-.. automodule:: lXtractor.protocols
+lXtractor.protocols.superpose module
+------------------------------------
+
+.. automodule:: lXtractor.protocols.superpose
    :members:
    :undoc-members:
    :show-inheritance:

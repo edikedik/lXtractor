@@ -5,8 +5,9 @@ lXtractor package
    :maxdepth: 5
 
    lXtractor.core
-   lXtractor.core.chain
+   lXtractor.chain
    lXtractor.ext
    lXtractor.util
    lXtractor.variables
    lXtractor.protocols
+   lXtractor.collection
