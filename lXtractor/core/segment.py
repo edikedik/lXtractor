@@ -441,8 +441,9 @@ class Segment(abc.Sequence[NamedTupleT]):
         )
 
     def __hash__(self):
-        seqs = tuple(tuple(x) for x in self)
-        return hash((self.start, self.end, self.name, seqs, tuple(self.meta.items())))
+        return hash(self.id)
+        # seqs = tuple(tuple(x) for x in self)
+        # return hash((self.start, self.end, self.name, seqs, tuple(self.meta.items())))
 
     def __rshift__(self, idx: int) -> Segment:
         if self.is_empty:

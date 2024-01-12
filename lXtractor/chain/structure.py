@@ -246,7 +246,8 @@ class ChainStructure:
         return False
 
     def __hash__(self) -> int:
-        return hash(self.seq) + hash(self.structure)
+        return hash(self.id)
+        # return hash(self.seq) + hash(self.structure)
 
     @property
     def chain_id(self) -> str:

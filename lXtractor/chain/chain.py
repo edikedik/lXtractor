@@ -107,6 +107,9 @@ class Chain:
             )
         return False
 
+    def __hash__(self) -> int:
+        return hash(self.id)
+
     def _make_id(self) -> str:
         parent = "" if self.parent is None else f"<-({self.parent.id})"
         return f"Chain({self.seq.id_strip_parents()}){parent}"
