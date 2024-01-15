@@ -3,7 +3,7 @@ from tempfile import NamedTemporaryFile
 
 import pytest
 from pyhmmer.easel import DigitalSequence, TextMSA
-from pyhmmer.plan7 import HMMFile
+from pyhmmer.plan7 import HMMFile, HMM
 
 from lXtractor.chain import ChainStructure, ChainSequence
 from lXtractor.core.exceptions import MissingData
@@ -22,11 +22,11 @@ def test_init_multiple(pkinase_hmm_path):
         print(text, file=f)
         f.seek(0)
         hmm_file = HMMFile(f.name)
-        hmms = list(PyHMMer.from_multiple(hmm_file))
+        hmms = list(PyHMMer.from_hmm_collection(hmm_file))
         assert len(hmms) == 2
-        hmms = list(PyHMMer.from_multiple(Path(f.name)))
+        hmms = list(PyHMMer.from_hmm_collection(Path(f.name)))
         assert len(hmms) == 2
-        hmms = list(PyHMMer.from_multiple(hmms[0].hmm))
+        hmms = list(PyHMMer.from_hmm_collection(hmms[0].hmm))
         assert len(hmms) == 1
 
 
@@ -87,3 +87,11 @@ def test_align(human_src_seq, pkinase_hmm_path):
     obtained_names = [x.decode("utf-8") for x in msa.names]
     expected_names = [cs.name, seq_name, str(hash(seq_str))]
     assert obtained_names == expected_names
+
+
+def test_from_msa():
+    seqs = [("seq1", "AAAAA"), ("seq2", "AAA-A")]
+    pyhmm = PyHMMer.from_msa(seqs, "test", "amino")
+    # successfully created an HMM with five nodes
+    assert isinstance(pyhmm.hmm, HMM)
+    assert pyhmm.hmm.M == 5

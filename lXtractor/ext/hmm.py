@@ -1,6 +1,8 @@
 """
 Wrappers around PyHMMer for convenient annotation of domains and families.
 """
+from __future__ import annotations
+
 import gzip
 import logging
 import typing as t
@@ -16,6 +18,8 @@ from pyhmmer.easel import (
     TextSequence,
     DigitalSequenceBlock,
     TextMSA,
+    DigitalMSA,
+    Alphabet,
 )
 from pyhmmer.plan7 import (
     HMM,
@@ -25,10 +29,13 @@ from pyhmmer.plan7 import (
     Alignment,
     Domain,
     TraceAligner,
+    Builder,
+    Background,
 )
 
-from lXtractor.core.base import AbstractResource
 from lXtractor.chain import ChainSequence, ChainStructure, Chain
+from lXtractor.core import Alignment as lXAlignment
+from lXtractor.core.base import AbstractResource
 from lXtractor.core.exceptions import MissingData
 from lXtractor.util import fetch_to_file
 
@@ -76,6 +83,53 @@ def _enumerate_numbering(
         yield seq_i, hmm_i
 
 
+def _get_alphabet(alphabet: Alphabet | str):
+    if isinstance(alphabet, str):
+        if alphabet.lower() == "amino":
+            alphabet = Alphabet.amino()
+        elif alphabet.lower() == "dna":
+            alphabet = Alphabet.dna()
+        elif alphabet.lower() == "rna":
+            alphabet = Alphabet.rna()
+        else:
+            raise ValueError(f"Invalid alphabet type {alphabet}.")
+    return alphabet
+
+
+def digitize_seq(obj: t.Any, alphabet: Alphabet | str = "amino") -> DigitalSequence:
+    """
+    :param obj: A `Chain*`-type object or string or a tuple of (name, _seq).
+        A sequence of this object must be compatible with the alphabet of
+        the HMM model.
+    :param alphabet: An alphabet type the sequence corresponds to. Can be an
+        initialized PyHMMer alphabet or a string "amino", "dna", or "rna".
+    :return: A digitized sequence compatible with PyHMMer.
+    """
+    alphabet = _get_alphabet(alphabet)
+
+    match obj:
+        case DigitalSequence():
+            return obj
+        case TextSequence():
+            return obj.digitize(alphabet)
+        case str():
+            _id = str(hash(obj))
+            accession, name, text = _id, _id, obj
+        case [str(), str()]:
+            accession, name, text = obj[0], obj[0], obj[1]
+        case ChainSequence():
+            accession, name, text = obj.id, obj.name, obj.seq1
+        case ChainStructure() | Chain():
+            accession, name, text = obj.id, obj.id, obj.seq.seq1
+        case _:
+            raise TypeError(f"Unsupported sequence type {type(obj)}")
+    return TextSequence(
+        sequence=text,
+        name=bytes(name, encoding="utf-8"),
+        accession=bytes(accession, encoding="utf-8"),
+    ).digitize(alphabet)
+
+
 class PyHMMer:
     """
     A basis pyhmmer interface aimed at domain extraction.
@@ -103,16 +157,51 @@ class PyHMMer:
         self.hits_: TopHits | None = None
 
     @classmethod
-    def from_multiple(cls, hmm: _HmmInpT, **kwargs) -> abc.Generator["PyHMMer"]:
+    def from_hmm_collection(cls, hmm: _HmmInpT, **kwargs) -> abc.Generator[t.Self]:
         """
         Split HMM collection and initialize a :class:`PyHMMer` instance from
         each HMM model.
 
         :param hmm: A path to HMM file, opened HMMFile handle, or parsed HMM.
         :param kwargs: Passed to the class constructor.
-        :return:
+        :return: A generator over :class:`PyHMMer` instances created from the
+            provided HMM models.
         """
         yield from (cls(inp, **kwargs) for inp in iter_hmm(hmm))
+
+    @classmethod
+    def from_msa(
+        cls,
+        msa: abc.Iterable[tuple[str, str] | str | _ChainT] | lXAlignment,
+        name: str | bytes,
+        alphabet: Alphabet | str,
+        **kwargs,
+    ) -> t.Self:
+        """
+        Create a :class:`PyHMMer` instance from a multiple sequence alignment.
+
+        :param msa: An iterable over sequences.
+        :param name: The HMM model's name.
+        :param alphabet: An alphabet to use to build the HMM model.
+            See :func:`digitize_seq` for available options.
+        :param kwargs: Passed to :class:`DigitalMSA` of ``PyHMMer`` that serves
+            as the basis for creating an HMM model.
+        :return: A new :class:`PyHMMer` instance initialized with the HMM model
+            built here.
+        """
+        if isinstance(name, str):
+            name = bytes(name, "utf-8")
+        alphabet = _get_alphabet(alphabet)
+        msa_d = DigitalMSA(
+            alphabet,
+            name,
+            sequences=list(map(digitize_seq, msa)),
+            **kwargs,
+        )
+        builder = Builder(alphabet)
+        background = Background(alphabet)
+        hmm, _, _ = builder.build_msa(msa_d, background)
+        return cls(hmm)
 
     def init_pipeline(self, **kwargs) -> Pipeline:
         """
@@ -129,25 +218,7 @@ class PyHMMer:
             the HMM model.
         :return: A digitized sequence compatible with PyHMMer.
         """
-        match obj:
-            case DigitalSequence():
-                return obj
-            case str():
-                _id = str(hash(obj))
-                accession, name, text = _id, _id, obj
-            case [str(), str()]:
-                accession, name, text = obj[0], obj[0], obj[1]
-            case ChainSequence():
-                accession, name, text = obj.id, obj.name, obj.seq1
-            case ChainStructure() | Chain():
-                accession, name, text = obj.id, obj.id, obj.seq.seq1
-            case _:
-                raise TypeError(f"Unsupported sequence type {type(obj)}")
-        return TextSequence(
-            sequence=text,
-            name=bytes(name, encoding="utf-8"),
-            accession=bytes(accession, encoding="utf-8"),
-        ).digitize(self.hmm.alphabet)
+        return digitize_seq(obj, self.hmm.alphabet)
 
     def _convert_to_seq_block(self, seqs: abc.Iterable[_SeqT]) -> DigitalSequenceBlock:
         return DigitalSequenceBlock(self.hmm.alphabet, map(self.convert_seq, seqs))
