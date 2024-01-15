@@ -7,7 +7,6 @@ from io import TextIOBase
 from pathlib import Path
 
 import pandas as pd
-from typing_extensions import Self
 
 from lXtractor.chain import ChainSequence, ChainStructure
 from lXtractor.chain.base import topo_iter
@@ -133,11 +132,11 @@ class Chain:
         self._id = self._make_id()
 
     @property
-    def parent(self) -> Self | None:
+    def parent(self) -> t.Self | None:
         return self._parent
 
     @parent.setter
-    def parent(self, value: Self | None):
+    def parent(self, value: t.Self | None):
         if not isinstance(value, (type(self), type(None))):
             raise TypeError(
                 f"Invalid type {type(value)}. "
@@ -201,7 +200,7 @@ class Chain:
         """
         return topo_iter(self, lambda x: x.children)
 
-    def filter_children(self, pred: FilterT[Chain], inplace: bool = False) -> Self:
+    def filter_children(self, pred: FilterT[Chain], inplace: bool = False) -> t.Self:
         """
         Filter children using some predicate.
 
@@ -223,7 +222,7 @@ class Chain:
             parent=self.parent,
         )
 
-    def apply_children(self, fn: ApplyT[Chain], inplace: bool = False) -> Self:
+    def apply_children(self, fn: ApplyT[Chain], inplace: bool = False) -> t.Self:
         """
         Apply some function to children.
 
@@ -247,7 +246,7 @@ class Chain:
 
     def filter_structures(
         self, pred: FilterT[ChainStructure], inplace: bool = False
-    ) -> Self:
+    ) -> t.Self:
         """
         Filter chain :attr:`structures`.
 
@@ -269,7 +268,7 @@ class Chain:
 
     def apply_structures(
         self, fn: ApplyT[ChainStructure], inplace: bool = False
-    ) -> Self:
+    ) -> t.Self:
         """
         Apply some function to :attr:`structures`.
 
@@ -288,14 +287,14 @@ class Chain:
     @t.overload
     def from_seq(
         cls, inp: Path | TextIOBase, read_method: SeqReader = read_fasta
-    ) -> ChainList[Self]:
+    ) -> ChainList[t.Self]:
         ...
 
     @classmethod
     @t.overload
     def from_seq(
         cls, inp: str | ChainSequence, read_method: SeqReader = read_fasta
-    ) -> Self:
+    ) -> t.Self:
         ...
 
     @classmethod
@@ -304,7 +303,7 @@ class Chain:
         cls,
         inp: abc.Iterable[str] | tuple[str, str],
         read_method: SeqReader = read_fasta,
-    ) -> Self | ChainList[Self]:
+    ) -> t.Self | ChainList[t.Self]:
         ...
 
     @classmethod
@@ -317,7 +316,7 @@ class Chain:
         | TextIOBase
         | abc.Iterable[str],
         read_method: SeqReader = read_fasta,
-    ) -> Self | ChainList[Self]:
+    ) -> t.Self | ChainList[t.Self]:
         # TODO: consider removing and passing the functionality to init
         """
 
@@ -374,7 +373,7 @@ class Chain:
         return c
 
     @classmethod
-    def make_empty(cls) -> Self:
+    def make_empty(cls) -> t.Self:
         return cls(ChainSequence.make_empty())
 
     def write(

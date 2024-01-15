@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 from more_itertools import first_true, always_reversible, split_into
 from toolz import valmap, valfilter, keyfilter
-from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
 from lXtractor.core.alignment import Alignment
@@ -116,7 +115,7 @@ class ChainSequence(lxs.Segment):
         return list(range(self.start, self.end + 1))
 
     @property
-    def seq(self) -> Self:
+    def seq(self) -> t.Self:
         """
         This property exists for functionality relying on the `.seq` attribute.
 
@@ -180,7 +179,7 @@ class ChainSequence(lxs.Segment):
         self.meta[DefaultConfig["metadata"]["name"]] = self.name
         self.children: ChainList[ChainSequence] = _wrap_children(self.children)
 
-    def rename(self, name: str) -> Self:
+    def rename(self, name: str) -> t.Self:
         """
         Rename this sequence by modifying the :attr:`name`.
 
@@ -657,7 +656,7 @@ class ChainSequence(lxs.Segment):
         else:
             yield from iter(ChainList([]))
 
-    def apply_children(self, fn: ApplyT[ChainSequence], inplace: bool = False) -> Self:
+    def apply_children(self, fn: ApplyT[ChainSequence], inplace: bool = False) -> t.Self:
         """
         Apply some function to children.
 
@@ -684,7 +683,7 @@ class ChainSequence(lxs.Segment):
 
     def filter_children(
         self, pred: FilterT[ChainSequence], inplace: bool = False
-    ) -> Self:
+    ) -> t.Self:
         """
         Filter children using some predicate.
 
@@ -715,7 +714,7 @@ class ChainSequence(lxs.Segment):
         inplace: bool = False,
         preserve_children: bool = False,
         apply_to_children: bool = False,
-    ) -> Self:
+    ) -> t.Self:
         """
         Apply some function to map/sequence in this chain sequence.
 
@@ -904,7 +903,7 @@ class ChainSequence(lxs.Segment):
         df: Path | pd.DataFrame,
         name: t.Optional[str] = None,
         meta: dict[str, t.Any] | None = None,
-    ) -> Self:
+    ) -> t.Self:
         """
         Init sequence from a data frame.
 
@@ -930,7 +929,7 @@ class ChainSequence(lxs.Segment):
         base_dir: Path,
         *,
         search_children: bool = False,
-    ) -> Self:
+    ) -> t.Self:
         """
         Initialize chain sequence from dump created using :meth:`write`.
 

@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 from biotite import structure as bst
 from more_itertools import unzip
-from typing_extensions import Self
 
 from lXtractor.chain import ChainList, ChainSequence
 from lXtractor.chain.base import topo_iter
@@ -288,11 +287,11 @@ class ChainStructure:
         self._id = self._make_id()
 
     @property
-    def parent(self) -> Self | None:
+    def parent(self) -> t.Self | None:
         return self._parent
 
     @parent.setter
-    def parent(self, value: Self | None):
+    def parent(self, value: t.Self | None):
         if not isinstance(value, (type(self), type(None))):
             raise TypeError(
                 f"Parent must be of the same type {type(self)}. " f"Got {type(value)}"
@@ -390,7 +389,7 @@ class ChainStructure:
         """
         return cls(None)
 
-    def rm_solvent(self, copy: bool = False) -> Self:
+    def rm_solvent(self, copy: bool = False) -> t.Self:
         """
         Remove solvent "residues" from this structure.
 
@@ -634,7 +633,7 @@ class ChainStructure:
         """
         return topo_iter(self, lambda x: x.children)
 
-    def apply_children(self, fn: ApplyT[ChainStructure], inplace: bool = False) -> Self:
+    def apply_children(self, fn: ApplyT[ChainStructure], inplace: bool = False) -> t.Self:
         """
         Apply some function to children.
 
@@ -659,7 +658,7 @@ class ChainStructure:
 
     def filter_children(
         self, pred: FilterT[ChainStructure], inplace: bool = False
-    ) -> Self:
+    ) -> t.Self:
         """
         Filter children using some predicate.
 
@@ -689,7 +688,7 @@ class ChainStructure:
         *,
         search_children: bool = False,
         **kwargs,
-    ) -> Self:
+    ) -> t.Self:
         """
         Read the chain structure from a file disk dump.
 

@@ -80,7 +80,10 @@ def write_fasta(inp: abc.Iterable[tuple[str, str]], out: Path | SupportsWrite) -
     elif isinstance(out, SupportsWrite):
         out.write(data)
     else:
-        raise TypeError(f'Unsupported output type {type(out)}')
+        try:
+            out.write(data)
+        except Exception as e:
+            raise TypeError(f'Unsupported output type {type(out)}') from e
 
 
 def mafft_add(

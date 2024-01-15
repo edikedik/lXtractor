@@ -14,7 +14,6 @@ from itertools import combinations, filterfalse, chain
 import networkx as nx
 from more_itertools import always_reversible, powerset, take, nth
 from tqdm.auto import tqdm
-from typing_extensions import Self
 
 from lXtractor.core.base import Ord, NamedTupleT
 from lXtractor.core.config import DefaultConfig
@@ -131,8 +130,8 @@ class Segment(abc.Sequence[NamedTupleT]):
         end: int,
         name: str | None = None,
         seqs: dict[str, abc.Sequence[t.Any]] | None = None,
-        parent: Self | None = None,
-        children: abc.MutableSequence[Self] | None = None,
+        parent: t.Self | None = None,
+        children: abc.MutableSequence[t.Self] | None = None,
         meta: dict[str, t.Any] | None = None,
         variables: Variables | None = None,
     ):
@@ -245,11 +244,11 @@ class Segment(abc.Sequence[NamedTupleT]):
         self._id = self._make_id()
 
     @property
-    def parent(self) -> Self | None:
+    def parent(self) -> t.Self | None:
         return self._parent
 
     @parent.setter
-    def parent(self, parent: Self | None):
+    def parent(self, parent: t.Self | None):
         if not isinstance(parent, (type(self), type(None))):
             raise TypeError(
                 f"Parent must be of the same type {type(self)}. "
@@ -339,7 +338,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         ...
 
     @t.overload
-    def __getitem__(self, idx: slice) -> Self:
+    def __getitem__(self, idx: slice) -> t.Self:
         ...
 
     @t.overload
@@ -348,7 +347,7 @@ class Segment(abc.Sequence[NamedTupleT]):
 
     def __getitem__(
         self, idx: slice | int | str
-    ) -> NamedTupleT | Self | abc.Sequence[t.Any]:
+    ) -> NamedTupleT | t.Self | abc.Sequence[t.Any]:
         idx_py: int | slice
         if isinstance(idx, str):
             return self._seqs[idx]
@@ -547,7 +546,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         deep_copy: bool = True,
         handle_mode: str = "merge",
         sep: str = "&",
-    ) -> Self:
+    ) -> t.Self:
         """
         Overlap this segment with other over common indices.
 
@@ -616,7 +615,7 @@ class Segment(abc.Sequence[NamedTupleT]):
 
         return self.__class__(start, end, name=name, seqs=seqs, parent=self, meta=meta)
 
-    def overlap(self, start: int, end: int) -> Self:
+    def overlap(self, start: int, end: int) -> t.Self:
         """
         Create new segment from the current instance using overlapping boundaries.
 
@@ -631,7 +630,7 @@ class Segment(abc.Sequence[NamedTupleT]):
 
         return self.overlap_with(other, True, "self")
 
-    def sub_by(self, other: Segment, **kwargs) -> Self:
+    def sub_by(self, other: Segment, **kwargs) -> t.Self:
         """
         A specialized version of :meth:`overlap_with` used in cases
         where `other` is assumed to be a part of the current segment
@@ -653,7 +652,7 @@ class Segment(abc.Sequence[NamedTupleT]):
 
         return self.overlap_with(other, **kwargs)
 
-    def sub(self, start: int, end: int, **kwargs) -> Self:
+    def sub(self, start: int, end: int, **kwargs) -> t.Self:
         """
         Subset current segment using provided boundaries.
         Will create a new segment and call :meth:`sub_by`.

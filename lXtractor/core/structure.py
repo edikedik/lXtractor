@@ -19,7 +19,6 @@ import numpy.typing as npt
 import rustworkx as rx
 from more_itertools import unique_everseen
 from toolz import keyfilter
-from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
 from lXtractor.core.base import ResNameDict
@@ -391,7 +390,7 @@ class GenericStructure:
     @classmethod
     def make_empty(
         cls, structure_id: str = DefaultConfig["unknowns"]["structure_id"]
-    ) -> Self:
+    ) -> t.Self:
         """
         :param structure_id: (Optional) ID of the created array.
         :return: An instance with empty :meth:`array`.
@@ -406,7 +405,7 @@ class GenericStructure:
         structure_id: str = DefaultConfig["unknowns"]["structure_id"],
         altloc: bool | str = False,
         **kwargs,
-    ) -> Self:
+    ) -> t.Self:
         """
         Parse the atom array from the provided input and wrap it into the
         :class:`GenericStructure` object.
@@ -521,7 +520,7 @@ class GenericStructure:
         ligands: bool = True,
         reinit_ligands: bool = False,
         copy: bool = False,
-    ) -> Self:
+    ) -> t.Self:
         """
         Create a sub-structure potentially preserving connected :meth:`ligands`.
 
@@ -612,7 +611,7 @@ class GenericStructure:
         """
         return self.subset(~self.mask.solvent, ligands=True, copy=copy)
 
-    def split_chains(self, polymer: bool = False, **kwargs) -> abc.Iterator[Self]:
+    def split_chains(self, polymer: bool = False, **kwargs) -> abc.Iterator[t.Self]:
         """
         Split into separate chains. Splitting is done using
         :func:`biotite.structure.get_chain_starts`.
@@ -643,7 +642,7 @@ class GenericStructure:
             mask = a.chain_id == chain_id
             yield self.subset(mask, **kwargs)
 
-    def split_altloc(self, **kwargs) -> abc.Iterator[Self]:
+    def split_altloc(self, **kwargs) -> abc.Iterator[t.Self]:
         """
         Split into substructures based on altloc IDs. Atoms missing altloc
         annotations are distributed into every substructure. Thus, even if
@@ -672,7 +671,7 @@ class GenericStructure:
             m = no_alt_mask | (self.array.altloc_id == altloc)
             yield self.subset(m, **kwargs)
 
-    def extract_segment(self, start: int, end: int, chain_id: str, **kwargs) -> Self:
+    def extract_segment(self, start: int, end: int, chain_id: str, **kwargs) -> t.Self:
         """
         Create a sub-structure encompassing some continuous segment bounded by
         existing position boundaries.
@@ -723,7 +722,7 @@ class GenericStructure:
         pos: abc.Sequence[int],
         chain_ids: abc.Sequence[str] | str | None = None,
         **kwargs,
-    ) -> Self:
+    ) -> t.Self:
         """
         Extract specific positions from this structure.
 

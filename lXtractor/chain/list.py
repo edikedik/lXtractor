@@ -13,7 +13,6 @@ from itertools import chain, zip_longest, tee, groupby
 
 import pandas as pd
 from more_itertools import nth, peekable, unique_everseen
-from typing_extensions import Self
 
 import lXtractor.core.segment as lxs
 from lXtractor.chain.base import is_chain_type_iterable, is_chain_type
@@ -611,7 +610,7 @@ class ChainList(abc.MutableSequence[CT]):
 
     def drop_duplicates(
         self, key: abc.Callable[[CT], t.Hashable] | None = lambda x: x.id
-    ) -> Self:
+    ) -> t.Self:
         """
         :param key: A callable accepting the single element and returning some
             hashable object associated with that element.
@@ -623,7 +622,7 @@ class ChainList(abc.MutableSequence[CT]):
     def summary(self, **kwargs) -> pd.DataFrame:
         return pd.concat([c.summary(**kwargs) for c in self])
 
-    def groupby(self, key: abc.Callable[[CT], T]) -> abc.Iterator[tuple[T, Self]]:
+    def groupby(self, key: abc.Callable[[CT], T]) -> abc.Iterator[tuple[T, t.Self]]:
         for g, gg in groupby(self._chains, key):
             yield g, self.__class__([x[1] for x in gg])
 
