@@ -32,7 +32,7 @@ from lXtractor.util.seq import (
 )
 
 _Idx = t.Union[int, t.Tuple[int, ...]]
-T = t.TypeVar('T')
+T = t.TypeVar("T")
 
 
 class Alignment:
@@ -41,7 +41,7 @@ class Alignment:
     An MSA resource: a collection of aligned sequences.
     """
 
-    __slots__ = ('seqs', 'add_method', 'align_method', '_seqs_map')
+    __slots__ = ("seqs", "add_method", "align_method", "_seqs_map")
 
     def __init__(
         self,
@@ -62,13 +62,13 @@ class Alignment:
         self._verify()
 
     @property
-    def shape(self) -> t.Tuple[int, int]:
+    def shape(self) -> tuple[int, int]:
         """
         :return: (# sequences, # columns)
         """
         return len(self.seqs), len(self.seqs[0][1])
 
-    def __contains__(self, item: object) -> bool:
+    def __contains__(self, item: t.Any) -> bool:
         if isinstance(item, str):
             return item in self._seqs_map
         if isinstance(item, tuple):
@@ -102,9 +102,9 @@ class Alignment:
             case int() | slice():
                 return self.seqs[item]
             case _:
-                raise TypeError(f'Unsupported item type {type(item)}')
+                raise TypeError(f"Unsupported item type {type(item)}")
 
-    def __eq__(self, other: object) -> bool:
+    def __eq__(self, other: t.Any) -> bool:
         if not isinstance(other, Alignment):
             return False
         return self.seqs == other.seqs
@@ -117,11 +117,11 @@ class Alignment:
 
     def _verify(self) -> None:
         if len(self.seqs) < 1:
-            raise InitError('Alignment must contain at least one sequence')
+            raise InitError("Alignment must contain at least one sequence")
         lengths = set(map(len, self._seqs_map.values()))
         if len(lengths) > 1:
             raise InitError(
-                f'Expected all _seqs to have the same length, got {lengths}'
+                f"Expected all _seqs to have the same length, got {lengths}"
             )
 
     def itercols(
@@ -140,10 +140,10 @@ class Alignment:
         cols: abc.Iterator[list[str]] | abc.Iterator[str]
         cols = chunked(interleave(*map(op.itemgetter(1), self.seqs)), len(self))
         if join:
-            cols = map(''.join, cols)
+            cols = map("".join, cols)
         return cols
 
-    def slice(self, start: int, stop: int, step: t.Optional[int] = None) -> Alignment:
+    def slice(self, start: int, stop: int, step: int | None = None) -> t.Self:
         """
         Slice alignment columns.
 
@@ -175,15 +175,15 @@ class Alignment:
 
         def slice_one(item):
             header, seq = item
-            return header, ''.join(
+            return header, "".join(
                 islice_extended(seq, start - 1 if start > 0 else start, stop, step)
             )
 
-        return Alignment(map(slice_one, self.seqs))
+        return self.__class__(map(slice_one, self.seqs))
 
     def align(
         self, seq: abc.Iterable[tuple[str, str]] | tuple[str, str] | Alignment
-    ) -> Alignment:
+    ) -> t.Self:
         """
         Align (add) sequences to this alignment via :attr:`add_method`.
 
@@ -208,10 +208,10 @@ class Alignment:
             if is_pair(seq):
                 seq = [seq]
             else:
-                raise ValueError(f'Expected two-element tuple, got {len(seq)} elements')
+                raise ValueError(f"Expected two-element tuple, got {len(seq)} elements")
 
         seqs = self.add_method(self, seq)
-        return Alignment(seqs)
+        return self.__class__(seqs)
 
     def realign(self):
         """
@@ -219,7 +219,7 @@ class Alignment:
 
         :return: A new :class:`Alignment` object with realigned sequences.
         """
-        return Alignment(
+        return self.__class__(
             self.align_method(self.seqs),
             align_method=self.align_method,
             add_method=self.add_method,
@@ -228,7 +228,7 @@ class Alignment:
     def add(
         self,
         other: abc.Iterable[tuple[str, str]] | tuple[str, str] | Alignment,
-    ) -> Alignment:
+    ) -> t.Self:
         """
         Add sequences to existing ones using :meth:`add`.
         This is similar to :meth:`align` but automatically adds
@@ -252,7 +252,7 @@ class Alignment:
         item: str | tuple[str, str] | t.Iterable[str] | t.Iterable[tuple[str, str]],
         error_if_missing: bool = True,
         realign: bool = False,
-    ) -> Alignment:
+    ) -> t.Self:
         """
         Remove a sequence or collection of sequences.
 
@@ -292,15 +292,15 @@ class Alignment:
         if error_if_missing:
             for _x in items:
                 if _x not in self:
-                    raise MissingData(f'No such item {_x} to remove')
+                    raise MissingData(f"No such item {_x} to remove")
 
         getter = op.itemgetter(0) if isinstance(items[0], str) else identity
         seqs = filter(lambda x: getter(x) not in items, self.seqs)
         if realign:
-            return Alignment(self.align_method(seqs))
-        return Alignment(seqs)
+            return self.__class__(self.align_method(seqs))
+        return self.__class__(seqs)
 
-    def filter(self, fn: SeqFilter) -> Alignment:
+    def filter(self, fn: SeqFilter) -> t.Self:
         """
         Filter alignment sequences.
 
@@ -309,9 +309,9 @@ class Alignment:
         :return: A new :class:`Alignment` object with
             filtered sequences.
         """
-        return Alignment(filter(fn, self.seqs))
+        return self.__class__(filter(fn, self.seqs))
 
-    def filter_gaps(self, max_frac: float = 1.0, dim: int = 0) -> Alignment:
+    def filter_gaps(self, max_frac: float = 1.0, dim: int = 0) -> t.Self:
         """
         Filter sequences or alignment columns
         having >= `max_frac` of gaps.
@@ -342,7 +342,7 @@ class Alignment:
         """
         if dim == 0:
             ids, _ = partition_gap_sequences(self.seqs, max_frac)
-            return Alignment(
+            return self.__class__(
                 ((x, self._seqs_map[x]) for x in ids),
                 add_method=self.add_method,
                 align_method=self.align_method,
@@ -351,14 +351,14 @@ class Alignment:
             seqs, _ = remove_gap_columns(
                 map(op.itemgetter(1), self.seqs), max_gaps=max_frac
             )
-            return Alignment(
+            return self.__class__(
                 zip(map(op.itemgetter(0), self.seqs), seqs),
                 add_method=self.add_method,
                 align_method=self.align_method,
             )
-        raise ValueError(f'Invalid dim {dim}')
+        raise ValueError(f"Invalid dim {dim}")
 
-    def map(self, fn: SeqMapper) -> Alignment:
+    def map(self, fn: SeqMapper) -> t.Self:
         """
         Map a function to sequences.
 
@@ -369,7 +369,7 @@ class Alignment:
         :param fn: A callable accepting and returning a sequence.
         :return: A new :class:`Alignment` object.
         """
-        return Alignment(map(fn, self.seqs))
+        return self.__class__(map(fn, self.seqs))
 
     @classmethod
     def read(
@@ -378,7 +378,7 @@ class Alignment:
         read_method: SeqReader = read_fasta,
         add_method: AddMethod = mafft_add,
         align_method: AlignMethod = mafft_align,
-    ) -> Alignment:
+    ) -> t.Self:
         """
         Read sequences and create an alignment.
 
@@ -426,7 +426,7 @@ class Alignment:
         read_method: SeqReader = read_fasta,
         add_method: AddMethod = mafft_add,
         align_method: AlignMethod = mafft_align,
-    ) -> Alignment:
+    ) -> t.Self:
         """
         A shortcut combining :meth:`read` and :meth:`make`.
 
@@ -451,7 +451,9 @@ class Alignment:
             align_method=align_method,
         )
 
-    def write(self, out: Path | SupportsWrite, write_method: SeqWriter = write_fasta):
+    def write(
+        self, out: Path | SupportsWrite, write_method: SeqWriter = write_fasta
+    ) -> None:
         """
         Write an alignment.
 
@@ -463,5 +465,5 @@ class Alignment:
         write_method(self.seqs, out)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError
