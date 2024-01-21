@@ -1,11 +1,13 @@
 {
+  "annotator": "PyHMMer",
   "batch_size": "auto",
+  "collection_name": "auto",
   "collection_type": null,
+  "max_fetch_threads": 20,
   "max_proc": -1,
   "output_dir": "./collection",
   "parallel_backend": "multiprocessing",
   "references": null,
-  "referencing_method": null,
   "seq_dir": "./sequences",
   "str_dir": "./structures",
   "source": null

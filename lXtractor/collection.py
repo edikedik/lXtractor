@@ -63,7 +63,8 @@ class Collection(t.Generic[_CT]):
         self._loc = loc if loc == ":memory:" else Path(loc)
         _create_chain_converters()
         self._db = self._connect()
-        self._setup()
+        if not (isinstance(self._loc, Path) and self._loc.exists()):
+            self._setup()
         self._chains: lxc.ChainList[_CT] = lxc.ChainList([])
 
     @property

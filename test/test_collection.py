@@ -11,7 +11,7 @@ from lXtractor.collection import (
     ChainCollection,
     StructureCollection,
 )
-from lXtractor.collection_constructor import ConstructorConfig
+from lXtractor.collection_constructor import ConstructorConfig, CollectionConstructor
 from lXtractor.core.exceptions import MissingData
 from lXtractor.variables import SeqEl
 
@@ -276,3 +276,42 @@ def test_constructor_config():
 
         _cfg = ConstructorConfig(user_config_path=cfg_path)
         assert cfg == _cfg
+
+
+@pytest.mark.parametrize(
+    "inp",
+    [
+        ("SIFTS", "chain", "str"),
+        ("UniProt", "seq", "str"),
+        ("PDB", "structure", "chain"),
+        ("AF2", "structure", "chain"),
+        (([], None, None), "sequence", "chain"),
+        ((None, [], None), "structure", "chain"),
+        (([], [], []), "chain", "str"),
+    ],
+)
+@pytest.mark.parametrize("references", [(), None])
+def test_constructor_init(inp, references):
+    source, valid_ct, invalid_ct = inp
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+        dirs = [tmpdir / "output", tmpdir / "seq_dir", tmpdir / "pdb_dir"]
+        kws = dict(
+            source=source,
+            collection_type=valid_ct,
+            output_dir=dirs[0],
+            seq_dir=dirs[1],
+            str_dir=dirs[2],
+            references=references,
+        )
+        config = ConstructorConfig(**kws)
+        if references is None:
+            with pytest.raises(MissingData):
+                CollectionConstructor(config)
+        else:
+            constructor = CollectionConstructor(config)
+            assert all(x.exists() and x.is_dir() for x in dirs)
+            assert isinstance(constructor.collection, Collection)
+            kws["collection_type"] = invalid_ct
+            with pytest.raises(ValueError):
+                CollectionConstructor(ConstructorConfig(**kws))
