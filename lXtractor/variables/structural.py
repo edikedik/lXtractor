@@ -12,6 +12,7 @@ from itertools import starmap
 import biotite.structure as bst
 import numpy as np
 from more_itertools import unique_justseen
+from scipy.spatial import KDTree
 from toolz import pipe
 
 from lXtractor.core.config import DefaultConfig
@@ -21,6 +22,7 @@ from lXtractor.variables.base import (
     StructureVariable,
     AggFns,
     MappingT,
+    RT,
 )
 from lXtractor.variables.util import (
     residue_mask,
@@ -47,6 +49,7 @@ __all__ = (
     "ClosestLigandContactsCount",
     "ClosestLigandNames",
     "ClosestLigandDist",
+    "Contacts"
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -590,6 +593,35 @@ class ClosestLigandDist(StructureVariable):
         d = AggFns[self.agg_lig](d, axis=0)
         d = AggFns[self.agg_res](d)
         return d
+
+
+class Contacts(StructureVariable):
+    __slots__ = ("p",)
+
+    def __init__(self, p: int):
+        self.p = p
+
+    @property
+    def rtype(self) -> t.Type[str]:
+        return str
+
+    def calculate(self, obj: GenericStructure, mapping: MappingT | None = None) -> str:
+        a = obj.array
+        m = residue_mask(self.p, obj.array, mapping)
+        p = a[m][0].res_id
+        r = DefaultConfig["contacts"]["non-covalent"][1]
+
+        kdtree = KDTree(a.coord)
+        hit_idx = np.unique(np.hstack(kdtree.query_ball_point(a[m].coord, r)))
+        hit_pos = list(set(a[hit_idx].res_id) - {p})
+
+        if mapping is not None:
+            m_rev = {v: k for k, v in mapping.items()}
+            hit_pos = list(
+                filter(lambda x: x is not None, (m_rev.get(p, None) for p in hit_pos))
+            )
+
+        return ",".join(map(str, sorted(hit_pos)))
 
 
 if __name__ == "__main__":

@@ -219,6 +219,12 @@
     "parent_id": "ParentID",
     "start": "Start"
   },
+  "contacts": {
+    "non-covalent": [
+      0.0,
+      5.5
+    ]
+  },
   "filenames": {
     "meta": "meta.tsv",
     "segments_dir": "segments",
