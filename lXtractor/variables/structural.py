@@ -605,7 +605,7 @@ class Contacts(StructureVariable):
     covered by this `mapping`.
 
     .. note::
-        `r` is defined by ``DefaultConfig["contacts"]["non-covalent"][1]``.
+        ``r`` is defined by ``DefaultConfig["contacts"]["non-covalent"][1]``.
     """
     __slots__ = ("p",)
 
