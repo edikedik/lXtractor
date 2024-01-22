@@ -596,6 +596,17 @@ class ClosestLigandDist(StructureVariable):
 
 
 class Contacts(StructureVariable):
+    """
+    Uses `KDTree` to find atoms within the ``r`` distance threshold of those
+    defined by target position ``p``. Positions these atoms correspond to
+    are returned as a ","-separated string.
+
+    If `mapping` is provided, contact positions will be filtered to those
+    covered by this `mapping`.
+
+    .. note::
+        `r` is defined by ``DefaultConfig["contacts"]["non-covalent"][1]``.
+    """
     __slots__ = ("p",)
 
     def __init__(self, p: int):
