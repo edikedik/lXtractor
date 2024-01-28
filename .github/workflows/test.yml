@@ -64,7 +64,7 @@ jobs:
           python-version: '3.10'
 
       - name: Install coveralls
-        run: pip install coveralls
+        run: pip install coveralls[toml]
 
       - name: Download coverage data for Python 3.10
         uses: actions/download-artifact@v3
