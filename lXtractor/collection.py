@@ -63,8 +63,7 @@ class Collection(t.Generic[_CT]):
         self._loc = loc if loc == ":memory:" else Path(loc)
         _create_chain_converters()
         self._db = self._connect()
-        if not (isinstance(self._loc, Path) and self._loc.exists()):
-            self._setup()
+        self._setup()
         self._chains: lxc.ChainList[_CT] = lxc.ChainList([])
 
     @property
@@ -148,7 +147,7 @@ class Collection(t.Generic[_CT]):
     def _setup(self):
         make_chain_types = """ CREATE TABLE IF NOT EXISTS chain_types (
             type_id integer NOT NULL PRIMARY KEY AUTOINCREMENT,
-            type_name TEXT NOT NULL
+            type_name TEXT NOT NULL UNIQUE
         ); """
         make_var_types = """ CREATE TABLE IF NOT EXISTS var_types (
             var_type_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,

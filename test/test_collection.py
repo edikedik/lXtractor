@@ -268,7 +268,7 @@ def test_constructor_config():
     assert cfg["source"] == "SIFTS"
 
     with pytest.raises(MissingData):
-        cfg.verify()
+        cfg.validate()
 
     with tempfile.TemporaryDirectory() as tmpdir:
         cfg_path = Path(tmpdir) / "config.json"
