@@ -99,9 +99,9 @@ def get_mapping(obj: t.Any, map_name: str | None, map_to: str | None) -> dict | 
 
     if not isinstance(obj, lxc.ChainSequence):
         try:
-            seq = obj._seq
+            seq = obj.seq
         except AttributeError as e:
-            raise MissingData(f"Object {obj} is missing `_seq` attribute") from e
+            raise MissingData(f"Object {obj} is missing `seq` attribute") from e
     else:
         seq = obj
 
