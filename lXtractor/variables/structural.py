@@ -49,7 +49,7 @@ __all__ = (
     "ClosestLigandContactsCount",
     "ClosestLigandNames",
     "ClosestLigandDist",
-    "Contacts"
+    "Contacts",
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -607,6 +607,7 @@ class Contacts(StructureVariable):
     .. note::
         ``r`` is defined by ``DefaultConfig["contacts"]["non-covalent"][1]``.
     """
+
     __slots__ = ("p",)
 
     def __init__(self, p: int):
@@ -620,16 +621,19 @@ class Contacts(StructureVariable):
         a = obj.array
         m = residue_mask(self.p, obj.array, mapping)
         p = a[m][0].res_id
-        r = DefaultConfig["contacts"]["non-covalent"][1]
+        r = DefaultConfig["bonds"]["NC-NC"][1]
 
         kdtree = KDTree(a.coord)
         hit_idx = np.unique(np.hstack(kdtree.query_ball_point(a[m].coord, r)))
-        hit_pos = list(set(a[hit_idx].res_id) - {p})
+        hit_pos = np.setdiff1d(np.unique(a[hit_idx].res_id), [p])
 
         if mapping is not None:
-            m_rev = {v: k for k, v in mapping.items()}
+            m_rev = dict(zip(mapping.values(), mapping.keys()))
             hit_pos = list(
-                filter(lambda x: x is not None, (m_rev.get(p, None) for p in hit_pos))
+                filter(
+                    lambda x: x is not None and not np.isnan(x),
+                    (m_rev.get(p, None) for p in hit_pos),
+                )
             )
 
         return ",".join(map(str, sorted(hit_pos)))
