@@ -605,13 +605,17 @@ class Contacts(StructureVariable):
     covered by this `mapping`.
 
     .. note::
-        ``r`` is defined by ``DefaultConfig["contacts"]["non-covalent"][1]``.
+        The default value of ``r`` is provided by
+        ``DefaultConfig["contacts"]["non-covalent"][1]``.
     """
 
-    __slots__ = ("p",)
+    __slots__ = ("p", "r")
 
-    def __init__(self, p: int):
+    def __init__(self, p: int, r: float = DefaultConfig["bonds"]["NC-NC"][1]):
+        #: Target position.
         self.p = p
+        #: Contact upper bound in angstroms.
+        self.r = r
 
     @property
     def rtype(self) -> t.Type[str]:
@@ -621,10 +625,9 @@ class Contacts(StructureVariable):
         a = obj.array
         m = residue_mask(self.p, obj.array, mapping)
         p = a[m][0].res_id
-        r = DefaultConfig["bonds"]["NC-NC"][1]
 
         kdtree = KDTree(a.coord)
-        hit_idx = np.unique(np.hstack(kdtree.query_ball_point(a[m].coord, r)))
+        hit_idx = np.unique(np.hstack(kdtree.query_ball_point(a[m].coord, self.r)))
         hit_pos = np.setdiff1d(np.unique(a[hit_idx].res_id), [p])
 
         if mapping is not None:
