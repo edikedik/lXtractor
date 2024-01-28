@@ -64,7 +64,7 @@ jobs:
           python-version: '3.10'
 
       - name: Install coveralls
-        run: pip install coveralls[toml]
+        run: pip install coverage[toml] coveralls
 
       - name: Download coverage data for Python 3.10
         uses: actions/download-artifact@v3
@@ -76,4 +76,3 @@ jobs:
         run: coveralls --service=github
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
