@@ -39,7 +39,7 @@ jobs:
       - name: Install self with pip
         run: pip install .
       - name: Install test dependencies
-        run: mamba install -c conda-forge -y pytest pytest-cov coveralls
+        run: mamba install -c conda-forge -y pytest pytest-cov
       - name: Run tests
         run: pytest --cov=lXtractor --cov-branch --cov-report=xml:coverage-report-${{ matrix.python-version }}.xml
       - name: List files in the directory
@@ -57,12 +57,23 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install coveralls
+        run: pip install coveralls
+
       - name: Download coverage data for Python 3.10
         uses: actions/download-artifact@v3
         with:
           name: coverage-report-3.10
           path: .
+
       - name: Publish Coverage for Python 3.10
         run: coveralls --service=github
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
