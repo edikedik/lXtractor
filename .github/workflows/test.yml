@@ -10,10 +10,10 @@ jobs:
       max-parallel: 6
       fail-fast: false
       matrix:
-#        os: [ "ubuntu", "macos" ]
-#        python-version: [ "3.10", "3.11", "3.12" ]
-         os: [ "ubuntu" ]
-         python-version: [ "3.10" ]
+        #        os: [ "ubuntu", "macos" ]
+        #        python-version: [ "3.10", "3.11", "3.12" ]
+        os: [ "ubuntu" ]
+        python-version: [ "3.10" ]
     defaults:
       run:
         shell: bash -l {0}
@@ -51,20 +51,12 @@ jobs:
           path: coverage-report-${{ matrix.python-version }}.xml
 
   publish-coverage:
-    name: Coverage
+    name: Publish Coverage
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - name: checkout
+      - name: Checkout
         uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Install coveralls
-        run: pip install coveralls toml
 
       - name: Download coverage data for Python 3.10
         uses: actions/download-artifact@v3
@@ -72,7 +64,8 @@ jobs:
           name: coverage-report-3.10
           path: .
 
-      - name: Publish Coverage for Python 3.10
-        run: coveralls --service=github
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Coveralls GitHub Action
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: ./coverage-report-3.10.xml
