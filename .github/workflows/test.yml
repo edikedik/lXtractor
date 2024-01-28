@@ -10,8 +10,10 @@ jobs:
       max-parallel: 6
       fail-fast: false
       matrix:
-        os: [ "ubuntu", "macos" ]
-        python-version: [ "3.10", "3.11", "3.12" ]
+#        os: [ "ubuntu", "macos" ]
+#        python-version: [ "3.10", "3.11", "3.12" ]
+         os: [ "ubuntu" ]
+         python-version: [ "3.10" ]
     defaults:
       run:
         shell: bash -l {0}
@@ -39,11 +41,9 @@ jobs:
       - name: Install test dependencies
         run: mamba install -c conda-forge -y pytest pytest-cov coveralls
       - name: Run tests
-        run: >
-          pytest
-          --cov=lXtractor 
-          --cov-branch 
-          --cov-report=xml # Changed to XML format for interoperability
+        run: pytest --cov=lXtractor --cov-branch --cov-report=xml:coverage-report-${{ matrix.python-version }}.xml
+      - name: List files in the directory
+        run: ls -l
       - name: Upload coverage data
         uses: actions/upload-artifact@v3
         with:
@@ -57,12 +57,12 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v3
-      - name: Download coverage data
+      - name: Download coverage data for Python 3.10
         uses: actions/download-artifact@v3
         with:
           name: coverage-report-3.10
-          path: coverage-report-3.10.xml
-      - name: Publish Coverage
+          path: .
+      - name: Publish Coverage for Python 3.10
         run: coveralls --service=github
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
