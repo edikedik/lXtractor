@@ -295,6 +295,19 @@ def test_summary(simple_chain_seq, meta):
             ),
             ["A", "N", 1, "T", "h", "i"],
         ),
+        (
+            ChainSequence.from_string("ABCD", r=list(range(10, 14))),
+            ChainSequence.from_string("AABXDE", r=list(range(9, 15))),
+            dict(
+                template="seq1",
+                target="seq1",
+                link_name="r",
+                link_points_to="r",
+                transform="".join,
+                is_empty=lambda x: x == "X",
+            ),
+            "AABCDE",
+        ),
     ],
 )
 def test_patch(seq, other, kwargs, expected):

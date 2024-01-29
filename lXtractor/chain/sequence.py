@@ -410,6 +410,7 @@ class ChainSequence(lxs.Segment):
         keep: bool = True,
         target_new_name: str | None = None,
         empty: tuple[t.Any, ...] = (None,),
+        is_empty: abc.Callable[[T], bool] | None = None,
         transform: abc.Callable[[list[T]], abc.Sequence[R]] = identity,
     ) -> abc.Sequence[R]:
         """
@@ -447,14 +448,23 @@ class ChainSequence(lxs.Segment):
         :param empty: A tuple of characters that require patching. Thus, the
             character will be replaced with the corresponding character from
             `template` if it's within this tuple.
+        :param is_empty: A callable accepting an element of the target sequence
+            and outputting ``True`` if it should be replaced with an element
+            from the `template` and ``False`` otherwise. Takes precedence over
+            the `empty` param.
         :param transform: A function that transforms the result from one
             sequence to another.
         :return: A patched mapping/sequence after applying the `transform`
             function.
         """
+        def replace_element(x: T) -> bool:
+            if is_empty is not None:
+                return is_empty(x)
+            return x in empty
+
         mapped = self.relate(other, template, link_name, link_points_to, False)
         assert len(mapped) == len(other)
-        mapped = [y if x in empty else x for x, y in zip(other[target], mapped)]
+        mapped = [y if replace_element(x) else x for x, y in zip(other[target], mapped)]
         mapped = transform(mapped)
         if keep:
             if target_new_name is None:
