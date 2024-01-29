@@ -280,7 +280,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         """
         :return: An identifier of this segment without parent information.
         """
-        return self.id.split('<-')[0]
+        return self.id.split("<-")[0]
 
     @property
     def item_type(self) -> _Item:
@@ -475,7 +475,7 @@ class Segment(abc.Sequence[NamedTupleT]):
             raise FormatError(f"Invalid boundaries {self.start}, {self.end}")
         self._validate_seqs()
 
-    def add_seq(self, name: str, seq: abc.Sequence[t.Any]):
+    def add_seq(self, name: str, seq: abc.Sequence[t.Any]) -> None:
         """
         Add sequence to this segment.
 
@@ -498,6 +498,18 @@ class Segment(abc.Sequence[NamedTupleT]):
                 f"Segment already contains {name}. "
                 f"To overwrite existing sequences, use [] syntax"
             )
+
+    def remove_seq(self, name: str) -> None:
+        """
+        Remove sequence from this segment.
+
+        :param name: Sequence's name. If doesn't exist in this segment, nothing
+            happens.
+        """
+        try:
+            self._seqs.pop(name)
+        except KeyError:
+            pass
 
     def bounds(self, other: Segment) -> bool:
         """

@@ -207,3 +207,11 @@ def test_resolving_overlaps():
     filtered = list(resolve_overlaps(segments, value_fn=lambda x: x.meta['s']))
     assert len(filtered) == 2
     assert set(x.name for x in filtered) == {'y', 'q'}
+
+
+def test_remove():
+    s = Segment(1, 3, 'X', seqs={'A': 'AAA'})
+    s.remove_seq('B')
+    assert 'A' in s
+    s.remove_seq('A')
+    assert 'A' not in s
