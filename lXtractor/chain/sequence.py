@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from more_itertools import first_true, always_reversible, split_into
-from toolz import valmap, valfilter, keyfilter
+from toolz import valmap, valfilter, keyfilter, identity
 
 import lXtractor.core.segment as lxs
 from lXtractor.core.alignment import Alignment
@@ -46,6 +46,10 @@ from lXtractor.util import (
 
 if t.TYPE_CHECKING:
     from lXtractor.chain import Chain, ChainStructure
+
+T = t.TypeVar('T')
+R = t.TypeVar('R')
+
 
 # TODO: add "drop_index()" method for a segment
 # It "reenumerates" the segment from the new start (1 by default)
@@ -328,7 +332,7 @@ class ChainSequence(lxs.Segment):
         map_name: str,
         link_name: str,
         link_points_to: str = "i",
-        save: bool = True,
+        keep: bool = True,
         map_name_in_other: str | None = None,
     ) -> list[t.Any]:
         """
@@ -338,16 +342,18 @@ class ChainSequence(lxs.Segment):
         The "link" sequence is a part of the `other` pointing to some sequence
         within this instance.
 
-        To provide an example, consider the case of transferring the mapping
+        As an example, consider the case of transferring the mapping
         to alignment positions `aln_map`. To do this, the `other` must
         be mapped to some sequence within this instance -- typically to
-        the canonical numbering -- via some stored `map_canonical` sequence.
+        canonical numbering -- via some stored `map_canonical` sequence.
 
-        Thus, one would use::
+        Thus, one would use ..code-block:: python
 
             this.relate(
-                other, map_name=aln_map,
-                link_name=map_canonical, link_name_points_to="i"
+                other,
+                map_name=aln_map,
+                link_name=map_canonical,
+                link_name_points_to="i"
             )
 
         In the example below, we transfer `map_some` sequence from
@@ -364,7 +370,7 @@ class ChainSequence(lxs.Segment):
         >>> o = ChainSequence.from_string('XYZR', name='XY')
         >>> o.add_seq('L', ['A', 'B', 'X', 'D'])
         >>> assert 'L' in o
-        >>> s.relate(o, map_name='map_some', link_name='L', link_points_to='seq1')
+        >>> s.relate(o,map_name='map_some', link_name='L', link_points_to='seq1')
         [9, 8, None, 6]
         >>> assert o['map_some'] == [9, 8, None, 6]
 
@@ -374,7 +380,7 @@ class ChainSequence(lxs.Segment):
             `self` and `other`.
         :param link_points_to: Values within this instance the "link" sequence
             points to.
-        :param save: Store the obtained sequence within the `other`.
+        :param keep: Store the obtained sequence within the `other`.
         :param map_name_in_other: The name of the mapped sequence to store
             within the `other`. By default, the `map_name` is used.
         :return: The mapped sequence.
@@ -390,8 +396,70 @@ class ChainSequence(lxs.Segment):
                 (mapping.get(x) for x in other_seq),
             )
         )
-        if save:
+        if keep:
             other.add_seq(map_name_in_other or map_name, mapped)
+        return mapped
+
+    def patch(
+        self,
+        other: ChainSequence,
+        template: str,
+        target: str,
+        link_name: str,
+        link_points_to: str | None,
+        keep: bool = True,
+        target_new_name: str | None = None,
+        empty: tuple[t.Any, ...] = (None,),
+        transform: abc.Callable[[list[T]], abc.Sequence[R]] = identity,
+    ) -> abc.Sequence[R]:
+        """
+        Path a sequence in `other` using a template sequence from here.
+
+        As an example, consider two related sequences, ``s`` and ``o``,
+        mapped to the same reference numbering scheme ``r``, which we'll
+        denote as a "link sequence."
+
+        We would like to fill in "X" residues within ``o`` with residues from
+        ``s``. This can be achieved by the following code:
+
+        >>> s = ChainSequence.from_string('ABCD', r=[10, 11, 12, 13])
+        >>> o = ChainSequence.from_string('AABXDE', r=[9, 10, 11, 12, 13, 14])
+        >>> s.patch(o, 'seq1', 'seq1', 'r', 'r', empty=('X', None))
+        ['A', 'A', 'B', 'C', 'D', 'E']
+        >>> s.patch(o, 'seq1', 'seq1', 'r', 'r', empty=('X', None), transform="".join)
+        'AABCDE'
+        >>> o['seq1_patched'] == 'AABCDE'
+        True
+
+        :param other: Some other chain sequence.
+        :param template: The name of the template sequence.
+        :param target: Target sequence name within `other` to patch.
+        :param link_name: Name of the map within `other` that links it with
+            this sequence.
+        :param link_points_to: Name of the map within this chain sequence that
+            corresponding to `link_name` within `other`. If ``None``, it is
+            assumed to be the same as `link_name`.
+        :param keep: Keep patched sequence within `other`.
+        :param target_new_name: Name of the patched sequence to save within
+            `other` if `keep` is ``True``.
+        :param empty: A tuple of characters that require patching. Thus, the
+            character will be replaced with the corresponding character from
+            `template` if it's within this tuple.
+        :param transform: A function that transforms the result from one
+            sequence to another.
+        :return: A patched mapping/sequence after applying the `transform`
+            function.
+        """
+        mapped = self.relate(other, template, link_name, link_points_to, False)
+        assert len(mapped) == len(other)
+        mapped = [y if x in empty else x for x, y in zip(other[target], mapped)]
+        mapped = transform(mapped)
+        if keep:
+            if target_new_name is None:
+                target_new_name = target
+            if target_new_name == "seq1":
+                target_new_name = "seq1_patched"
+            other[target_new_name] = mapped
         return mapped
 
     def coverage(
@@ -656,7 +724,9 @@ class ChainSequence(lxs.Segment):
         else:
             yield from iter(ChainList([]))
 
-    def apply_children(self, fn: ApplyT[ChainSequence], inplace: bool = False) -> t.Self:
+    def apply_children(
+        self, fn: ApplyT[ChainSequence], inplace: bool = False
+    ) -> t.Self:
         """
         Apply some function to children.
 

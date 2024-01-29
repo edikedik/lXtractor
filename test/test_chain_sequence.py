@@ -262,3 +262,50 @@ def test_summary(simple_chain_seq, meta):
         assert set(meta_keys).issubset(set(df.columns))
     else:
         assert len(set(meta_keys) & set(df.columns)) == 0
+
+
+@pytest.mark.parametrize(
+    "seq,other,kwargs,expected",
+    [
+        (
+            ChainSequence.from_string("ABCD", r=list(range(10, 14))),
+            ChainSequence.from_string("AABXDE", r=list(range(9, 15))),
+            dict(
+                template="seq1",
+                target="seq1",
+                link_name="r",
+                link_points_to="r",
+                transform="".join,
+                empty=("X",),
+            ),
+            "AABCDE",
+        ),
+        (
+            ChainSequence.from_string(
+                "XXXX", r=list(range(10, 14)), k=["A", "N", 1, None]
+            ),
+            ChainSequence.from_string(
+                "YYYYYY", r=list(range(10, 16)), k=[None, None, None, "T", "h", "i"]
+            ),
+            dict(
+                template="k",
+                target="k",
+                link_name="r",
+                link_points_to="r",
+            ),
+            ["A", "N", 1, "T", "h", "i"],
+        ),
+    ],
+)
+def test_patch(seq, other, kwargs, expected):
+    assert seq.patch(other, **kwargs) == expected
+
+
+def test_patch_empty():
+    seq = ChainSequence.from_string("A", r=[0])
+    other = ChainSequence.from_string("", r=[])
+    res = seq.patch(other, "seq1", "seq1", "r", "r")
+    assert res == []
+
+    res = other.patch(seq, "seq1", "seq1", "r", "r")
+    assert res == ["A"]
