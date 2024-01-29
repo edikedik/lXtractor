@@ -7,6 +7,7 @@ import operator as op
 import typing as t
 from collections import abc
 from io import TextIOBase
+from itertools import tee
 from pathlib import Path
 
 from more_itertools import interleave, chunked, islice_extended
@@ -29,14 +30,24 @@ from lXtractor.util.seq import (
     write_fasta,
     remove_gap_columns,
     partition_gap_sequences,
+    biotite_align,
 )
 
+if t.TYPE_CHECKING:
+    import lXtractor.chain as lxc
+
+    _CT: t.TypeAlias = lxc.ChainSequence | lxc.ChainStructure | lxc.Chain
+
 _Idx = t.Union[int, t.Tuple[int, ...]]
+_ST: t.TypeAlias = tuple[str, str]
 T = t.TypeVar("T")
+_GAPS = ("-", ".")
 
 
 class Alignment:
     # TODO: consider directly inheriting from MutableSequence
+    # TODO: implement annotate() akin to PyHMMer.annotate()
+    # TODO: implement vcat(other) or | operator
     """
     An MSA resource: a collection of aligned sequences.
     """
@@ -45,7 +56,7 @@ class Alignment:
 
     def __init__(
         self,
-        seqs: abc.Iterable[tuple[str, str]],
+        seqs: abc.Iterable[_ST],
         add_method: AddMethod = mafft_add,
         align_method: AlignMethod = mafft_align,
     ):
@@ -57,7 +68,7 @@ class Alignment:
         """
         self.add_method: AddMethod = add_method
         self.align_method: AlignMethod = align_method
-        self.seqs: list[tuple[str, str]] = list(seqs)
+        self.seqs: list[_ST] = list(seqs)
         self._seqs_map: dict[str, str] = dict(self.seqs)
         self._verify()
 
@@ -78,24 +89,22 @@ class Alignment:
     def __len__(self) -> int:
         return len(self.seqs)
 
-    def __iter__(self) -> abc.Iterator[tuple[str, str]]:
+    def __iter__(self) -> abc.Iterator[_ST]:
         return iter(self.seqs)
 
     @t.overload
-    def __getitem__(self, item: int) -> tuple[str, str]:
+    def __getitem__(self, item: int) -> _ST:
         ...
 
     @t.overload
-    def __getitem__(self, item: slice) -> list[tuple[str, str]]:
+    def __getitem__(self, item: slice) -> list[_ST]:
         ...
 
     @t.overload
     def __getitem__(self, item: str) -> str:
         ...
 
-    def __getitem__(
-        self, item: str | int | slice
-    ) -> tuple[str, str] | str | list[tuple[str, str]]:
+    def __getitem__(self, item: str | int | slice) -> _ST | str | list[_ST]:
         match item:
             case str():
                 return self._seqs_map[item]
@@ -123,6 +132,67 @@ class Alignment:
             raise InitError(
                 f"Expected all _seqs to have the same length, got {lengths}"
             )
+
+    def annotate(
+        self,
+        objs: abc.Iterable[_CT],
+        map_name: str,
+        accept_fn: abc.Callable[[_CT], bool] | None = None,
+        **kwargs,
+    ):
+        """
+        This function "annotates" sequence segments using MSA.
+
+        Namely, it adds each sequence of the provided chain-type objects to
+        sequences currently present in this MSA via :attr:`add_method`.
+        The latter is expected to preserve the original number of MSA columns,
+        whereas potentially cutting the original sequence, thereby defining
+        MSA-imposed boundaries. These are used to extract a child object
+        using ``spawn_child`` method, which will have the corresponding MSA
+        numbering written under `map_name`.
+
+        :param objs: An iterable over chain-type objects.
+        :param map_name: A name to use for storing the derived MSA numbering map.
+        :param accept_fn: A function accepting a chain-type object and returning
+            a boolean value indicating whether the spawn child sequence should
+            be preserved.
+        :param kwargs: Additional keyword arguments passed to the
+            ``spawn_child()`` method.
+        :return: An iterator over spawned child objects. These are automatically
+            stored under the ``children`` attribute of each chain-type object,
+            in which case it's safe to simply consume the returned iterator.
+        """
+        def enumerate_aligned(s: str) -> list[int]:
+            return [i for i, c in enumerate(s, start=1) if c not in _GAPS]
+
+        def derive_boundaries(seq_full: str, seq_partial: str):
+            s = seq_partial
+            for c in _GAPS:
+                s = s.replace(c, "")
+            start_idx = seq_full.find(s) + 1
+            if start_idx == -1:
+                raise RuntimeError(
+                    "An aligned sequence is not a subsequence of the full sequence."
+                )
+            end_idx = start_idx + len(s) - 1
+            return start_idx, end_idx
+
+        objs1, objs2 = tee(objs)
+        seqs = ((obj.id, obj.seq.seq1) for obj in objs1)
+        seqs_aligned = self.add_method(self, seqs)
+        for obj, (_, s_aln) in zip(objs2, seqs_aligned):
+            s_aln_enum = enumerate_aligned(s_aln)
+            s_start, s_end = derive_boundaries(obj.seq.seq1, s_aln)
+            assert s_end - s_start + 1 == len(s_aln_enum)
+            child = obj.spawn_child(s_start, s_end, map_name, **kwargs)
+            child[map_name] = s_aln_enum
+            if accept_fn is not None:
+                if accept_fn(child):
+                    yield child
+                else:
+                    obj.children.remove(child)
+            else:
+                yield child
 
     def itercols(
         self, *, join: bool = True
@@ -181,9 +251,7 @@ class Alignment:
 
         return self.__class__(map(slice_one, self.seqs))
 
-    def align(
-        self, seq: abc.Iterable[tuple[str, str]] | tuple[str, str] | Alignment
-    ) -> t.Self:
+    def align(self, seq: abc.Iterable[_ST] | _ST | Alignment) -> t.Self:
         """
         Align (add) sequences to this alignment via :attr:`add_method`.
 
@@ -201,7 +269,7 @@ class Alignment:
             which is true when using the default :attr:`add_method`.
         """
 
-        def is_pair(x: object) -> t.TypeGuard[tuple[str, str]]:
+        def is_pair(x: object) -> t.TypeGuard[_ST]:
             return isinstance(x, tuple) and len(x) == 2
 
         if isinstance(seq, tuple):
@@ -227,7 +295,7 @@ class Alignment:
 
     def add(
         self,
-        other: abc.Iterable[tuple[str, str]] | tuple[str, str] | Alignment,
+        other: abc.Iterable[_ST] | _ST | Alignment,
     ) -> t.Self:
         """
         Add sequences to existing ones using :meth:`add`.
@@ -249,7 +317,7 @@ class Alignment:
 
     def remove(
         self,
-        item: str | tuple[str, str] | t.Iterable[str] | t.Iterable[tuple[str, str]],
+        item: str | _ST | t.Iterable[str] | t.Iterable[_ST],
         error_if_missing: bool = True,
         realign: bool = False,
     ) -> t.Self:
@@ -399,7 +467,7 @@ class Alignment:
     @classmethod
     def make(
         cls,
-        seqs: abc.Iterable[tuple[str, str]],
+        seqs: abc.Iterable[_ST],
         method: AlignMethod = mafft_align,
         add_method: AddMethod = mafft_add,
         align_method: AlignMethod = mafft_align,

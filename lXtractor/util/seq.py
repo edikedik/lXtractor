@@ -95,8 +95,8 @@ def mafft_add(
     keeplength: bool = True,
 ) -> abc.Iterator[tuple[str, str]]:
     """
-    Add a sequence using mafft.
-    All sequences are assumed to be :class:`Bio.SeqRecord.SeqRecord` objects.
+    Add sequences to existing MSA using mafft.
+
     This is a curried function: incomplete argument set yield
     partially evaluated function (e.g., ``mafft_add(thread=10)``).
 
@@ -168,12 +168,13 @@ def mafft_align(
 
 
 def biotite_align(
-    seqs: abc.Iterable[tuple[str, str]]
+    seqs: abc.Iterable[tuple[str, str]], **kwargs
 ) -> tuple[tuple[str, str], tuple[str, str]]:
     """
     Align two sequences using biotite `align_optimal` function.
 
     :param seqs: An iterable with exactly two sequences.
+    :param kwargs: Additional arguments to `align_optimal`.
     :return: A pair of aligned sequences.
     """
     (h1, seq1), (h2, seq2) = take(2, seqs)
@@ -184,7 +185,7 @@ def biotite_align(
         seq2 = bseq.ProteinSequence(seq2)
 
     alignments = balign.align_optimal(
-        seq1, seq2, balign.SubstitutionMatrix.std_protein_matrix()
+        seq1, seq2, balign.SubstitutionMatrix.std_protein_matrix(), **kwargs
     )
 
     seq1a, seq2a = alignments[0].get_gapped_sequences()
@@ -315,10 +316,9 @@ def map_pairs_numbering(
     """
     Map numbering between a pair of sequences.
 
-
-    :param s1: The first protein sequence.
+    :param s1: The first sequence.
     :param s1_numbering: The first sequence's numbering.
-    :param s2: The second protein sequence.
+    :param s2: The second sequence.
     :param s2_numbering: The second sequence's numbering.
     :param align: Align before calculating.
         If ``False``, sequences are assumed to be aligned.
