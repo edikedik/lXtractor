@@ -441,7 +441,9 @@ class ChainSequence(lxs.Segment):
             assumed to be the same as `link_name`.
         :param keep: Keep patched sequence within `other`.
         :param target_new_name: Name of the patched sequence to save within
-            `other` if `keep` is ``True``.
+            `other` if `keep` is ``True``. If this or `target` names are "seq1",
+            will use "seq1_patched" as `target_new_name` as this sequence is
+            considered immutable by convention.
         :param empty: A tuple of characters that require patching. Thus, the
             character will be replaced with the corresponding character from
             `template` if it's within this tuple.
