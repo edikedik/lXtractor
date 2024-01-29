@@ -47,8 +47,8 @@ from lXtractor.util import (
 if t.TYPE_CHECKING:
     from lXtractor.chain import Chain, ChainStructure
 
-T = t.TypeVar('T')
-R = t.TypeVar('R')
+T = t.TypeVar("T")
+R = t.TypeVar("R")
 
 
 # TODO: add "drop_index()" method for a segment
@@ -409,8 +409,8 @@ class ChainSequence(lxs.Segment):
         link_points_to: str | None,
         keep: bool = True,
         target_new_name: str | None = None,
-        empty: tuple[t.Any, ...] = (None,),
-        is_empty: abc.Callable[[T], bool] | None = None,
+        empty_template: tuple[t.Any, ...] | abc.Callable[[T], bool] = (None,),
+        empty_target: tuple[t.Any, ...] | abc.Callable[[T], bool] = (None,),
         transform: abc.Callable[[list[T]], abc.Sequence[R]] = identity,
     ) -> abc.Sequence[R]:
         """
@@ -425,9 +425,9 @@ class ChainSequence(lxs.Segment):
 
         >>> s = ChainSequence.from_string('ABCD', r=[10, 11, 12, 13])
         >>> o = ChainSequence.from_string('AABXDE', r=[9, 10, 11, 12, 13, 14])
-        >>> s.patch(o, 'seq1', 'seq1', 'r', 'r', empty=('X', None))
+        >>> s.patch(o,'seq1','seq1','r','r')
         ['A', 'A', 'B', 'C', 'D', 'E']
-        >>> s.patch(o, 'seq1', 'seq1', 'r', 'r', empty=('X', None), transform="".join)
+        >>> s.patch(o,'seq1','seq1','r','r',empty_target=('X', ), transform="".join)
         'AABCDE'
         >>> o['seq1_patched'] == 'AABCDE'
         True
@@ -445,26 +445,43 @@ class ChainSequence(lxs.Segment):
             `other` if `keep` is ``True``. If this or `target` names are "seq1",
             will use "seq1_patched" as `target_new_name` as this sequence is
             considered immutable by convention.
-        :param empty: A tuple of characters that require patching. Thus, the
-            character will be replaced with the corresponding character from
-            `template` if it's within this tuple.
-        :param is_empty: A callable accepting an element of the target sequence
-            and outputting ``True`` if it should be replaced with an element
-            from the `template` and ``False`` otherwise. Takes precedence over
-            the `empty` param.
+        :param empty_target: A tuple of element instances or a callable. If tuple,
+            a `target` element will be replaced with the corresponding element
+            from`template` if it's within this tuple. If callable, should accept
+            an element of the target sequence and output ``True`` if it should
+            be replaced with an element from the `template` and ``False``
+            otherwise.
+        :param empty_template: Same as `empty_target` but applied to a template
+            character, with reverse meaning for ``True`` and ``False`` of the
+            `empty_target` param.
         :param transform: A function that transforms the result from one
             sequence to another.
         :return: A patched mapping/sequence after applying the `transform`
             function.
         """
-        def replace_element(x: T) -> bool:
-            if is_empty is not None:
-                return is_empty(x)
-            return x in empty
+
+        def replace_element(
+            x: T, empty: tuple[t.Any, ...] | abc.Callable[[T], bool] = (None,)
+        ) -> bool:
+            if isinstance(empty, tuple):
+                return x in empty
+            elif isinstance(empty, abc.Callable):
+                return empty(x)
+            else:
+                raise TypeError(
+                    f"Invalid type for `empty_*` parameter. Should be a tuple or "
+                    f"callable, but received {type(empty)}"
+                )
 
         mapped = self.relate(other, template, link_name, link_points_to, False)
         assert len(mapped) == len(other)
-        mapped = [y if replace_element(x) else x for x, y in zip(other[target], mapped)]
+        mapped = [
+            y
+            if replace_element(x, empty_target)
+            and not replace_element(y, empty_template)
+            else x
+            for x, y in zip(other[target], mapped)
+        ]
         mapped = transform(mapped)
         if keep:
             if target_new_name is None:
