@@ -1,3 +1,4 @@
+import operator as op
 from copy import deepcopy
 from itertools import product
 
@@ -10,20 +11,20 @@ from lXtractor.core.segment import Segment, resolve_overlaps
 
 
 Segments = (
-    Segment(0, 0, 'S'),
-    Segment(4, 7, 'S47', meta={'codename': '47'}),
-    Segment(4, 7, 'S47', meta={'codename': '47'}, seqs={'A': 'ABCD'}),
-    Segment(1, 5, 'S5', seqs={'S': list(range(5)), 'A': 'ABCDE'}),
-    Segment(1, 1, 'S1', seqs={'A': ['A']}),
+    Segment(0, 0, "S"),
+    Segment(4, 7, "S47", meta={"codename": "47"}),
+    Segment(4, 7, "S47", meta={"codename": "47"}, seqs={"A": "ABCD"}),
+    Segment(1, 5, "S5", seqs={"S": list(range(5)), "A": "ABCDE"}),
+    Segment(1, 1, "S1", seqs={"A": ["A"]}),
 )
 
 
 def test_init():
     assert len(Segment(1, 2)) == 2
     assert len(Segment(1, 1)) == 1
-    s = Segment(1, 5, 'A', parent=Segment(2, 3, 'B'))
-    assert s.parent.id == 'B|2-3'
-    assert s.id == 'A|1-5<-(B|2-3)'
+    s = Segment(1, 5, "A", parent=Segment(2, 3, "B"))
+    assert s.parent.id == "B|2-3"
+    assert s.id == "A|1-5<-(B|2-3)"
 
     with pytest.raises(ValueError):
         Segment(0, 1)
@@ -33,10 +34,10 @@ def test_init():
         Segment(2, 1)
 
     with pytest.raises(LengthMismatch):
-        Segment(1, 2, seqs={'a': [1, 2, 3]})
+        Segment(1, 2, seqs={"a": [1, 2, 3]})
 
     with pytest.raises(LengthMismatch):
-        Segment(1, 2, seqs={'a': [1, 2], 'b': [1]})
+        Segment(1, 2, seqs={"a": [1, 2], "b": [1]})
 
     s = Segment(0, 0)
     assert len(s) == 0
@@ -45,15 +46,15 @@ def test_init():
 def test_iter():
     s = Segment(1, 3)
     assert list(map(tuple, iter(s))) == [(1,), (2,), (3,)]
-    s = Segment(1, 3, seqs={'a': ['one', 'two', 'three'], 'b': '123'})
+    s = Segment(1, 3, seqs={"a": ["one", "two", "three"], "b": "123"})
     assert list(map(tuple, iter(s))) == [
-        (1, 'one', '1'),
-        (2, 'two', '2'),
-        (3, 'three', '3'),
+        (1, "one", "1"),
+        (2, "two", "2"),
+        (3, "three", "3"),
     ]
 
 
-@pytest.mark.parametrize('s', Segments)
+@pytest.mark.parametrize("s", Segments)
 def test_setters(s):
     if s.is_empty:
         for x in [-1, 0, 1]:
@@ -79,7 +80,7 @@ def test_setters(s):
             assert len(s_new) == end - s.start + 1
 
 
-@pytest.mark.parametrize('s', Segments)
+@pytest.mark.parametrize("s", Segments)
 def test_slice(s):
     if s.is_empty:
         domain = [None, 0, 1]
@@ -131,7 +132,7 @@ def test_bounds():
 
 
 def test_overlap():
-    s1 = Segment(1, 5, seqs={'a': '12345'}, meta={'reason': 'none'})
+    s1 = Segment(1, 5, seqs={"a": "12345"}, meta={"reason": "none"})
     e = Segment(0, 0)
 
     with pytest.raises(NoOverlap):
@@ -162,29 +163,29 @@ def test_overlap():
     #
     so = s1.overlap(3, 7)
     assert (so.start, so.end) == (3, 5)
-    assert 'a' in so._seqs
-    assert 'reason' in so.meta
-    assert so._seqs['a'] == '345'
+    assert "a" in so._seqs
+    assert "reason" in so.meta
+    assert so._seqs["a"] == "345"
 
     # s2 is the subset
-    s2 = Segment(2, 3, seqs={'b': ['three', 'four']})
-    so = s1.overlap_with(s2, handle_mode='merge')
+    s2 = Segment(2, 3, seqs={"b": ["three", "four"]})
+    so = s1.overlap_with(s2, handle_mode="merge")
     assert so.start == 2
     assert so.end == 3
-    assert 'a' in so._seqs
-    assert 'b' in so._seqs
-    assert 'reason' in so.meta
-    assert so._seqs['a'] == '23'
-    assert so._seqs['b'] == ['three', 'four']
+    assert "a" in so._seqs
+    assert "b" in so._seqs
+    assert "reason" in so.meta
+    assert so._seqs["a"] == "23"
+    assert so._seqs["b"] == ["three", "four"]
     so = s1.sub_by(s2)
     assert so.start == 2
     assert so.end == 3
 
     # partially overlapping
-    s2 = Segment(5, 6, seqs={'b': '56'})
+    s2 = Segment(5, 6, seqs={"b": "56"})
     so = s1.overlap_with(s2)
     assert len(so) == 1
-    assert so._seqs['b'] == '5'
+    assert so._seqs["b"] == "5"
 
     with pytest.raises(NoOverlap):
         s1.sub_by(s2)
@@ -195,23 +196,82 @@ def test_overlap():
 
 def test_resolving_overlaps():
     segments = [
-        Segment(1, 3, 'x', meta={'s': 1}),
-        Segment(2, 5, 'y', meta={'s': 3}),
-        Segment(4, 6, 'z', meta={'s': 1}),
-        Segment(8, 9, 'q', meta={'s': 1}),
+        Segment(1, 3, "x", meta={"s": 1}),
+        Segment(2, 5, "y", meta={"s": 3}),
+        Segment(4, 6, "z", meta={"s": 1}),
+        Segment(8, 9, "q", meta={"s": 1}),
     ]
     filtered = list(resolve_overlaps(segments))
     assert len(filtered) == 3
-    assert set(x.name for x in filtered) == {'x', 'z', 'q'}
+    assert set(x.name for x in filtered) == {"x", "z", "q"}
 
-    filtered = list(resolve_overlaps(segments, value_fn=lambda x: x.meta['s']))
+    filtered = list(resolve_overlaps(segments, value_fn=lambda x: x.meta["s"]))
     assert len(filtered) == 2
-    assert set(x.name for x in filtered) == {'y', 'q'}
+    assert set(x.name for x in filtered) == {"y", "q"}
 
 
 def test_remove():
-    s = Segment(1, 3, 'X', seqs={'A': 'AAA'})
-    s.remove_seq('B')
-    assert 'A' in s
-    s.remove_seq('A')
-    assert 'A' not in s
+    s = Segment(1, 3, "X", seqs={"A": "AAA"})
+    s.remove_seq("B")
+    assert "A" in s
+    s.remove_seq("A")
+    assert "A" not in s
+
+
+@pytest.mark.parametrize(
+    "s1,s2,kw,expected",
+    [
+        (
+            Segment(1, 3, "A", seqs={"A": "AAA"}),
+            Segment(4, 5, "B", seqs={"A": "BB"}),
+            {},
+            (1, 5, [("A", "AAABB")]),
+        ),
+        (
+            Segment(1, 3, "A", seqs={"A": "AAA"}),
+            Segment(1, 2, "A", seqs={"B": "BB"}),
+            dict(joiner=lambda x, y: list(x) + list(y)),
+            (
+                1,
+                5,
+                [
+                    ("A", ["A", "A", "A", None, None]),
+                    ("B", [None, None, None, "B", "B"]),
+                ],
+            ),
+        ),
+        (
+            Segment(1, 3, "A", seqs={"A": "AAA"}),
+            Segment(1, 2, "A", seqs={"B": "BB"}),
+            dict(filler=lambda x: "X" * x),
+            (1, 5, [("A", "AAAXX"), ("B", "XXXBB")]),
+        ),
+        (
+            Segment(1, 2, "A", seqs={"A": "AA", "B": [1, 2]}),
+            Segment(1, 2, "A", seqs={"A": "BB", "B": [3, 4]}),
+            dict(joiner=dict(A=lambda x, y: x + y, B=lambda x, y: list(x) + list(y))),
+            (1, 4, [("A", "AABB"), ("B", [1, 2, 3, 4])]),
+        ),
+        (
+            Segment(1, 2, "A", seqs={"A": "AA", "X": "XX"}),
+            Segment(1, 2, "A", seqs={"A": "BB", "Y": "YY"}),
+            dict(
+                joiner=dict(A=op.add, X=op.add, Y=lambda x, y: list(x) + list(y)),
+                filler=dict(X=lambda x: "-" * x, Y=lambda x: ["-"] * x),
+            ),
+            (1, 4, [("A", "AABB"), ("X", "XX--"), ("Y", ["-", "-", "Y", "Y"])]),
+        ),
+    ],
+)
+def test_append(s1, s2, kw, expected):
+    s = s1.append(s2, **kw)
+    seqs = [(name, s[name]) for name in s.seq_names]
+    assert (s.start, s.end, seqs) == expected
+    assert s.name == s1.name
+
+
+def test_append_empty():
+    s = Segment(1, 1, "A", seqs={"A": "A"})
+    e = Segment(0, 0, "B")
+    assert s.append(e) == s
+    assert e.append(s) == s

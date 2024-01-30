@@ -12,7 +12,7 @@ from copy import deepcopy, copy
 from itertools import combinations, filterfalse, chain
 
 import networkx as nx
-from more_itertools import always_reversible, powerset, take, nth
+from more_itertools import always_reversible, powerset, take, nth, unique_everseen
 from tqdm.auto import tqdm
 
 from lXtractor.core.base import Ord, NamedTupleT
@@ -30,6 +30,8 @@ if t.TYPE_CHECKING:
 
 _S = t.TypeVar("_S", bound="Segment", contravariant=True)
 T = t.TypeVar("T")
+_Joiner: t.TypeAlias = abc.Callable[[abc.Sequence[T], abc.Sequence[T]], abc.Sequence[T]]
+_Filler: t.TypeAlias = abc.Callable[[int], abc.Sequence[t.Any]]
 # _IterType = t.Union[abc.Iterator[tuple], abc.Iterator[namedtuple]]
 DATA_HANDLE_MODES = ("merge", "self", "other")
 LOGGER = logging.getLogger(__name__)
@@ -498,6 +500,63 @@ class Segment(abc.Sequence[NamedTupleT]):
                 f"Segment already contains {name}. "
                 f"To overwrite existing sequences, use [] syntax"
             )
+
+    def append(
+        self,
+        other: t.Self,
+        filler: _Filler | abc.Mapping[str, _Filler] = (lambda x: [None] * x),
+        joiner: _Joiner | abc.Mapping[str, _Joiner] = (lambda x, y: x + y),
+    ) -> t.Self:
+        """
+        Append another segment to this one.
+
+        The encompassed sequences will be merged together by `joiner`. If a
+        sequence is missing in this segment or `other`, `filler` will create
+        a sequence with filled values. The sequences will be deep-copied before
+        merge.
+
+        :param other: Another arbitrary segment.
+        :param filler: A callable accepting the positive integer and returning
+            a filled in a sequence or a ``dict`` mapping sequence names to such
+            callables.
+        :param joiner: A callable accepting two sequences and returning a merged
+            sequence or a ``dict`` mapping sequence names to such callables.
+        :return: A new segment with the same name as this segment, extended
+            by `other`.
+        """
+
+        def fill_by_empty(
+            seqs1: dict[str, abc.Sequence[t.Any]],
+            seqs2: dict[str, abc.Sequence[t.Any]],
+            size: int,
+        ):
+            for k, v in seqs2.items():
+                if k not in seqs1:
+                    if isinstance(filler, abc.Mapping):
+                        f_fn = filler[k]
+                    else:
+                        f_fn = filler
+                    seqs1[k] = f_fn(size)
+
+        if self.is_empty:
+            return other
+        if other.is_empty:
+            return self
+
+        seqs_self = deepcopy(self._seqs)
+        seqs_other = deepcopy(other._seqs)
+        fill_by_empty(seqs_self, seqs_other, len(self))
+        fill_by_empty(seqs_other, seqs_self, len(other))
+
+        seqs = {}
+        for _k in unique_everseen(chain(seqs_self, seqs_other)):
+            if isinstance(joiner, abc.Mapping):
+                j_fn = joiner[_k]
+            else:
+                j_fn = joiner
+            seqs[_k] = j_fn(seqs_self[_k], seqs_other[_k])
+
+        return self.__class__(self.start, len(self) + len(other), self.name, seqs)
 
     def remove_seq(self, name: str) -> None:
         """
