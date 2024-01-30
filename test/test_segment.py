@@ -123,6 +123,19 @@ def test_slice(s):
         _ = s[:0]
 
 
+@pytest.mark.parametrize(
+    "segment,bounds,expected",
+    [
+        (Segment(2, 4, seqs={"a": "AAA"}), (-1, 10), Segment(2, 4, seqs={"a": "AAA"})),
+        (Segment(2, 4, seqs={"a": "AAA"}), (-1, 2), Segment(2, 2, seqs={"a": "A"})),
+        (Segment(2, 4, seqs={"a": "AAA"}), (4, 10), Segment(4, 4, seqs={"a": "A"})),
+    ],
+)
+def test_slicing_extended(segment, bounds, expected):
+    s = segment[bounds[0] : bounds[1]]
+    assert s == expected
+
+
 def test_bounds():
     s = Segment(1, 3)
     assert s.bounds(Segment(1, 3))
@@ -274,6 +287,12 @@ def test_append(s1, s2, kw, expected):
     "s1,s2,works,expected",
     [
         (
+            Segment(1, 1, "A", seqs={"A": "A"}),
+            Segment(1, 1, "B", seqs={"A": "B"}),
+            True,
+            (1, 2, [("A", "AB")]),
+        ),
+        (
             Segment(1, 3, "A", seqs={"A": "AAA"}),
             Segment(4, 5, "B", seqs={"A": "BB"}),
             True,
@@ -314,3 +333,49 @@ def test_append_empty():
     e = Segment(0, 0, "B")
     assert s.append(e) == s
     assert e.append(s) == s
+
+
+@pytest.mark.parametrize(
+    "s,o,i,kw,expected",
+    [
+        (
+            Segment(1, 1, "A", seqs={"A": "A"}),
+            Segment(1, 1, "B", seqs={"A": "B"}),
+            1,
+            {},
+            Segment(1, 2, "A", seqs={"A": "AB"}),
+        ),
+        (
+            Segment(1, 2, "A", seqs={"A": "AC"}),
+            Segment(10, 10, "B", seqs={"A": "B"}),
+            1,
+            {},
+            Segment(1, 3, "A", seqs={"A": "ABC"}),
+        ),
+        (
+            Segment(2, 3, "A", seqs={"A": "AC"}),
+            Segment(1, 1, "B", seqs={"A": "B"}),
+            2,
+            {},
+            Segment(2, 4, "A", seqs={"A": "ABC"}),
+        ),
+        (
+            Segment(2, 3, "A", seqs={"A": "AC"}),
+            Segment(1, 1, "B", seqs={"A": ["B"]}),
+            2,
+            dict(joiner=lambda x, y: list(x) + list(y)),
+            Segment(2, 4, "A", seqs={"A": ["A", "B", "C"]}),
+        ),
+        (
+            Segment(2, 3, "A", seqs={"A": "AC"}),
+            Segment(1, 1, "B", seqs={"B": ["B"]}),
+            2,
+            dict(joiner=lambda x, y: list(x) + list(y)),
+            Segment(2, 4, "A", seqs={"A": ["A", None, "C"], "B": [None, "B", None]}),
+        ),
+    ],
+)
+def test_insert(s, o, i, kw, expected):
+    res = s.insert(o, i, **kw)
+    assert res == expected
+    assert res.name == s.name

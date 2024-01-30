@@ -386,6 +386,12 @@ class Segment(abc.Sequence[NamedTupleT]):
                     'Cannot create non-consecutive copy of segment => "step" '
                     "is slicing-incompatible"
                 )
+
+            if idx.start < self.start:
+                idx = slice(None, idx.stop, idx.step)
+            if idx.stop > self.end:
+                idx = slice(idx.start, None, idx.step)
+
             if (idx.start, idx.stop) in [
                 (None, None),
                 (None, self.end),
@@ -555,6 +561,10 @@ class Segment(abc.Sequence[NamedTupleT]):
             Appending to an empty segment will return `other`.
             Appending an empty segment will return this segment.
 
+        ..warning ::
+            Appending creates a new segment and removes associated parent and
+            metadata
+
         :param other: Another arbitrary segment.
         :param filler: A callable accepting the positive integer and returning
             a filled in a sequence or a ``dict`` mapping sequence names to such
@@ -596,7 +606,44 @@ class Segment(abc.Sequence[NamedTupleT]):
                 j_fn = joiner
             seqs[_k] = j_fn(seqs_self[_k], seqs_other[_k])
 
-        return self.__class__(self.start, len(self) + len(other), self.name, seqs)
+        return self.__class__(
+            self.start, self.start + len(self) + len(other) - 1, self.name, seqs
+        )
+
+    def insert(self, other: t.Self, i: int, **kwargs) -> t.Self:
+        """
+        Insert a segment into this one.
+
+        The function splits this segment into two parts at the provided index
+        and insert `other` between them via :meth:`append`. The latter handles
+        common/unique sequences via `filler` and `joiner` arguments, which can
+        be passed here as keyword arguments.
+
+        ..note ::
+            Inserting an empty segment returns this instance.
+            Inserting a segment at the :meth:`end` appends `other`.
+
+        ..warning ::
+            Inserting creates a new segment and removes associated parent and
+            metadata
+
+        :param other: Another segment to insert.
+        :param i: Index to insert at. The insertion will be performed after `i`.
+        :param kwargs: Passed to :meth:`append`.
+        :return: A new segment with inserted `other`.
+        :raises IndexError: If attempting to insert at an invalid index. Only
+            indices ``start < i <= end`` are valid.
+        """
+        if other.is_empty:
+            return self
+        if self.is_empty:
+            raise IndexError("Cannot insert into empty segment")
+        if i == self.end:
+            return self.append(other, **kwargs)
+        if not (self.start <= i < self.end):
+            raise IndexError("Provided index is outside of this segment's boundaries")
+        s1, s2 = self[self.start: i], self[i + 1: self.end]
+        return s1.append(other, **kwargs).append(s2, **kwargs)
 
     def remove_seq(self, name: str) -> None:
         """
