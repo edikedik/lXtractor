@@ -270,6 +270,45 @@ def test_append(s1, s2, kw, expected):
     assert s.name == s1.name
 
 
+@pytest.mark.parametrize(
+    "s1,s2,works,expected",
+    [
+        (
+            Segment(1, 3, "A", seqs={"A": "AAA"}),
+            Segment(4, 5, "B", seqs={"A": "BB"}),
+            True,
+            (1, 5, [("A", "AAABB")]),
+        ),
+        (
+            Segment(1, 3, "A", seqs={"A": "AAA"}),
+            Segment(1, 2, "B", seqs={"B": "BB"}),
+            True,
+            (1, 5, [("A", "AAA**"), ("B", "***BB")]),
+        ),
+        (
+            Segment(1, 3, "A", seqs={"A": "AAA"}),
+            Segment(1, 2, "B", seqs={"B": ["B", "B"]}),
+            True,
+            (1, 5, [("A", "AAA**"), ("B", [None, None, None, "B", "B"])]),
+        ),
+        (
+            Segment(1, 3, "A", seqs={"A": "AAA"}),
+            Segment(1, 2, "B", seqs={"A": ["B", "B"]}),
+            False,
+            None,
+        ),
+    ],
+)
+def test_append_op(s1, s2, works, expected):
+    if works:
+        s = s1 | s2
+        seqs = [(name, s[name]) for name in s.seq_names]
+        assert (s.start, s.end, seqs) == expected
+    else:
+        with pytest.raises(TypeError):
+            s1 | s2
+
+
 def test_append_empty():
     s = Segment(1, 1, "A", seqs={"A": "A"})
     e = Segment(0, 0, "B")

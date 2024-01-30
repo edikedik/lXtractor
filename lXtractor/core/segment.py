@@ -5,6 +5,7 @@ in lXtractor.
 from __future__ import annotations
 
 import logging
+import operator as op
 import typing as t
 import warnings
 from collections import namedtuple, abc
@@ -428,8 +429,25 @@ class Segment(abc.Sequence[NamedTupleT]):
             return 0
         return self.end - self.start + 1
 
-    def __and__(self, other: Segment) -> Segment:
+    def __and__(self, other: t.Self) -> t.Self:
         return self.overlap_with(other, True, "self")
+
+    def __or__(self, other: t.Self) -> t.Self:
+        def fill_str(s: int) -> str:
+            return "*" * s
+
+        def fill_seq(s: int) -> list[None]:
+            return [None] * s
+
+        def make_fillers(
+            d: abc.Mapping[str, abc.Sequence[t.Any]]
+        ) -> dict[str, _Filler]:
+            return dict(
+                (k, fill_str if isinstance(v, str) else fill_seq) for k, v in d.items()
+            )
+
+        fillers = {**make_fillers(self._seqs), **make_fillers(other._seqs)}
+        return self.append(other, filler=fillers)
 
     def __eq__(self, other: t.Any) -> bool:
         if not isinstance(other, self.__class__):
@@ -505,7 +523,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         self,
         other: t.Self,
         filler: _Filler | abc.Mapping[str, _Filler] = (lambda x: [None] * x),
-        joiner: _Joiner | abc.Mapping[str, _Joiner] = (lambda x, y: x + y),
+        joiner: _Joiner | abc.Mapping[str, _Joiner] = op.add,
     ) -> t.Self:
         """
         Append another segment to this one.
@@ -514,6 +532,28 @@ class Segment(abc.Sequence[NamedTupleT]):
         sequence is missing in this segment or `other`, `filler` will create
         a sequence with filled values. The sequences will be deep-copied before
         merge.
+
+        >>> a = Segment(1, 3, "A", seqs={"A": "AAA"})
+        >>> b = Segment(1, 2, "B", seqs={"B": "BB"})
+        >>> c = a.append(b, filler=lambda x: '*' * x)
+        >>> c.id
+        'A|1-5'
+        >>> c['A']
+        'AAA**'
+        >>> c['B']
+        '***BB'
+
+        Note that the same can be achieved via ``|`` operator:
+
+        >>> a | b == a.append(b, filler=lambda x: '*' * x)
+        True
+
+        This will use ``"*"`` filler for ``str``-type sequences and ``None``
+        for the rest and use the default `joiner` for joining them.
+
+        ..note ::
+            Appending to an empty segment will return `other`.
+            Appending an empty segment will return this segment.
 
         :param other: Another arbitrary segment.
         :param filler: A callable accepting the positive integer and returning
