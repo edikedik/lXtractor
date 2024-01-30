@@ -730,6 +730,9 @@ class ChainSequence(lxs.Segment):
         if keep:
             # self.children: ChainList[ChainSequence]
             self.children.append(child)
+            child.parent = self
+        else:
+            child.parent = None
 
         return child
 
