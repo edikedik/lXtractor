@@ -387,9 +387,9 @@ class Segment(abc.Sequence[NamedTupleT]):
                     "is slicing-incompatible"
                 )
 
-            if idx.start < self.start:
+            if idx.start is not None and idx.start < self.start:
                 idx = slice(None, idx.stop, idx.step)
-            if idx.stop > self.end:
+            if idx.stop is not None and idx.stop > self.end:
                 idx = slice(idx.start, None, idx.step)
 
             if (idx.start, idx.stop) in [
