@@ -353,6 +353,8 @@ class Segment(abc.Sequence[NamedTupleT]):
     ) -> NamedTupleT | t.Self | abc.Sequence[t.Any]:
         idx_py: int | slice
         if isinstance(idx, str):
+            if idx == "i":
+                return list(range(self.start, self.end + 1))
             return self._seqs[idx]
         if isinstance(idx, (int, slice)):
             if self.is_empty:
@@ -391,6 +393,11 @@ class Segment(abc.Sequence[NamedTupleT]):
                 idx = slice(None, idx.stop, idx.step)
             if idx.stop is not None and idx.stop > self.end:
                 idx = slice(idx.start, None, idx.step)
+
+            if idx.start is not None and idx.stop is not None and idx.start > idx.stop:
+                raise IndexError(
+                    f"Start index {idx.start} is higher than end index {idx.stop}"
+                )
 
             if (idx.start, idx.stop) in [
                 (None, None),
@@ -604,7 +611,10 @@ class Segment(abc.Sequence[NamedTupleT]):
                 j_fn = joiner[_k]
             else:
                 j_fn = joiner
-            seqs[_k] = j_fn(seqs_self[_k], seqs_other[_k])
+            try:
+                seqs[_k] = j_fn(seqs_self[_k], seqs_other[_k])
+            except Exception as e:
+                raise RuntimeError(f'Failed to join {_k}') from e
 
         return self.__class__(
             self.start, self.start + len(self) + len(other) - 1, self.name, seqs
@@ -642,7 +652,7 @@ class Segment(abc.Sequence[NamedTupleT]):
             return self.append(other, **kwargs)
         if not (self.start <= i < self.end):
             raise IndexError("Provided index is outside of this segment's boundaries")
-        s1, s2 = self[self.start: i], self[i + 1: self.end]
+        s1, s2 = self[self.start : i], self[i + 1 : self.end]
         return s1.append(other, **kwargs).append(s2, **kwargs)
 
     def remove_seq(self, name: str) -> None:

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import operator as op
 import typing as t
 import warnings
 from collections import abc
 from copy import copy
 from io import TextIOBase
-from itertools import filterfalse, starmap, repeat, chain
+from itertools import filterfalse, starmap, repeat, chain, pairwise
 from pathlib import Path
 
 import numpy as np
@@ -328,7 +329,7 @@ class ChainSequence(lxs.Segment):
 
     def relate(
         self,
-        other: ChainSequence,
+        other: t.Self,
         map_name: str,
         link_name: str,
         link_points_to: str = "i",
@@ -402,7 +403,7 @@ class ChainSequence(lxs.Segment):
 
     def patch(
         self,
-        other: ChainSequence,
+        other: t.Self,
         template: str,
         target: str,
         link_name: str,
@@ -414,7 +415,7 @@ class ChainSequence(lxs.Segment):
         transform: abc.Callable[[list[T]], abc.Sequence[R]] = identity,
     ) -> abc.Sequence[R]:
         """
-        Path a sequence in `other` using a template sequence from here.
+        Patch a sequence in `other` using a template sequence from here.
 
         As an example, consider two related sequences, ``s`` and ``o``,
         mapped to the same reference numbering scheme ``r``, which we'll
@@ -491,6 +492,115 @@ class ChainSequence(lxs.Segment):
             other[target_new_name] = mapped
         return mapped
 
+    def patch_extend(
+        self,
+        other: t.Self,
+        numerator: str,
+        link_name: str,
+        link_points_to: str,
+        diff: abc.Callable[[T, T], int] = op.sub,
+        num_filter: abc.Callable[[t.Any], bool] = (lambda x: x is not None),
+        **kwargs,
+    ) -> t.Self:
+        """
+        Fill-in the gaps in the provided sequence using this sequence as
+        template. In other words, "patch" the gaps in the other.
+
+        The existence of a gap is judged by the `numerator` map
+        that should point to a numeration scheme. If there are two consecutive
+        `numerator` elements, for which `diff` returns value greater than one,
+        this is considered a gap that could be filled in by a template.
+
+        To relate a potential gap to the template sequence, a link sequence
+        must exist in the provided sequence, containing values referencing the
+        template.
+
+        As an example, consider the template sequence "ABCDEG" and the sequence
+        requiring patching "BDEG". Let ``e`` be the numbering of the "BDEG",
+        ``e=[1, 4, 5, 6]`` and ``r=[2, 4, 5, 6]`` be a link map that points to
+        the segment indices of the template.
+
+        >>> template = ChainSequence.from_string("ABCDEG", name='T')
+        >>> seq = ChainSequence.from_string("BDEG", name='P', e=[1,4,6,7], r=[2,4,5,6])
+
+        Observe that there is a numeration gap between ``1`` and ``4``. The
+        corresponding elements of ``r`` point to the template indices ``2``
+        an ``4``. Thus, there is a gap that can be filled in by a portion of
+        the template between ``2`` and ``4``. Here, it turns out to be singleton
+        sequence element "C" at position ``3``. This segment will be inserted
+        into the patched sequence:
+
+        >>> patched = template.patch_extend(seq, 'e', 'r', 'i')
+        >>> patched.id
+        'P|1-5'
+        >>> patched.seq1
+        'BCDEG'
+
+        Similar to :meth:`patch`, the sequence elements missing in either of
+        the sequences will be filled-in. Thus, what happens to the original
+        numeration ``e``?
+
+        >>> patched['e']
+        [1, None, 4, 6, 7]
+
+        On the other hand, the link sequence ``r`` can be successfully filled
+        in by the template:
+
+        >>> patched['r']
+        [2, 3, 4, 5, 6]
+
+        ..note ::
+            If this segment is empty or singleton, the `other` is returned
+            unchanged.
+
+        ..warning ::
+            This operation creates a new segment. The parents and metadata won't
+            be transferred.
+
+        ..seealso ::
+            meth:`lXtractor.core.segment.Segment.insert` used to insert segments
+            while patching.
+
+        :param other: A sequence to patch.
+        :param numerator: A map name in `other` containing numeration scheme
+            the gaps will be inferred from.
+        :param link_name: A map name in `other` with values referencing some
+            sequence in this instance.
+        :param link_points_to: A map name in this instance that the `link_name`
+            refers to in `other`.
+        :param diff: A callable accepting two `numerator` elements -- higher and
+            lower ones -- and returning the number of elements between them.
+            By default, a simple substraction is used.
+        :param num_filter: An optional filter function to filter out elements
+            in the `numerator` before splitting it into consecutive pairs.
+            By default, this function will filter out any ``None`` values.
+        :param kwargs: Additional keyword arguments passed to
+            meth:`lXtractor.core.segment.Segment.insert`.
+        :return: A new patched segment.
+        """
+        def extract_segment(start, end):
+            link_start, link_end = map_enum_link[start], map_enum_link[end]
+            self_start, self_end = map_pointer_i[link_start], map_pointer_i[link_end]
+            seg = self[self_start + 1:self_end - 1]
+            seg.add_seq(link_name, seg[link_points_to])
+            return seg
+
+        if self.is_empty or self.is_singleton:
+            return other
+
+        map_enum_link = other.get_map(numerator, link_name, True)
+        map_pointer_i = self.get_map(link_points_to, "i", True)
+        enum_pairs = pairwise(filter(num_filter, other[numerator]))
+        target_pairs = filter(lambda pair: diff(pair[1], pair[0]) > 1, enum_pairs)
+        for p in target_pairs:
+            try:
+                s = extract_segment(*p)
+            except (KeyError, IndexError):
+                continue
+            insert_idx = other.get_item(numerator, p[0]).i
+            other = other.insert(s, insert_idx, **kwargs)
+        return other
+
     def coverage(
         self,
         map_names: abc.Sequence[str] | None = None,
@@ -538,7 +648,7 @@ class ChainSequence(lxs.Segment):
 
     def get_map(
         self, key: str, to: str | None = None, rm_empty: bool = False
-    ) -> dict[t.Hashable, NamedTupleT]:
+    ) -> dict[t.Hashable, t.Any]:
         """
         Obtain the mapping of the form "key->item(seq_name=*,...)".
 

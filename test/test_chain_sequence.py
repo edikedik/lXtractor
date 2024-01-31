@@ -336,3 +336,75 @@ def test_patch_empty():
 
     res = other.patch(seq, "seq1", "seq1", "r", "r")
     assert res == ["A"]
+
+
+@pytest.mark.parametrize(
+    "s,o,kw,expected",
+    [
+        (
+            ChainSequence.from_string("ABCDEG"),
+            ChainSequence.from_string("AK", name="O", e=[1, 10], r=[1, 6]),
+            {},
+            ChainSequence.from_string(
+                "ABCDEK",
+                name="O",
+                e=[1, None, None, None, None, 10],
+                r=[1, 2, 3, 4, 5, 6],
+            ),
+        ),
+        (
+            ChainSequence.from_string("ABCDEG"),
+            ChainSequence.from_string("BDEG", name="O", e=[1, 4, 6, 7], r=[2, 4, 5, 6]),
+            {},
+            ChainSequence.from_string(
+                "BCDEG", name="O", e=[1, None, 4, 6, 7], r=[2, 3, 4, 5, 6]
+            ),
+        ),
+        (
+            ChainSequence.from_string("ABCDEG"),
+            ChainSequence.from_string(
+                "BDEG", 3, 6, "O", e=[1, 4, 6, 7], r=[2, 4, 5, 6]
+            ),
+            {},
+            ChainSequence.from_string(
+                "BCDEG", 3, 7, "O", e=[1, None, 4, 6, 7], r=[2, 3, 4, 5, 6]
+            ),
+        ),
+        (  # Can't map segment boundaries since reference is None
+            ChainSequence.from_string("ABCDEG"),
+            ChainSequence.from_string(
+                "BDEG", name="O", e=[1, 4, 6, 7], r=[2, None, 5, 6]
+            ),
+            {},
+            ChainSequence.from_string(
+                "BDEG", name="O", e=[1, 4, 6, 7], r=[2, None, 5, 6]
+            ),
+        ),
+        (
+            # Can't patch from a unit segment
+            ChainSequence.from_string("A"),
+            ChainSequence.from_string("XY", name="O", e=[1, 3], r=[1, 3]),
+            {},
+            ChainSequence.from_string("XY", name="O", e=[1, 3], r=[1, 3]),
+        ),
+        (
+            # If numeration is consecutive, there is no patching
+            ChainSequence.from_string("ABC"),
+            ChainSequence.from_string("AC", name="O", e=[1, 2], r=[1, 3]),
+            {},
+            ChainSequence.from_string("AC", name="O", e=[1, 2], r=[1, 3]),
+        ),
+        (
+            # Test passing
+            ChainSequence.from_string("ABC"),
+            ChainSequence.from_string("AC", name="O", e=[1, 3], r=[1, 3], x="YY"),
+            dict(filler=dict(e=lambda x: ["X"] * x, x=lambda x: "X" * x)),
+            ChainSequence.from_string(
+                "ABC", name="O", e=[1, "X", 3], r=[1, 2, 3], x="YXY"
+            ),
+        ),
+    ],
+)
+def test_patch_extend(s, o, kw, expected):
+    patched = s.patch_extend(o, "e", "r", "i", **kw)
+    assert patched == expected
