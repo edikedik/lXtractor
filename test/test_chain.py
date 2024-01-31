@@ -1,6 +1,6 @@
 import pytest
 
-from lXtractor.chain import Chain, ChainStructure
+from lXtractor.chain import Chain, ChainStructure, ChainSequence, make_filled
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import NoOverlap, InitError
 from lXtractor.util import biotite_align
@@ -15,7 +15,7 @@ def test_basic(four_chain_structure_seq_path, four_chain_structure):
     chain_a = ChainStructure(chains[0])
     p.add_structure(chain_a)
     assert len(p.structures) == 1
-    start, end = chain_a._seq.start, chain_a._seq.end
+    start, end = chain_a.seq.start, chain_a.seq.end
     sep = DefaultConfig["separators"]
     assert f"3i6x{sep['chain']}A{sep['start_end']}{start}-{end}"
 
@@ -157,3 +157,29 @@ def test_apply_structures(src_chain):
     assert all("X" in s.meta for s in c_new.structures)
     c.apply_structures(mark_meta, inplace=True)
     assert all("X" in s.meta for s in c.structures)
+
+
+@pytest.mark.parametrize(
+    "ref,cs,expected",
+    [
+        (
+            ChainSequence.from_string("ABCDEG", name="R"),
+            ChainStructure(
+                None,
+                seq=ChainSequence.from_string(
+                    "XX", name="S", numbering=[1, 3], map_canonical=[2, 5]
+                ),
+            ),
+            ChainSequence.from_string(
+                "XCDX",
+                name="S",
+                numbering=[1, None, None, 3],
+                map_canonical=[2, 3, 4, 5],
+            ),
+        ),
+    ],
+)
+def test_patch_str_seqs(ref, cs, expected):
+    c = Chain(ref, [cs])
+    patched = next(c.generate_patched_seqs())
+    assert patched == expected

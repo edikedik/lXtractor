@@ -6,6 +6,7 @@ from collections import abc
 from io import TextIOBase
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from lXtractor.chain import ChainSequence, ChainStructure
@@ -486,6 +487,32 @@ class Chain:
         for s in self.structures:
             self.seq.relate(s.seq, map_name, link_map, link_map_points_to, **kwargs)
 
+    def generate_patched_seqs(
+        self,
+        numbering: str = DefaultConfig["mapnames"]["enum"],
+        link_name: str = DefaultConfig["mapnames"]["map_canonical"],
+        link_points_to: str = "i",
+        **kwargs,
+    ) -> abc.Generator[ChainSequence, None, None]:
+        """
+        Generate patched sequences from chain structure sequences.
+
+        For explanation of the patching process see
+        :meth:`lXtractor.chain.sequence.ChainSequence.patch`.
+
+        :param numbering: Map name referring to a numbering scheme to infer
+            gaps from.
+        :param link_name: Map name linking structure sequence to the canonical
+            sequence.
+        :param link_points_to: Map name in the canonical sequence that
+            `link_name` refers to.
+        :param kwargs: Passed to
+            :meth:`lXtractor.chain.sequence.ChainSequence.patch`.
+        :return: A generator over patched structure sequences.
+        """
+        for s in self.structures.sequences:
+            yield self.seq.patch(s.seq, numbering, link_name, link_points_to, **kwargs)
+
     def spawn_child(
         self,
         start: int,
@@ -606,6 +633,8 @@ class Chain:
     ) -> pd.DataFrame:
         s = self.seq.summary(meta=meta, children=False)
         s[DefaultConfig["colnames"]["id"]] = [self.id]
+        parent_id = np.NaN if self.parent is None else self.parent.id
+        s[DefaultConfig["colnames"]["parent_id"]] = [parent_id]
         if structures and self.structures:
             str_summaries = pd.concat(
                 s.summary(meta=meta, children=False) for s in self.structures
