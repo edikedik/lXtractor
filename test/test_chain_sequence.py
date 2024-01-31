@@ -324,17 +324,17 @@ def test_summary(simple_chain_seq, meta):
         ),
     ],
 )
-def test_patch(seq, other, kwargs, expected):
-    assert seq.patch(other, **kwargs) == expected
+def test_fill(seq, other, kwargs, expected):
+    assert seq.fill(other, **kwargs) == expected
 
 
-def test_patch_empty():
+def test_fill_empty():
     seq = ChainSequence.from_string("A", r=[0])
     other = ChainSequence.from_string("", r=[])
-    res = seq.patch(other, "seq1", "seq1", "r", "r")
+    res = seq.fill(other, "seq1", "seq1", "r", "r")
     assert res == []
 
-    res = other.patch(seq, "seq1", "seq1", "r", "r")
+    res = other.fill(seq, "seq1", "seq1", "r", "r")
     assert res == ["A"]
 
 
@@ -405,6 +405,6 @@ def test_patch_empty():
         ),
     ],
 )
-def test_patch_extend(s, o, kw, expected):
-    patched = s.patch_extend(o, "e", "r", "i", **kw)
+def test_patch(s, o, kw, expected):
+    patched = s.patch(o, "e", "r", "i", **kw)
     assert patched == expected

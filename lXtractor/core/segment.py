@@ -564,11 +564,11 @@ class Segment(abc.Sequence[NamedTupleT]):
         This will use ``"*"`` filler for ``str``-type sequences and ``None``
         for the rest and use the default `joiner` for joining them.
 
-        ..note ::
+        .. note::
             Appending to an empty segment will return `other`.
             Appending an empty segment will return this segment.
 
-        ..warning ::
+        .. warning::
             Appending creates a new segment and removes associated parent and
             metadata
 
@@ -629,11 +629,11 @@ class Segment(abc.Sequence[NamedTupleT]):
         common/unique sequences via `filler` and `joiner` arguments, which can
         be passed here as keyword arguments.
 
-        ..note ::
+        .. note::
             Inserting an empty segment returns this instance.
             Inserting a segment at the :meth:`end` appends `other`.
 
-        ..warning ::
+        .. warning::
             Inserting creates a new segment and removes associated parent and
             metadata
 

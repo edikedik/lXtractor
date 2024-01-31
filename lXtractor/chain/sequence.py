@@ -401,7 +401,7 @@ class ChainSequence(lxs.Segment):
             other.add_seq(map_name_in_other or map_name, mapped)
         return mapped
 
-    def patch(
+    def fill(
         self,
         other: t.Self,
         template: str,
@@ -415,20 +415,26 @@ class ChainSequence(lxs.Segment):
         transform: abc.Callable[[list[T]], abc.Sequence[R]] = identity,
     ) -> abc.Sequence[R]:
         """
-        Patch a sequence in `other` using a template sequence from here.
+        Fill-in a sequence in `other` using a template sequence from here.
 
         As an example, consider two related sequences, ``s`` and ``o``,
         mapped to the same reference numbering scheme ``r``, which we'll
         denote as a "link sequence."
 
         We would like to fill in "X" residues within ``o`` with residues from
-        ``s``. This can be achieved by the following code:
+        ``s``. Let's first try this:
 
         >>> s = ChainSequence.from_string('ABCD', r=[10, 11, 12, 13])
         >>> o = ChainSequence.from_string('AABXDE', r=[9, 10, 11, 12, 13, 14])
-        >>> s.patch(o,'seq1','seq1','r','r')
-        ['A', 'A', 'B', 'C', 'D', 'E']
-        >>> s.patch(o,'seq1','seq1','r','r',empty_target=('X', ), transform="".join)
+        >>> s.fill(o,'seq1','seq1','r','r')
+        ['A', 'A', 'B', 'X', 'D', 'E']
+
+        In the example above, "X" was not replaced because it's not considered
+        and "empty" target element requiring replacement. Below, we'll provide
+        a tuple of possible empty values and pass a transform function that
+        will join the result back into ``str``.
+
+        >>> s.fill(o,'seq1','seq1','r','r',empty_target=('X', ),transform="".join)
         'AABCDE'
         >>> o['seq1_patched'] == 'AABCDE'
         True
@@ -492,7 +498,7 @@ class ChainSequence(lxs.Segment):
             other[target_new_name] = mapped
         return mapped
 
-    def patch_extend(
+    def patch(
         self,
         other: t.Self,
         numerator: str,
@@ -503,8 +509,7 @@ class ChainSequence(lxs.Segment):
         **kwargs,
     ) -> t.Self:
         """
-        Fill-in the gaps in the provided sequence using this sequence as
-        template. In other words, "patch" the gaps in the other.
+        Patch the gaps in the provided sequence using this sequence as template.
 
         The existence of a gap is judged by the `numerator` map
         that should point to a numeration scheme. If there are two consecutive
@@ -530,7 +535,7 @@ class ChainSequence(lxs.Segment):
         sequence element "C" at position ``3``. This segment will be inserted
         into the patched sequence:
 
-        >>> patched = template.patch_extend(seq, 'e', 'r', 'i')
+        >>> patched = template.patch(seq,'e','r','i')
         >>> patched.id
         'P|1-5'
         >>> patched.seq1
@@ -549,15 +554,15 @@ class ChainSequence(lxs.Segment):
         >>> patched['r']
         [2, 3, 4, 5, 6]
 
-        ..note ::
+        .. note::
             If this segment is empty or singleton, the `other` is returned
             unchanged.
 
-        ..warning ::
+        .. warning::
             This operation creates a new segment. The parents and metadata won't
             be transferred.
 
-        ..seealso ::
+        .. seealso::
             meth:`lXtractor.core.segment.Segment.insert` used to insert segments
             while patching.
 

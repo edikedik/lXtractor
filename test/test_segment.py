@@ -324,7 +324,7 @@ def test_append_op(s1, s2, works, expected):
         seqs = [(name, s[name]) for name in s.seq_names]
         assert (s.start, s.end, seqs) == expected
     else:
-        with pytest.raises(TypeError):
+        with pytest.raises(RuntimeError):
             s1 | s2
 
 
