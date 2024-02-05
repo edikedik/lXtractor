@@ -5,9 +5,11 @@
   "collection_type": null,
   "max_fetch_threads": 20,
   "max_proc": -1,
-  "output_dir": "./collection",
   "parallel_backend": "multiprocessing",
   "references": null,
+  "references_alphabet": "amino",
+  "out_dir": "./collection",
+  "ref_dir": "./references",
   "seq_dir": "./sequences",
   "str_dir": "./structures",
   "source": null

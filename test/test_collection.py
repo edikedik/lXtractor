@@ -12,7 +12,9 @@ from lXtractor.collection import (
     StructureCollection,
 )
 from lXtractor.collection_constructor import ConstructorConfig, CollectionConstructor
+from lXtractor.core import Alignment
 from lXtractor.core.exceptions import MissingData
+from lXtractor.ext import PyHMMer
 from lXtractor.variables import SeqEl
 
 GET_TABLE_NAMES = """SELECT name FROM sqlite_master WHERE type='table';"""
@@ -31,6 +33,7 @@ COLLECTION_TYPES = (
     StructureCollection,
     ChainCollection,
 )
+DATA = Path.cwd() / "data"
 
 
 def get_all_ids(chains: lxc.ChainList, nested_structures=True):
@@ -295,13 +298,14 @@ def test_constructor_init(inp, references):
     source, valid_ct, invalid_ct = inp
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
-        dirs = [tmpdir / "output", tmpdir / "seq_dir", tmpdir / "pdb_dir"]
+        dirs = [tmpdir / x for x in ("output", "sequences", "structures", "references")]
         kws = dict(
             source=source,
             collection_type=valid_ct,
-            output_dir=dirs[0],
+            out_dir=dirs[0],
             seq_dir=dirs[1],
             str_dir=dirs[2],
+            ref_dir=dirs[3],
             references=references,
         )
         config = ConstructorConfig(**kws)
@@ -315,3 +319,44 @@ def test_constructor_init(inp, references):
             kws["collection_type"] = invalid_ct
             with pytest.raises(ValueError):
                 CollectionConstructor(ConstructorConfig(**kws))
+
+
+@pytest.mark.parametrize("source,col_type", [("SIFTS", "cha")])
+@pytest.mark.parametrize(
+    "ref",
+    [
+        DATA / "Pkinase.hmm",
+        DATA / "simple.fasta",
+        PyHMMer(DATA / "Pkinase.hmm"),
+        Alignment([("REF_SEQ", "KAL"), ("s2", "KKL")]),
+        lxc.ChainSequence.from_string("KAL", name="REF_SEQ"),
+        ("REF", DATA / "simple.fasta"),
+        ("ALN", Alignment([("REF_SEQ", "KAL"), ("s2", "KKL")])),
+        ("REF", "KAL"),
+        ("REF", lxc.ChainSequence.from_string("KAL", name="REF_SEQ")),
+        ("INVALID", None),
+    ],
+)
+def test_setup_references(source, col_type, ref):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+        dirs = [tmpdir / x for x in ("output", "sequences", "structures", "references")]
+        kws = dict(
+            source=source,
+            collection_type=col_type,
+            out_dir=dirs[0],
+            seq_dir=dirs[1],
+            str_dir=dirs[2],
+            ref_dir=dirs[3],
+            references=[ref],
+        )
+        config = ConstructorConfig(**kws)
+        if isinstance(ref, tuple) and ref[0] == "INVALID":
+            with pytest.raises(TypeError):
+                CollectionConstructor(config)
+        else:
+            constructor = CollectionConstructor(config)
+            assert all(isinstance(x, PyHMMer) for x in constructor.references)
+            written_refs = {x.stem for x in dirs[-1].glob("*.hmm")}
+            ref_names = {r.hmm.name.decode("utf-8") for r in constructor.references}
+            assert ref_names == written_refs
