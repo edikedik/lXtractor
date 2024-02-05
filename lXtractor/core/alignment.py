@@ -30,7 +30,6 @@ from lXtractor.util.seq import (
     write_fasta,
     remove_gap_columns,
     partition_gap_sequences,
-    biotite_align,
 )
 
 if t.TYPE_CHECKING:
@@ -46,7 +45,6 @@ _GAPS = ("-", ".")
 
 class Alignment:
     # TODO: consider directly inheriting from MutableSequence
-    # TODO: implement annotate() akin to PyHMMer.annotate()
     # TODO: implement vcat(other) or | operator
     """
     An MSA resource: a collection of aligned sequences.
