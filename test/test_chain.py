@@ -1,6 +1,6 @@
 import pytest
 
-from lXtractor.chain import Chain, ChainStructure, ChainSequence, make_filled
+from lXtractor.chain import Chain, ChainStructure, ChainSequence
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import NoOverlap, InitError
 from lXtractor.util import biotite_align

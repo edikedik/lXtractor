@@ -511,7 +511,7 @@ class Chain:
         :return: A generator over patched structure sequences.
         """
         for s in self.structures.sequences:
-            yield self.seq.patch(s.seq, numbering, link_name, link_points_to, **kwargs)
+            yield self.seq.patch(s, numbering, link_name, link_points_to, **kwargs)
 
     def spawn_child(
         self,

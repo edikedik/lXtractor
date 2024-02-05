@@ -563,8 +563,8 @@ class ChainSequence(lxs.Segment):
             be transferred.
 
         .. seealso::
-            meth:`lXtractor.core.segment.Segment.insert` used to insert segments
-            while patching.
+            :meth:`lXtractor.core.segment.Segment.insert` used to insert
+            segments while patching.
 
         :param other: A sequence to patch.
         :param numerator: A map name in `other` containing numeration scheme
