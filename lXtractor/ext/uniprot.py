@@ -4,7 +4,32 @@ import operator as op
 from collections import abc
 from urllib.parse import urlencode
 
+from lXtractor.ext.base import ApiBase
 from lXtractor.util.io import fetch_text, fetch_chunks
+
+BASE_URL = "https://rest.uniprot.org/uniprotkb/stream"
+
+
+def make_url(accessions: abc.Iterable[str], fmt: str, fields: str | None) -> str:
+    params = {
+        "format": fmt,
+        "query": " OR ".join(map(lambda a: f"accession:{a}", accessions)),
+    }
+    if fmt == "tsv" and fields is not None:
+        params["fields"] = fields
+
+    return f"{BASE_URL}?{urlencode(params)}"
+
+
+def url_getters() -> dict[str, abc.Callable[..., str]]:
+    return {
+        "sequences": lambda acc: make_url(acc, "fasta", None),
+        "info": lambda acc, fields: make_url(acc, "tsv", None),
+    }
+
+
+class UniProt(ApiBase):
+    pass
 
 
 def fetch_uniprot(
@@ -32,16 +57,9 @@ def fetch_uniprot(
     :return: the 'utf-8' encoded results as a single chunk of text.
     """
 
-    url = "https://rest.uniprot.org/uniprotkb/stream"
-
     def fetch_chunk(chunk: abc.Iterable[str]):
-        params = {
-            "format": fmt,
-            "query": " OR ".join(map(lambda a: f"accession:{a}", chunk)),
-        }
-        if fmt == "tsv" and fields is not None:
-            params["fields"] = fields
-        return fetch_text(url, decode=True, params=urlencode(params).encode("utf-8"))
+        full_url = make_url(chunk, fmt, fields)
+        return fetch_text(full_url, decode=True)
 
     results = fetch_chunks(acc, fetch_chunk, chunk_size, **kwargs)
 
