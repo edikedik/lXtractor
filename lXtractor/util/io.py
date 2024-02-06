@@ -62,7 +62,7 @@ def fetch_text(
     :param decode: Decode the received bytes to utf-8.
     :param chunk_size: The number of bytes to use when splitting the fetched
         result into chunks.
-    :param kwargs: Passed to :func:requests.get`.
+    :param kwargs: Passed to :func:`requests.get`.
     :return: Fetched text as a single string.
     """
     with requests.get(url, stream=True, **kwargs) as r:
