@@ -4,7 +4,7 @@ import operator as op
 import typing as t
 from collections import abc
 from io import StringIO
-from itertools import tee, repeat
+from itertools import tee
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -45,12 +45,20 @@ def _filter_existing(
 
 
 class UniProt(ApiBase):
-
     """
+    An interface to UniProt fetching.
+
+    :attr:`UniProt.url_getters` defines functions that construct a URL from
+    provided arguments to fetch specific data. For instance, calling a URL
+    getter for sequences in fasta format using a list of sequences will
+    construct a valid URL for fetching the data.
 
     >>> uni = UniProt()
     >>> uni.url_getters['sequences'](['P00523', 'P12931'])
     'https://rest.uniprot.org/uniprotkb/stream?format=fasta&query=accession%3AP00523+OR+accession%3AP12931'
+
+    These URLs are constructed dynamically within this class's methods, used
+    to query UniProt, fetch and parse the data.
 
     """
 
@@ -61,6 +69,18 @@ class UniProt(ApiBase):
         num_threads: int = 1,
         verbose: bool = False,
     ):
+        """
+        :param chunk_size: A number of IDs to join within a single URL and
+            query simultaneously. Note that having invalid URL in a chunk
+            invalidates all its IDs: they won't be fetched. For optimal
+            performance, please filter your accessions carefully.
+        :param max_trials: A maximum number of trials for fetching a single
+            chunk. Makes sense to raise above ``1`` when the connection is
+            unstable.
+        :param num_threads: The number of threads to use for fetching chunks
+            in parallel.
+        :param verbose: Display progress bar via stdout.
+        """
         super().__init__(url_getters(), max_trials, num_threads, verbose)
         self.chunk_size = chunk_size
 
@@ -83,6 +103,21 @@ class UniProt(ApiBase):
         overwrite: bool = False,
         callback: abc.Callable[[tuple[str, str]], T] | None = None,
     ) -> abc.Iterator[tuple[str, str]] | abc.Iterator[T]:
+        """
+        Fetch sequences in "fasta" format from UniProt.
+
+        :param accessions: A list of valid accessions to fetch.
+        :param dir_: A directory where individual sequence will be stored.
+            If exists, will filter accessions before fetching unless `overwrite`
+            is ``True``.
+        :param overwrite: Overwrite existing sequences if they exist in `dir_`.
+        :param callback: A function accepting a single sequence and returning
+            anything else. Can be useful to convert sequences into, eg,
+            :class:~lXtractor.chain.sequence.ChainSequence` (for this, pass
+            :meth:~lXtractor.chain.sequence.ChainSequence.from_tuple` here).
+        :return: An iterator over fetched sequences (or whatever ``callback``
+            returns).
+        """
         if dir_ is not None and not overwrite:
             accessions = _filter_existing(accessions, dir_, "fasta")
         chunks = map(tuple, chunked_even(accessions, self.chunk_size))
@@ -117,6 +152,17 @@ class UniProt(ApiBase):
         fields: str | None = None,
         as_df: bool = True,
     ) -> pd.DataFrame | list[str]:
+        """
+        Fetch information in tsv format from UniProt.
+
+        :param accessions: A list of accessions to fetch the info for.
+        :param fields: A comma-separated list of fields to fetch. If ``None``,
+            default fields UniProt provides will be used.
+        :param as_df: Convert fetched tables into pandas dataframes and join
+            them. Otherwise, return raw text corresponding to each chunk of
+            `accessions`.
+        :return: A list of texts per chunk or a single data frame.
+        """
         chunks = ((tuple(c), fields) for c in chunked_even(accessions, self.chunk_size))
         fetched, missed = fetch_urls(
             self.url_getters["info"],
