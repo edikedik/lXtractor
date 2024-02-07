@@ -27,14 +27,14 @@ from lXtractor.core.exceptions import FormatError
 
 T = t.TypeVar("T")
 V = t.TypeVar("V")
-_U = t.TypeVar("_U", tuple[str, ...], str)
+_U = t.TypeVar("_U")
 _F = t.TypeVar("_F", str, Path)
 LOGGER = logging.getLogger(__name__)
 
 __all__ = (
     "fetch_text",
     "fetch_to_file",
-    "fetch_files",
+    "fetch_urls",
     "fetch_iterable",
     "fetch_chunks",
     "setup_logger",
@@ -255,13 +255,14 @@ def fetch_max_trials(
     return trials, remaining
 
 
-def fetch_files(
+def fetch_urls(
     url_getter: UrlGetter,
     url_getter_args: abc.Iterable[_U],
     fmt: str,
     dir_: Path | None,
     *,
     fname_idx: int = 0,
+    args_applier: abc.Callable[[UrlGetter, _U], str] | None = None,
     callback: abc.Callable[[_U, str | bytes], T] | None = None,
     overwrite: bool = False,
     decode: bool = False,
@@ -270,6 +271,22 @@ def fetch_files(
     verbose: bool = False,
 ) -> tuple[list[tuple[_U, _F] | tuple[_U, T]], list[_U]]:
     """
+    A general-purpose function for fetching URLs. Each URL is dynamically
+    produced via URL getters supplied with positional arguments.
+
+    .. seealso::
+        :class:`~lXtractor.ext.base.ApiBase` or
+        :class:`~lXtractor.ext._pdb.PDB` for more information on URL getters.
+
+    It has two modes: fetching to text and fetching to files. The former is the
+    default, whereas the latter can be turned on by providing `dir_` argument.
+    If provided, each url is considered a separate file to fetch. Thus, the
+    function will also check `dir_` (if it exists) for files that were already
+    fetched to avoid useless work. This can be turned off via `overwrite=True`.
+    For this functionality to work, each argument in `url_getter_args` must be
+    converted to a single (file)name. If an argument is a sequence, `fname_idx`
+    should point to an index, such that ``arg[fname_idx]`` is the filename.
+
     :param url_getter: A callable accepting two or more strings and returning
         a valid url to fetch. The last argument is reserved for `fmt`.
     :param url_getter_args: An iterable over strings or tuple of strings
@@ -282,6 +299,9 @@ def fetch_files(
     :param fname_idx: If an element in `url_getter_args` is a tuple, this
         argument is used to index this tuple to construct a file name that is
         used to save file / check if such file exists.
+    :param args_applier: A callable accepting a URL getter and its args and
+        applying the arguments to the URL getter to obtain the URL. If none,
+        will apply arguments as positional arguments.
     :param callback: A callable to parse content right after fetching, e.g.,
         ``json.loads``. It's only used if `dir_` is not provided.
     :param overwrite: Overwrite existing files if `dir_` is provided.
@@ -301,7 +321,10 @@ def fetch_files(
     # TODO: fix typing issues
 
     def fetch_one(args: _U) -> str | Path | T:
-        url = url_getter(args) if isinstance(args, str) else url_getter(*args)
+        if args_applier is not None:
+            url = args_applier(url_getter, args)
+        else:
+            url = url_getter(args) if isinstance(args, str) else url_getter(*args)
         if dir_ is None:
             res = fetch_text(url, decode=decode)
             return callback(args, res) if callback else res
