@@ -4,6 +4,7 @@ import operator as op
 import typing as t
 from collections import abc
 from io import StringIO
+from itertools import tee
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -97,8 +98,8 @@ class UniProt(ApiBase):
         seqs = read_fasta(StringIO(text), strip_id=False)
 
         if dir_ is not None:
-            seqs = list(seqs)
-            for h, s in seqs:
+            seqs, seqs_ = tee(seqs)
+            for h, s in seqs_:
                 acc = h.split("|")[1]
                 write_fasta([(h, s)], dir_ / f"{acc}.fasta")
 
