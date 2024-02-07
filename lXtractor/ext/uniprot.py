@@ -4,10 +4,11 @@ import operator as op
 import typing as t
 from collections import abc
 from io import StringIO
-from itertools import tee
+from itertools import tee, repeat
 from pathlib import Path
 from urllib.parse import urlencode
 
+import pandas as pd
 from more_itertools import chunked_even
 
 from lXtractor.ext.base import ApiBase
@@ -32,12 +33,14 @@ def make_url(accessions: abc.Iterable[str], fmt: str, fields: str | None) -> str
 def url_getters() -> dict[str, abc.Callable[..., str]]:
     return {
         "sequences": lambda acc: make_url(acc, "fasta", None),
-        "info": lambda acc, fields: make_url(acc, "tsv", None),
+        "info": lambda acc, fields: make_url(acc, "tsv", fields),
     }
 
 
-def _filter_existing(accessions: abc.Iterable[str], dir_: Path) -> abc.Iterator[str]:
-    existing = {p.stem for p in dir_.glob("*.fasta")}
+def _filter_existing(
+    accessions: abc.Iterable[str], dir_: Path, fmt: str
+) -> abc.Iterator[str]:
+    existing = {p.stem for p in dir_.glob(f"*.{fmt}")}
     return filter(lambda x: x not in existing, accessions)
 
 
@@ -81,7 +84,7 @@ class UniProt(ApiBase):
         callback: abc.Callable[[tuple[str, str]], T] | None = None,
     ) -> abc.Iterator[tuple[str, str]] | abc.Iterator[T]:
         if dir_ is not None and not overwrite:
-            accessions = _filter_existing(accessions, dir_)
+            accessions = _filter_existing(accessions, dir_, "fasta")
         chunks = map(tuple, chunked_even(accessions, self.chunk_size))
         fetched, missed = fetch_urls(
             self.url_getters["sequences"],
@@ -107,6 +110,28 @@ class UniProt(ApiBase):
             seqs = map(callback, seqs)
 
         return seqs
+
+    def fetch_info(
+        self,
+        accessions: abc.Iterable[str],
+        fields: str | None = None,
+        as_df: bool = True,
+    ) -> pd.DataFrame | list[str]:
+        chunks = ((tuple(c), fields) for c in chunked_even(accessions, self.chunk_size))
+        fetched, missed = fetch_urls(
+            self.url_getters["info"],
+            chunks,
+            "tsv",
+            None,
+            decode=True,
+            max_trials=self.max_trials,
+            num_threads=self.num_threads,
+            verbose=self.verbose,
+        )
+        texts = map(op.itemgetter(1), fetched)
+        if not as_df:
+            return list(texts)
+        return pd.concat(map(lambda x: pd.read_csv(StringIO(x), sep="\t"), texts))
 
 
 def fetch_uniprot(

@@ -321,10 +321,12 @@ def fetch_urls(
     # TODO: fix typing issues
 
     def fetch_one(args: _U) -> str | Path | T:
+        print(args)
         if args_applier is not None:
             url = args_applier(url_getter, args)
         else:
             url = url_getter(args) if isinstance(args, str) else url_getter(*args)
+        print(url)
         if dir_ is None:
             res = fetch_text(url, decode=decode)
             return callback(args, res) if callback else res

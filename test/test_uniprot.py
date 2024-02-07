@@ -1,5 +1,6 @@
 from io import StringIO
 
+import pandas as pd
 import pytest
 from more_itertools import unzip
 
@@ -56,3 +57,18 @@ def test_fetch_sequences_with_dir(inp, chunk_size, tmp_path):
     # calling again should not fetch anything since the files exist
     res = list(uni.fetch_sequences(inp, tmp_path))
     assert len(res) == 0
+
+
+@pytest.mark.parametrize("ids", [["P00523", "P12931"]])
+@pytest.mark.parametrize("fields", ["accession,id", None])
+@pytest.mark.parametrize("chunk_size", [1, 10])
+@pytest.mark.parametrize("as_df", [True, False])
+def test_fetch_info(ids, fields, chunk_size, as_df):
+    uni = UniProt(chunk_size=chunk_size)
+    res = uni.fetch_info(ids, fields, as_df)
+    if as_df:
+        assert isinstance(res, pd.DataFrame)
+        if fields is not None:
+            assert len(res.columns) == len(fields.split(","))
+    else:
+        assert isinstance(res, list)
