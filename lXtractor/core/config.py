@@ -157,6 +157,24 @@ MetaColumns = (
 )
 
 
+def serialize_json_value(obj: t.Any):
+    """Recursively convert objects to a JSON-serializable form."""
+    # Directly serializable types
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+    if isinstance(obj, (list, tuple)):
+        return [serialize_json_value(item) for item in obj]
+    if isinstance(obj, dict):
+        return {key: serialize_json_value(value) for key, value in obj.items()}
+
+    try:
+        return obj.__str__()
+    except Exception as e:
+        raise TypeError(
+            f"Failed to serialize object of type {type(obj)}. Cannot convert to string."
+        ) from e
+
+
 class Config(UserDict):
     """
     A configuration management class.
@@ -252,7 +270,7 @@ class Config(UserDict):
         :raises ValueError: If the user config path is not provided.
         """
         with Path(user_config_path).open("w") as f:
-            json.dump(self.data, f, indent=4)
+            json.dump(self.data, f, indent=4, default=serialize_json_value)
 
     def reset_to_defaults(self):
         """Reset the configuration to the default settings."""
@@ -265,9 +283,7 @@ class Config(UserDict):
         with self.user_config_path.open("w") as f:
             json.dump({}, f, indent=4)
 
-    def update_with(
-        self, other: abc.Mapping[str, t.Any] | Path
-    ):
+    def update_with(self, other: abc.Mapping[str, t.Any] | Path):
         if isinstance(other, Path):
             with other.open() as f:
                 self.update(json.load(f))
