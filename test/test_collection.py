@@ -33,7 +33,7 @@ COLLECTION_TYPES = (
     StructureCollection,
     ChainCollection,
 )
-DATA = Path.cwd() / "data"
+DATA = Path(__file__).parent / "data"
 
 
 def get_all_ids(chains: lxc.ChainList, nested_structures=True):
