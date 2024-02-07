@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import typing as t
 from collections import abc
+from dataclasses import dataclass
 from pathlib import Path
 
 from toolz import curry
@@ -16,7 +17,7 @@ from lXtractor.collection import (
 from lXtractor.core import Alignment
 from lXtractor.core.config import Config
 from lXtractor.core.exceptions import MissingData, FormatError
-from lXtractor.ext import PyHMMer, Pfam
+from lXtractor.ext import PyHMMer, Pfam, AlphaFold, PDB, UniProt, SIFTS
 from lXtractor.util import read_fasta
 
 _RESOURCES = Path(__file__).parent / "resources"
@@ -24,6 +25,7 @@ _DEFAULT_CONFIG_PATH = _RESOURCES / "collection_config.json"
 _USER_CONFIG_PATH = _RESOURCES / "collection_user_config.json"
 _CT = t.TypeVar("_CT", SequenceCollection, StructureCollection, ChainCollection)
 _CTA: t.TypeAlias = SequenceCollection | StructureCollection | ChainCollection
+_U = t.TypeVar("_U", bound=int | float | str | None)
 
 
 def _collection_type_from_source(source: t.Any) -> tuple[t.Type[_CTA], ...]:
@@ -152,14 +154,33 @@ class ConstructorConfig(Config):
             raise MissingData(f"Missing values for required keys: {none_keys}")
 
 
+@dataclass
+class Interfaces:
+    AlphaFold: AlphaFold
+    PDB: PDB
+    SIFTS: SIFTS | None
+    UniProt: UniProt
+
+
+@dataclass
+class CollectionPaths:
+    output: Path
+    references: Path
+    sequences: Path
+    structures: Path
+
+
 class CollectionConstructor:
     def __init__(self, config: ConstructorConfig):
         self.config = config
-        self._setup_paths()
+        self.interfaces: Interfaces = self._setup_interfaces()
+        self.paths = self._setup_paths()
         self.collection = self._setup_collection()
-        self.config.validate()
         self.references: list[PyHMMer] = self._setup_references()
         self._save_references()
+
+        self.config.validate()
+        self.config.save(self.config["out_dir"] / "collection_config.json")
 
     def _setup_collection(self) -> _CT:
         possible_types = _collection_type_from_source(self.config["source"])
@@ -177,9 +198,16 @@ class CollectionConstructor:
         return provided_type(coll_path)
 
     def _setup_paths(self):
-        for k in ("out_dir", "str_dir", "seq_dir", "ref_dir"):
-            self.config[k] = Path(self.config[k])
-            self.config[k].mkdir(parents=True, exist_ok=True)
+        # (!) Order here and in CollectionPaths must be the same
+        dir_keys = ("out_dir", "ref_dir", "seq_dir", "str_dir")
+        for k in dir_keys:
+            Path(self.config[k]).mkdir(parents=True, exist_ok=True)
+        return CollectionPaths(
+            output=Path(self.config["out_dir"]),
+            references=Path(self.config["ref_dir"]),
+            sequences=Path(self.config["seq_dir"]),
+            structures=Path(self.config["str_dir"]),
+        )
 
     def _setup_references(self) -> list[PyHMMer]:
         try:
@@ -190,6 +218,19 @@ class CollectionConstructor:
         init = curry(_init_reference)(alphabet=self.config["references_alphabet"])
 
         return list(map(init, refs))
+
+    def _setup_interfaces(self) -> Interfaces:
+        sifts = (
+            SIFTS(**self.config["SIFTS_kwargs"])
+            if self.config["source"] == "SIFTS"
+            else None
+        )
+        return Interfaces(
+            AlphaFold(**self.config["AlphaFold_kwargs"]),
+            PDB(**self.config["PDB_kwargs"]),
+            sifts,
+            UniProt(**self.config["UniProt_kwargs"]),
+        )
 
     def _save_references(self):
         for ref in self.references:

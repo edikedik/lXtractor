@@ -12,5 +12,11 @@
   "ref_dir": "./references",
   "seq_dir": "./sequences",
   "str_dir": "./structures",
-  "source": null
+  "str_fmt": "mmtf.gz",
+  "source": null,
+  "ids": null,
+  "AlphaFold_kwargs": {},
+  "PDB_kwargs": {},
+  "SIFTS_kwargs": {},
+  "UniProt_kwargs": {}
 }

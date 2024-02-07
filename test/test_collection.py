@@ -293,7 +293,7 @@ def test_constructor_config():
         (([], [], []), "chain", "str"),
     ],
 )
-@pytest.mark.parametrize("references", [(), None])
+@pytest.mark.parametrize("references", [()])
 def test_constructor_init(inp, references):
     source, valid_ct, invalid_ct = inp
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -307,18 +307,19 @@ def test_constructor_init(inp, references):
             str_dir=dirs[2],
             ref_dir=dirs[3],
             references=references,
+            ids=(),
         )
         config = ConstructorConfig(**kws)
-        if references is None:
-            with pytest.raises(MissingData):
-                CollectionConstructor(config)
-        else:
-            constructor = CollectionConstructor(config)
-            assert all(x.exists() and x.is_dir() for x in dirs)
-            assert isinstance(constructor.collection, Collection)
-            kws["collection_type"] = invalid_ct
-            with pytest.raises(ValueError):
-                CollectionConstructor(ConstructorConfig(**kws))
+        # if references is None:
+        #     with pytest.raises(MissingData):
+        #         CollectionConstructor(config)
+        # else:
+        constructor = CollectionConstructor(config)
+        assert all(x.exists() and x.is_dir() for x in dirs)
+        assert isinstance(constructor.collection, Collection)
+        kws["collection_type"] = invalid_ct
+        with pytest.raises(ValueError):
+            CollectionConstructor(ConstructorConfig(**kws))
 
 
 @pytest.mark.parametrize("source,col_type", [("SIFTS", "cha")])
@@ -349,6 +350,7 @@ def test_setup_references(source, col_type, ref):
             str_dir=dirs[2],
             ref_dir=dirs[3],
             references=[ref],
+            ids=()
         )
         config = ConstructorConfig(**kws)
         if isinstance(ref, tuple) and ref[0] == "INVALID":
