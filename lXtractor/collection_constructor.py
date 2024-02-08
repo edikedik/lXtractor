@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import json
 import typing as t
 from collections import abc
 from dataclasses import dataclass
+from itertools import chain
 from pathlib import Path
 
+from more_itertools import unzip
 from toolz import curry
 
 from lXtractor.chain import ChainSequence
@@ -20,11 +23,13 @@ from lXtractor.core.exceptions import MissingData, FormatError
 from lXtractor.ext import PyHMMer, Pfam, AlphaFold, PDB, UniProt, SIFTS
 from lXtractor.util import read_fasta
 
+LOGGER = logging.getLogger(__name__)
 _RESOURCES = Path(__file__).parent / "resources"
 _DEFAULT_CONFIG_PATH = _RESOURCES / "collection_config.json"
 _USER_CONFIG_PATH = _RESOURCES / "collection_user_config.json"
-_CT = t.TypeVar("_CT", SequenceCollection, StructureCollection, ChainCollection)
+_IDS: t.TypeAlias = abc.Iterable[str] | abc.Iterator[tuple[str, str]]
 _CTA: t.TypeAlias = SequenceCollection | StructureCollection | ChainCollection
+_CT = t.TypeVar("_CT", SequenceCollection, StructureCollection, ChainCollection)
 _U = t.TypeVar("_U", bound=int | float | str | None)
 
 
@@ -177,9 +182,9 @@ class CollectionConstructor:
         self.paths = self._setup_paths()
         self.collection = self._setup_collection()
         self.references: list[PyHMMer] = self._setup_references()
-        self._save_references()
 
         self.config.validate()
+        self._save_references()
         self.config.save(self.config["out_dir"] / "collection_config.json")
 
     def _setup_collection(self) -> _CT:
@@ -238,6 +243,48 @@ class CollectionConstructor:
             path = Path(self.config["ref_dir"] / f"{hmm_name}.hmm")
             with path.open("wb") as f:
                 ref.hmm.write(f, binary=False)
+
+    def fetch_missing(self, ids: _IDS, is_mapping: bool):
+        def strip_idx(s: str, at: str = ":", idx: int = 0):
+            return s.strip(at)[idx]
+
+        match self.config["source"].lower():
+            case "uniprot":
+                self.interfaces.UniProt.fetch_sequences(
+                    ids, self.paths.sequences, overwrite=False
+                )
+            case "sifts":
+                if is_mapping:
+                    uni_ids, vs = unzip(ids)
+                    pdb_ids = map(strip_idx, chain.from_iterable(vs))
+
+                else:
+                    uni_ids = list(ids)
+                    pdb_ids = filter(bool, map(self.interfaces.SIFTS.map_id, uni_ids))
+                    pdb_ids = map(strip_idx, chain.from_iterable(pdb_ids))
+                self.interfaces.UniProt.fetch_sequences(
+                    uni_ids, self.paths.sequences, overwrite=False
+                )
+                self.interfaces.PDB.fetch_structures(
+                    pdb_ids, self.paths.structures, self.config["str_fmt"]
+                )
+            case "pdb":
+                self.interfaces.PDB.fetch_structures(
+                    map(strip_idx, ids), self.paths.structures, self.config["str_fmt"]
+                )
+            case "alphafold":
+                self.interfaces.AlphaFold.fetch_structures(
+                    map(strip_idx, ids), self.paths.structures, self.config["str_fmt"]
+                )
+            case "local":
+                LOGGER.info("Local source: nothing to fetch")
+            case _:
+                LOGGER.info("Unrecognized source name; nothing to fetch.")
+
+    def step(self, ids: _IDS, is_mapping: bool):
+        ids = list(ids)
+        if self.config["fetch_missing"]:
+            self.fetch_missing(ids, is_mapping)
 
 
 if __name__ == "__main__":

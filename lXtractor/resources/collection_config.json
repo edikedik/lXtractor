@@ -3,6 +3,7 @@
   "batch_size": "auto",
   "collection_name": "auto",
   "collection_type": null,
+  "fetch_missing": true,
   "max_fetch_threads": 20,
   "max_proc": -1,
   "parallel_backend": "multiprocessing",
