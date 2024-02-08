@@ -245,12 +245,23 @@ class CollectionConstructor:
                 ref.hmm.write(f, binary=False)
 
     def fetch_missing(self, ids: _IDS, is_mapping: bool):
+        """
+        Fetch sequences/structures that are missing in the current ``"seq_dir"``
+        and ``"str_dir"`` from ``"source"``. These are set up in config.
+
+        :param ids: An iterable over input IDs.
+        :param is_mapping: Whether an element in an iterable is
+            a ``{sequence => [structures]}`` mapping. In that case, will fetch
+            both sequences and structures.
+        :return: Anything that the configured fetcher returns or ``None`` if
+            source is local or unrecognized.
+        """
         def strip_idx(s: str, at: str = ":", idx: int = 0):
             return s.strip(at)[idx]
 
         match self.config["source"].lower():
             case "uniprot":
-                self.interfaces.UniProt.fetch_sequences(
+                return self.interfaces.UniProt.fetch_sequences(
                     ids, self.paths.sequences, overwrite=False
                 )
             case "sifts":
@@ -262,24 +273,27 @@ class CollectionConstructor:
                     uni_ids = list(ids)
                     pdb_ids = filter(bool, map(self.interfaces.SIFTS.map_id, uni_ids))
                     pdb_ids = map(strip_idx, chain.from_iterable(pdb_ids))
-                self.interfaces.UniProt.fetch_sequences(
+                seq_res = self.interfaces.UniProt.fetch_sequences(
                     uni_ids, self.paths.sequences, overwrite=False
                 )
-                self.interfaces.PDB.fetch_structures(
+                str_res = self.interfaces.PDB.fetch_structures(
                     pdb_ids, self.paths.structures, self.config["str_fmt"]
                 )
+                return seq_res, str_res
             case "pdb":
-                self.interfaces.PDB.fetch_structures(
+                return self.interfaces.PDB.fetch_structures(
                     map(strip_idx, ids), self.paths.structures, self.config["str_fmt"]
                 )
             case "alphafold":
-                self.interfaces.AlphaFold.fetch_structures(
+                return self.interfaces.AlphaFold.fetch_structures(
                     map(strip_idx, ids), self.paths.structures, self.config["str_fmt"]
                 )
             case "local":
                 LOGGER.info("Local source: nothing to fetch")
             case _:
                 LOGGER.info("Unrecognized source name; nothing to fetch.")
+
+        return None
 
     def step(self, ids: _IDS, is_mapping: bool):
         ids = list(ids)
