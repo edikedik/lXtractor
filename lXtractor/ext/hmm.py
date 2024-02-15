@@ -309,10 +309,10 @@ class PyHMMer:
         if new_map_name is None:
             try:
                 new_map_name = self.hmm.accession.decode("utf-8").split(".")[0]
-            except ValueError:
+            except (AttributeError, ValueError):
                 try:
                     new_map_name = (
-                        self.hmm.name.decode("utr-8")
+                        self.hmm.name.decode("utf-8")
                         .replace(" ", "_")
                         .replace("-", "_")
                     )
