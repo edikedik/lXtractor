@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
+import sys
 import typing as t
 from abc import ABCMeta, abstractmethod
 from collections import abc
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
 
-from more_itertools import consume
+from loguru import logger
 from toolz import curry
 
 import lXtractor.chain as lxc
@@ -25,7 +25,6 @@ from lXtractor.core.exceptions import MissingData, ConfigError
 from lXtractor.ext import PyHMMer, Pfam, AlphaFold, PDB, UniProt, SIFTS
 from lXtractor.util import read_fasta
 
-LOGGER = logging.getLogger(__name__)
 _RESOURCES = Path(__file__).parent / "resources"
 _DEFAULT_CONFIG_PATH = _RESOURCES / "collection_config.json"
 _USER_CONFIG_PATH = _RESOURCES / "collection_user_config.json"
@@ -231,8 +230,8 @@ class CollectionPaths:
     def chains(self) -> Path:
         return self.output / "chains"
 
-    def mkdirs(self):
-        for d in (
+    def get_all(self):
+        return (
             self.output,
             self.references,
             self.sequences,
@@ -240,8 +239,11 @@ class CollectionPaths:
             self.structure_files,
             self.structures_info,
             self.sequence_files,
-            self.chains
-        ):
+            self.chains,
+        )
+
+    def mkdirs(self):
+        for d in self.get_all():
             d.mkdir(parents=True, exist_ok=True)
 
 
@@ -284,8 +286,17 @@ class ConstructorBase(t.Generic[_CT, _IT], metaclass=ABCMeta):
         self._step = 0
 
         self.config.validate()
+        self._setup_logger()
         self._save_references()
-        self.config.save(self.config["out_dir"] / "collection_config.json")
+
+        config_path = self.config["out_dir"] / "collection_config.json"
+        self.config.save(config_path)
+        logger.info("Saved config to {}", config_path)
+
+    def _setup_logger(self):
+        if self.config["verbose"]:
+            logger.add(sys.stdout, level="INFO")
+        logger.add(self.paths.output / "log.txt", backtrace=True, level="DEBUG")
 
     def _setup_paths(self):
         paths = CollectionPaths(
@@ -376,7 +387,12 @@ class ConstructorBase(t.Generic[_CT, _IT], metaclass=ABCMeta):
         if self.config["child_filter"] is not None:
             for c in chains:
                 try:
+                    init_ = len(c.children)
                     c.children = c.children.filter(self.config["child_filter"])
+                    logger.info(
+                        f"Chain {c}: filtered to {len(c.children)} children "
+                        f"out of initial {init_}."
+                    )
                 except Exception as e:
                     raise RuntimeError(f"Failed to filter children of {c}") from e
         if self.config["parent_callback"] is not None:
@@ -390,9 +406,12 @@ class ConstructorBase(t.Generic[_CT, _IT], metaclass=ABCMeta):
                 raise RuntimeError("Failed to apply callback to parent chains") from e
         if self.config["parent_filter"] is not None:
             try:
+                init_ = len(chains)
                 chains = chains.filter(self.config["parent_filter"])
+                logger.info(f"Filtered to {len(chains)} out of initial {init_}")
             except Exception as e:
                 raise RuntimeError("Failed to filter parent chains") from e
+
         return chains
 
     def fetch_missing(self, ids: abc.Iterable[_IT]) -> t.Any:
@@ -425,21 +444,35 @@ class ConstructorBase(t.Generic[_CT, _IT], metaclass=ABCMeta):
 
     def run_batch(self, ids: abc.Iterable[str]) -> lxc.ChainList[_CT]:
         ids = list(self.parse_ids(ids))
+        logger.info(f"Received batch of {len(ids)}.")
+
         if self.config["fetch_missing"]:
-            fetched, missing = self.fetch_missing(ids)
+            logger.debug("Attempting to fetch missing entries.")
+            self.fetch_missing(ids)
         chains = self.init_inputs(ids)
-        for ref, kw in zip(self.references, self._ref_kws, strict=True):
+        logger.info(f"Initialized {len(chains)} chains.")
+        for i, (ref, kw) in enumerate(
+            zip(self.references, self._ref_kws, strict=True), start=1
+        ):
+            logger.info(f"Applying reference {i}.")
             num_hits = sum(1 for _ in ref.annotate(chains, **kw))
+            logger.info(f"Reference {i} has {num_hits} hits.")
 
         chains = self._callback_and_filter(chains)
+        logger.debug("Done applying callbacks.")
 
         if self.config["write_batches"]:
-            consume(self.interfaces.IO.write(chains, self.paths.chains))
+            num_written = sum(
+                1 for _ in self.interfaces.IO.write(chains, self.paths.chains)
+            )
+            logger.info(f"Wrote {num_written} chains to {self.paths.chains}.")
 
         try:
             self.collection.add(chains)
+            logger.debug("Added chains to the collection.")
         except Exception as e:
-            raise RuntimeError("Failed to add chains to collection") from e
+            logger.error(e)
+            raise RuntimeError("Failed to add chains to collection.") from e
         finally:
             return chains
 
@@ -508,8 +541,10 @@ class StrCollectionConstructor(ConstructorBase[StructureCollection, _StrIt]):
     def wrap_paths(
         self, ids: abc.Iterable[tuple[str, _T]]
     ) -> abc.Iterator[tuple[Path, _T]]:
-        fmt = self.config['str_fmt']
-        yield from ((self.paths.structure_files / f"{id_}.{fmt}", xs) for id_, xs in ids)
+        fmt = self.config["str_fmt"]
+        yield from (
+            (self.paths.structure_files / f"{id_}.{fmt}", xs) for id_, xs in ids
+        )
 
     def init_inputs(
         self, ids: abc.Iterable[_StrIt]

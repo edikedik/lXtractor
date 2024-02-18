@@ -365,6 +365,6 @@ def test_run_batch(ct, source, ids, refs, tmp_path):
     constructor = ct(config)
     res = constructor.run_batch(ids)
     assert isinstance(res, lxc.ChainList)
-    assert len(res) == 2
+    assert len(res) == len(ids)
     assert len(res.collapse_children()) == len(ids)
     assert len(constructor.collection.get_ids()) == len(ids) * 2
