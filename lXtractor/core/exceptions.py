@@ -7,6 +7,11 @@ class InitError(ValueError):
     pass
 
 
+class ConfigError(ValueError):
+    """Some configuration problem."""
+    pass
+
+
 class MissingData(ValueError):
     pass
 

@@ -11,7 +11,11 @@ from lXtractor.collection import (
     ChainCollection,
     StructureCollection,
 )
-from lXtractor.collection_constructor import ConstructorConfig, CollectionConstructor
+from lXtractor.collection_constructor import (
+    ConstructorConfig,
+    SeqCollectionConstructor,
+    StrCollectionConstructor,
+)
 from lXtractor.core import Alignment
 from lXtractor.core.exceptions import MissingData
 from lXtractor.ext import PyHMMer
@@ -281,48 +285,40 @@ def test_constructor_config():
         assert cfg == _cfg
 
 
+def make_config(base: Path, source, refs, ids):
+    dirs = [base / x for x in ("output", "sequences", "structures", "references")]
+    kws = dict(
+        source=source,
+        # collection_type=valid_ct,
+        out_dir=dirs[0],
+        seq_dir=dirs[1],
+        str_dir=dirs[2],
+        ref_dir=dirs[3],
+        references=refs,
+        ids=ids,
+    )
+    return ConstructorConfig(**kws), dirs
+
+
 @pytest.mark.parametrize(
     "inp",
     [
-        ("SIFTS", "chain", "str"),
-        ("UniProt", "seq", "str"),
-        ("PDB", "structure", "chain"),
-        ("AF2", "structure", "chain"),
-        (([], None, None), "sequence", "chain"),
-        ((None, [], None), "structure", "chain"),
-        (([], [], []), "chain", "str"),
+        # ("SIFTS", "chain", "str"),
+        ("UniProt", SeqCollectionConstructor),
+        ("PDB", StrCollectionConstructor),
+        ("AF2", StrCollectionConstructor),
     ],
 )
 @pytest.mark.parametrize("references", [()])
-def test_constructor_init(inp, references):
-    source, valid_ct, invalid_ct = inp
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir = Path(tmpdir)
-        dirs = [tmpdir / x for x in ("output", "sequences", "structures", "references")]
-        kws = dict(
-            source=source,
-            collection_type=valid_ct,
-            out_dir=dirs[0],
-            seq_dir=dirs[1],
-            str_dir=dirs[2],
-            ref_dir=dirs[3],
-            references=references,
-            ids=(),
-        )
-        config = ConstructorConfig(**kws)
-        # if references is None:
-        #     with pytest.raises(MissingData):
-        #         CollectionConstructor(config)
-        # else:
-        constructor = CollectionConstructor(config)
-        assert all(x.exists() and x.is_dir() for x in dirs)
-        assert isinstance(constructor.collection, Collection)
-        kws["collection_type"] = invalid_ct
-        with pytest.raises(ValueError):
-            CollectionConstructor(ConstructorConfig(**kws))
+def test_constructor_setup(inp, references, tmp_path):
+    source, constr_type = inp
+    config, dirs = make_config(tmp_path, source, references, ())
+    constructor = constr_type(config)
+    assert all(x.exists() for x in dirs)
+    assert isinstance(constructor.collection, Collection)
 
 
-@pytest.mark.parametrize("source,col_type", [("SIFTS", "cha")])
+@pytest.mark.parametrize("source,const_type", [("UniProt", SeqCollectionConstructor)])
 @pytest.mark.parametrize(
     "ref",
     [
@@ -338,27 +334,37 @@ def test_constructor_init(inp, references):
         ("INVALID", None),
     ],
 )
-def test_setup_references(source, col_type, ref):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir = Path(tmpdir)
-        dirs = [tmpdir / x for x in ("output", "sequences", "structures", "references")]
-        kws = dict(
-            source=source,
-            collection_type=col_type,
-            out_dir=dirs[0],
-            seq_dir=dirs[1],
-            str_dir=dirs[2],
-            ref_dir=dirs[3],
-            references=[ref],
-            ids=()
-        )
-        config = ConstructorConfig(**kws)
-        if isinstance(ref, tuple) and ref[0] == "INVALID":
-            with pytest.raises(TypeError):
-                CollectionConstructor(config)
-        else:
-            constructor = CollectionConstructor(config)
-            assert all(isinstance(x, PyHMMer) for x in constructor.references)
-            written_refs = {x.stem for x in dirs[-1].glob("*.hmm")}
-            ref_names = {r.hmm.name.decode("utf-8") for r in constructor.references}
-            assert ref_names == written_refs
+def test_setup_references(source, const_type, ref, tmp_path):
+    config, dirs = make_config(tmp_path, source, [ref], ())
+
+    if isinstance(ref, tuple) and ref[0] == "INVALID":
+        with pytest.raises(TypeError):
+            const_type(config)
+    else:
+        constructor = const_type(config)
+        assert all(isinstance(x, PyHMMer) for x in constructor.references)
+        written_refs = {x.stem for x in dirs[-1].glob("*.hmm")}
+        ref_names = {r.hmm.name.decode("utf-8") for r in constructor.references}
+        assert ref_names == written_refs
+
+
+@pytest.mark.parametrize(
+    "ct,source,ids,refs",
+    [
+        (
+            SeqCollectionConstructor,
+            "UniProt",
+            ["P12931", "Q16644"],
+            [DATA / "Pkinase.hmm"],
+        ),
+        (StrCollectionConstructor, "PDB", ["2SRC:A", "2OIQ:A"], [DATA / "Pkinase.hmm"]),
+    ],
+)
+def test_run_batch(ct, source, ids, refs, tmp_path):
+    config, dirs = make_config(tmp_path, source, refs, ())
+    constructor = ct(config)
+    res = constructor.run_batch(ids)
+    assert isinstance(res, lxc.ChainList)
+    assert len(res) == 2
+    assert len(res.collapse_children()) == len(ids)
+    assert len(constructor.collection.get_ids()) == len(ids) * 2
