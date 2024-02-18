@@ -37,7 +37,6 @@ __all__ = (
     "fetch_urls",
     "fetch_iterable",
     "fetch_chunks",
-    "setup_logger",
     "get_files",
     "get_dirs",
     "run_sp",
@@ -382,46 +381,6 @@ def fetch_urls(
     results = list(chain.from_iterable(results))
 
     return results, remaining
-
-
-# =================================== Logging ==========================================
-
-
-def setup_logger(
-    log_path: t.Optional[t.Union[str, Path]] = None,
-    file_level: t.Optional[int] = None,
-    stdout_level: t.Optional[int] = None,
-    stderr_level: t.Optional[int] = None,
-    logger: t.Optional[logging.Logger] = None,
-) -> logging.Logger:
-    logging.getLogger("requests").setLevel(logging.ERROR)
-    logging.getLogger("urllib3").setLevel(logging.ERROR)
-    logging.getLogger("parso.python.diff").disabled = True
-
-    formatter = logging.Formatter(
-        "%(asctime)s %(levelname)s [%(module)s--%(funcName)s]: %(message)s"
-    )
-    if logger is None:
-        logger = logging.getLogger(__name__)
-    handler: logging.FileHandler | logging.StreamHandler
-    if log_path is not None:
-        level = file_level or logging.DEBUG
-        handler = logging.FileHandler(log_path, "w")
-        handler.setFormatter(formatter)
-        handler.setLevel(level)
-        logger.addHandler(handler)
-    if stderr_level is not None:
-        handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(formatter)
-        handler.setLevel(stderr_level)
-        logger.addHandler(handler)
-    if stdout_level is not None:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(formatter)
-        handler.setLevel(stdout_level)
-        logger.addHandler(handler)
-
-    return logger
 
 
 # =================================== Processes ========================================
