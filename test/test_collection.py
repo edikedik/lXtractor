@@ -296,6 +296,8 @@ def make_config(base: Path, source, refs, ids):
         ref_dir=dirs[3],
         references=refs,
         ids=ids,
+        PDB_kwargs=dict(verbose=True),
+        AF2_kwargs=dict(verbose=True)
     )
     return ConstructorConfig(**kws), dirs
 
@@ -358,13 +360,45 @@ def test_setup_references(source, const_type, ref, tmp_path):
             [DATA / "Pkinase.hmm"],
         ),
         (StrCollectionConstructor, "PDB", ["2SRC:A", "2OIQ:A"], [DATA / "Pkinase.hmm"]),
+        (StrCollectionConstructor, "AF", ["P12931", "Q16644"], [DATA / "Pkinase.hmm"]),
     ],
 )
 def test_run_batch(ct, source, ids, refs, tmp_path):
     config, dirs = make_config(tmp_path, source, refs, ())
+    if source == "AF":
+        config["str_fmt"] = "cif"
     constructor = ct(config)
     res = constructor.run_batch(ids)
     assert isinstance(res, lxc.ChainList)
     assert len(res) == len(ids)
     assert len(res.collapse_children()) == len(ids)
     assert len(constructor.collection.get_ids()) == len(ids) * 2
+
+
+def test_callback_and_filter(tmp_path):
+    def rename(x):
+        x.name = "!"
+        return x
+
+    chains = lxc.ChainList(
+        [
+            lxc.ChainSequence.from_tuple(("?", "ABCDEG")),
+            lxc.ChainSequence.from_tuple(("??", "ABC")),
+        ]
+    )
+    chains[0].spawn_child(1, 3)
+    chains[1].spawn_child(1, 2)
+
+    config, dirs = make_config(tmp_path, "local", (), ())
+    config["child_callback"] = rename
+    config["child_filter"] = lambda x: len(x) > 2
+    config["parent_callback"] = rename
+    config["parent_filter"] = lambda x: len(x.children) > 0
+    constructor = SeqCollectionConstructor(config)
+
+    chains = constructor._callback_and_filter(chains)
+    assert len(chains) == 1 and len(chains[0]) == 6
+    assert len(chains.collapse_children()) == 1
+
+    assert all(x.name == "!" for x in chains)
+    assert all(x.name == "!" for x in chains.collapse_children())
