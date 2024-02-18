@@ -29,7 +29,8 @@ _RESOURCES = Path(__file__).parent / "resources"
 _DEFAULT_CONFIG_PATH = _RESOURCES / "collection_config.json"
 _USER_CONFIG_PATH = _RESOURCES / "collection_user_config.json"
 _CTA: t.TypeAlias = SequenceCollection | StructureCollection | ChainCollection
-_CT = t.TypeVar("_CT", SequenceCollection, StructureCollection, ChainCollection)
+_ColT = t.TypeVar("_ColT", SequenceCollection, StructureCollection, ChainCollection)
+_CT = t.TypeVar("_CT", lxc.ChainSequence, lxc.ChainStructure, lxc.Chain)
 _SeqIt: t.TypeAlias = str
 _StrIt: t.TypeAlias = tuple[str, tuple[str, ...]]
 _MapIt: t.TypeAlias = tuple[_SeqIt, abc.Sequence[_StrIt]]
@@ -41,7 +42,7 @@ _T = t.TypeVar("_T")
 # TODO: all configs should be stored within the database to be reusable
 
 
-def _to_concrete_collection(desc: str) -> t.Type[_CT]:
+def _to_concrete_collection(desc: str) -> t.Type[_ColT]:
     match desc[:3].lower():
         case "cha":
             return ChainCollection
@@ -161,6 +162,24 @@ def _get_cpu_count(c: int):
         )
 
 
+def _filter_existing_seq(paths: abc.Iterable[Path]) -> abc.Iterator[Path]:
+    for p in paths:
+        if p.exists():
+            yield p
+        else:
+            logger.warning(f"Path to {p} does not exist.")
+
+
+def _filter_existing_str(
+    paths: abc.Iterable[tuple[Path, _T]]
+) -> abc.Iterator[tuple[Path, _T]]:
+    for p, xs in paths:
+        if p.exists():
+            yield p, xs
+        else:
+            logger.warning(f"Path to {p} does not exist.")
+
+
 class ConstructorConfig(Config):
     def __init__(
         self,
@@ -266,18 +285,18 @@ class Interfaces:
             "pdb": curry(self.PDB.fetch_structures)(
                 dir_=paths.structure_files, fmt=str_fmt, **kwargs
             ),
-            "alphafold": curry(self.PDB.fetch_structures)(
+            "alphafold": curry(self.AlphaFold.fetch_structures)(
                 dir_=paths.structure_files, fmt=str_fmt, **kwargs
             ),
         }
 
 
-class ConstructorBase(t.Generic[_CT, _IT], metaclass=ABCMeta):
+class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
     def __init__(self, config: ConstructorConfig):
         self.config = config
         self._max_cpu = _get_cpu_count(config["max_proc"])
         self.paths = self._setup_paths()
-        self.collection: _CT = self._setup_collection()
+        self.collection: _ColT = self._setup_collection()
         self.interfaces: Interfaces = self._setup_interfaces()
         self.references: list[PyHMMer] = self._setup_references()
         self._ref_kws: abc.Sequence[abc.Mapping[str, t.Any]] = self._setup_ref_kws()
@@ -383,7 +402,7 @@ class ConstructorBase(t.Generic[_CT, _IT], metaclass=ABCMeta):
                     verbose=self.config["verbose"],
                 )
             except Exception as e:
-                raise RuntimeError("Failed to apply callback to children") from e
+                raise RuntimeError("Failed to apply callback to children.") from e
         if self.config["child_filter"] is not None:
             for c in chains:
                 try:
@@ -394,7 +413,7 @@ class ConstructorBase(t.Generic[_CT, _IT], metaclass=ABCMeta):
                         f"out of initial {init_}."
                     )
                 except Exception as e:
-                    raise RuntimeError(f"Failed to filter children of {c}") from e
+                    raise RuntimeError(f"Failed to filter children of {c}.") from e
         if self.config["parent_callback"] is not None:
             try:
                 chains = chains.apply(
@@ -425,19 +444,23 @@ class ConstructorBase(t.Generic[_CT, _IT], metaclass=ABCMeta):
             source is local or unrecognized.
         """
 
-        def parse_id(inp: str | tuple[str, ...]) -> str:
-            if not isinstance(inp, str):
-                return inp[0]
-            return inp
-
         source = self.config["source"].lower()
 
         if source in ("af", "af2"):
             source = "alphafold"
 
+        logger.debug(f"Fetching source {source}")
+
         try:
             fetchers = self.interfaces.get_fetchers(self.paths, self.config["str_fmt"])
-            return fetchers[source](map(parse_id, ids))
+            ids = [inp if isinstance(inp, str) else inp[0] for inp in ids]
+            logger.debug(f'Passing {len(ids)} inputs to {source} fetcher.')
+            res = fetchers[source](ids)
+            if isinstance(res, tuple) and len(res) == 2:
+                fetched, failed = res
+                logger.info(f"Fetched {len(fetched)} entries from {source}.")
+                if len(failed) > 0:
+                    logger.warning(f"Failed on {len(failed)}: {failed}.")
         except KeyError:
             if source != "local":
                 raise ConfigError(f"Unrecognized source {self.config['source']}.")
@@ -449,8 +472,13 @@ class ConstructorBase(t.Generic[_CT, _IT], metaclass=ABCMeta):
         if self.config["fetch_missing"]:
             logger.debug("Attempting to fetch missing entries.")
             self.fetch_missing(ids)
+
         chains = self.init_inputs(ids)
         logger.info(f"Initialized {len(chains)} chains.")
+        if len(chains) == 0:
+            logger.warning("No entries initialized.")
+            return chains
+
         for i, (ref, kw) in enumerate(
             zip(self.references, self._ref_kws, strict=True), start=1
         ):
@@ -493,7 +521,9 @@ class ConstructorBase(t.Generic[_CT, _IT], metaclass=ABCMeta):
         pass
 
 
-class SeqCollectionConstructor(ConstructorBase[SequenceCollection, _SeqIt]):
+class SeqCollectionConstructor(
+    ConstructorBase[SequenceCollection, lxc.ChainSequence, _SeqIt]
+):
     def _setup_collection(self) -> SequenceCollection:
         return _setup_collection(self.config, "Seq", ("uniprot",))
 
@@ -504,11 +534,14 @@ class SeqCollectionConstructor(ConstructorBase[SequenceCollection, _SeqIt]):
         yield from (self.paths.sequence_files / f"{x}.fasta" for x in ids)
 
     def init_inputs(self, ids: abc.Iterable[str]) -> lxc.ChainList[lxc.ChainSequence]:
-        res = self.interfaces.Initializer.from_iterable(self.wrap_paths(ids))
+        paths = _filter_existing_seq(self.wrap_paths(ids))
+        res = self.interfaces.Initializer.from_iterable(paths)
         return lxc.ChainList(res)
 
 
-class StrCollectionConstructor(ConstructorBase[StructureCollection, _StrIt]):
+class StrCollectionConstructor(
+    ConstructorBase[StructureCollection, lxc.ChainStructure, _StrIt]
+):
     def _setup_collection(self) -> SequenceCollection:
         return _setup_collection(self.config, "Str", ("pdb", "af", "af2"))
 
@@ -519,6 +552,7 @@ class StrCollectionConstructor(ConstructorBase[StructureCollection, _StrIt]):
             if ":" in x:
                 id_, chains = x.split(":", maxsplit=1)
                 return id_, tuple(chains.split(","))
+
             match self.config["source"].lower():
                 case "af" | "af2":
                     return x, ("A",)
@@ -549,7 +583,8 @@ class StrCollectionConstructor(ConstructorBase[StructureCollection, _StrIt]):
     def init_inputs(
         self, ids: abc.Iterable[_StrIt]
     ) -> lxc.ChainList[lxc.ChainSequence]:
-        res = self.interfaces.Initializer.from_iterable(self.wrap_paths(ids))
+        paths = _filter_existing_str(self.wrap_paths(ids))
+        res = self.interfaces.Initializer.from_iterable(paths)
         return lxc.ChainList(chain.from_iterable(res))
 
 
