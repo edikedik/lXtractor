@@ -9,6 +9,7 @@ import typing as t
 from collections import abc
 from io import StringIO, TextIOBase
 from itertools import filterfalse
+from os import PathLike
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -38,14 +39,15 @@ GAP_CHARS = ('-',)
 
 
 def read_fasta(
-    inp: Path | TextIOBase | abc.Iterable[str], strip_id: bool = True
-) -> abc.Generator[tuple[str, str], None, None]:
+    inp: str | PathLike | TextIOBase | abc.Iterable[str], strip_id: bool = True
+) -> abc.Iterator[tuple[str, str]]:
     """
     Simple lazy fasta reader.
 
-    :param inp: Path or opened file or an iterable over lines.
+    :param inp: Pathlike object compatible with ``open`` or opened file or an
+        iterable over lines or raw text as str.
     :param strip_id: Strip ID to the first consecutive (spaceless) string.
-    :return: A generator of (header, _seq) pairs.
+    :return: An iterator of (header, seq) pairs.
     """
 
     def _yield_seqs(buffer):
@@ -57,11 +59,13 @@ def read_fasta(
                 header = header.split()[0]
             yield header, ''.join(seq)
 
-    if isinstance(inp, Path):
-        with inp.open() as f:
+    if isinstance(inp, PathLike):
+        with open(inp) as f:
             yield from _yield_seqs(f)
-    elif isinstance(inp, (TextIOBase, abc.Iterable)):
+    elif isinstance(inp, (TextIOBase, abc.Iterable)) and not isinstance(inp, str):
         yield from _yield_seqs(inp)
+    elif isinstance(inp, str):
+        yield from _yield_seqs(StringIO(inp))
     else:
         raise TypeError(f'Unsupported input type {type(inp)}')
 

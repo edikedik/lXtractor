@@ -132,8 +132,7 @@ class UniProt(ApiBase):
             num_threads=self.num_threads,
             verbose=self.verbose,
         )
-        text = "".join(map(op.itemgetter(1), fetched))
-        seqs = read_fasta(StringIO(text), strip_id=False)
+        seqs = read_fasta("".join(map(op.itemgetter(1), fetched)), strip_id=False)
 
         if dir_ is not None:
             seqs, seqs_ = tee(seqs)
