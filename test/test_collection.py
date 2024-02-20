@@ -20,6 +20,7 @@ from lXtractor.core import Alignment
 from lXtractor.core.exceptions import MissingData
 from lXtractor.ext import PyHMMer
 from lXtractor.variables import SeqEl
+from test.common import TestError
 
 GET_TABLE_NAMES = """SELECT name FROM sqlite_master WHERE type='table';"""
 TABLE_NAMES = (
@@ -92,6 +93,9 @@ def test_setup(cls, loc):
         table_names.add("structures")
     assert table_names == set(col.list_tables())
 
+    if loc == 'file':
+        assert isinstance(cls(Path(handle.name)), cls)
+
     if handle is not None:
         handle.close()
 
@@ -123,8 +127,12 @@ def test_add_chains(cls, chain_sequences, chain_structures, chains):
     # Test parent information incorporated correctly
     ids_exp = list(iter_parent_child_ids(cs))
     df = col.get_table("parents", as_df=True)
-    ids = [(row.chain_id_parent, row.chain_id_child) for _, row in df.iterrows()]
-    assert sorted(ids) == sorted(ids_exp)
+    ids_par = [(row.chain_id_parent, row.chain_id_child) for _, row in df.iterrows()]
+    assert sorted(ids_par) == sorted(ids_exp)
+
+    # Adding the same chains second time does nothing
+    col.add(cs)
+    assert set(col.get_ids()) == set(ids)
 
 
 def test_add_chains_structures(chains):
@@ -289,7 +297,6 @@ def make_config(base: Path, source, refs, ids):
     dirs = [base / x for x in ("output", "sequences", "structures", "references")]
     kws = dict(
         source=source,
-        # collection_type=valid_ct,
         out_dir=dirs[0],
         seq_dir=dirs[1],
         str_dir=dirs[2],
@@ -297,8 +304,11 @@ def make_config(base: Path, source, refs, ids):
         references=refs,
         ids=ids,
         PDB_kwargs=dict(verbose=True),
-        AF2_kwargs=dict(verbose=True)
+        AF2_kwargs=dict(verbose=True),
     )
+    if source.lower() in ("af", "af2"):
+        kws["str_fmt"] = "cif"
+
     return ConstructorConfig(**kws), dirs
 
 
@@ -350,31 +360,6 @@ def test_setup_references(source, const_type, ref, tmp_path):
         assert ref_names == written_refs
 
 
-@pytest.mark.parametrize(
-    "ct,source,ids,refs",
-    [
-        (
-            SeqCollectionConstructor,
-            "UniProt",
-            ["P12931", "Q16644"],
-            [DATA / "Pkinase.hmm"],
-        ),
-        (StrCollectionConstructor, "PDB", ["2SRC:A", "2OIQ:A"], [DATA / "Pkinase.hmm"]),
-        (StrCollectionConstructor, "AF", ["P12931", "Q16644"], [DATA / "Pkinase.hmm"]),
-    ],
-)
-def test_run_batch(ct, source, ids, refs, tmp_path):
-    config, dirs = make_config(tmp_path, source, refs, ())
-    if source == "AF":
-        config["str_fmt"] = "cif"
-    constructor = ct(config)
-    res = constructor.run_batch(ids)
-    assert isinstance(res, lxc.ChainList)
-    assert len(res) == len(ids)
-    assert len(res.collapse_children()) == len(ids)
-    assert len(constructor.collection.get_ids()) == len(ids) * 2
-
-
 def test_callback_and_filter(tmp_path):
     def rename(x):
         x.name = "!"
@@ -402,3 +387,70 @@ def test_callback_and_filter(tmp_path):
 
     assert all(x.name == "!" for x in chains)
     assert all(x.name == "!" for x in chains.collapse_children())
+
+
+TEST_BATCHES = [
+    (
+        SeqCollectionConstructor,
+        "UniProt",
+        ["P12931", "Q16644"],
+        [DATA / "Pkinase.hmm"],
+    ),
+    (StrCollectionConstructor, "PDB", ["2SRC:A", "2OIQ:A"], [DATA / "Pkinase.hmm"]),
+    (StrCollectionConstructor, "AF", ["P12931", "Q16644"], [DATA / "Pkinase.hmm"]),
+]
+
+
+@pytest.mark.parametrize("ct,source,ids,refs", TEST_BATCHES)
+def test_run_batch(ct, source, ids, refs, tmp_path):
+    config, dirs = make_config(tmp_path, source, refs, ())
+    constructor = ct(config)
+    res = constructor.run_batch(ids)
+    assert isinstance(res, lxc.ChainList)
+    assert len(res) == len(ids)
+    assert len(res.collapse_children()) == len(ids)
+    assert len(constructor.collection.get_ids()) == len(ids) * 2
+
+
+@pytest.mark.parametrize("ct,source,ids,refs", TEST_BATCHES)
+def test_run(ct, source, ids, refs, tmp_path):
+    config, dirs = make_config(tmp_path, source, refs, ())
+    config["batch_size"] = 1
+
+    constructor = ct(config)
+    for batch in constructor.run(ids):
+        assert len(batch) == 1
+
+    assert len(constructor.collection.get_ids()) == len(ids) * 2
+
+
+@pytest.mark.parametrize("ct,source,ids,refs", TEST_BATCHES)
+def test_fail_resume(ct, source, ids, refs, tmp_path):
+    def bad_fn(_):
+        # I always fail
+        raise TestError()
+
+    config, dirs = make_config(tmp_path, source, refs, ())
+    config["batch_size"] = 1
+    config["parent_callback"] = bad_fn
+    constructor = ct(config)
+
+    # whatever the error, it's caught and the runtime exception is raised
+    with pytest.raises(RuntimeError):
+        next(constructor.run(ids))
+
+    assert constructor.last_failed_batch == ids[:1]
+    assert len(constructor.history) == 0
+    assert len(constructor.collection.get_ids()) == 0
+
+    # Remove callback from config and continue from the last failed batch
+    config["parent_callback"] = None
+    batches = list(constructor.resume_with(constructor.last_failed_batch))
+    assert len(batches) == len(ids)
+    assert len(constructor.history) == len(ids)
+    assert len(constructor.collection.get_ids()) == len(ids) * 2
+
+    constructor = ct(config)
+    batches = list(constructor.run(ids))
+    assert len(batches) == len(ids)
+    assert len(constructor.history) == len(ids)

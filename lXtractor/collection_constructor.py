@@ -6,11 +6,12 @@ import sys
 import typing as t
 from abc import ABCMeta, abstractmethod
 from collections import abc
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import chain
 from pathlib import Path
 
 from loguru import logger
+from more_itertools import chunked_even, unique_everseen
 from toolz import curry
 
 import lXtractor.chain as lxc
@@ -291,6 +292,55 @@ class Interfaces:
         }
 
 
+@dataclass(frozen=True, repr=False)
+class BatchData:
+    i: int
+    ids_in: abc.Sequence[str]
+    ids_out: abc.Sequence[str]
+    chains: lxc.ChainList[_CT] | None
+
+    def parse_out_ids(self) -> set[str]:
+        return {x.split("|")[0].split(":")[0] for x in self.ids_out}
+
+    def filter_completed(self) -> abc.Iterator[str]:
+        ids_out = self.parse_out_ids()
+        yield from filter(lambda x: x in ids_out, self.ids_in)
+
+    def filter_omitted(self) -> abc.Iterator[str]:
+        ids_out = self.parse_out_ids()
+        yield from filter(lambda x: x not in ids_out, self.ids_in)
+
+
+@dataclass(repr=False)
+class BatchesHistory(t.Generic[_CT]):
+    data: list[BatchData] = field(default_factory=list)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def join_chains(self) -> lxc.ChainList[_CT]:
+        chains = (x.chains for x in self.data if x.chains is not None)
+        return lxc.ChainList(chain.from_iterable(chains))
+
+    def last_step(self) -> int:
+        if len(self.data) == 0:
+            return 0
+        return self.data[-1].i
+
+    def cleanup(self) -> None:
+        self.data = []
+
+    def ids_done(self) -> abc.Iterator[str]:
+        return unique_everseen(chain.from_iterable(b.ids_out for b in self.data))
+
+    def ids_tried(self) -> abc.Iterator[str]:
+        return unique_everseen(chain.from_iterable(b.ids_in for b in self.data))
+
+    def ids_missed(self) -> abc.Iterator[str]:
+        # TODO: implement
+        pass
+
+
 class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
     def __init__(self, config: ConstructorConfig):
         self.config = config
@@ -301,8 +351,9 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
         self.references: list[PyHMMer] = self._setup_references()
         self._ref_kws: abc.Sequence[abc.Mapping[str, t.Any]] = self._setup_ref_kws()
 
-        self._batches = None
-        self._step = 0
+        self.history = BatchesHistory()
+        self._batches: abc.Iterator[list[str]] = iter([])
+        self.last_failed_batch: None | list[str] = None
 
         self.config.validate()
         self._setup_logger()
@@ -454,7 +505,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
         try:
             fetchers = self.interfaces.get_fetchers(self.paths, self.config["str_fmt"])
             ids = [inp if isinstance(inp, str) else inp[0] for inp in ids]
-            logger.debug(f'Passing {len(ids)} inputs to {source} fetcher.')
+            logger.debug(f"Passing {len(ids)} inputs to {source} fetcher.")
             res = fetchers[source](ids)
             if isinstance(res, tuple) and len(res) == 2:
                 fetched, failed = res
@@ -479,9 +530,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
             logger.warning("No entries initialized.")
             return chains
 
-        for i, (ref, kw) in enumerate(
-            zip(self.references, self._ref_kws, strict=True), start=1
-        ):
+        for i, (ref, kw) in enumerate(zip(self.references, self._ref_kws, strict=True)):
             logger.info(f"Applying reference {i}.")
             num_hits = sum(1 for _ in ref.annotate(chains, **kw))
             logger.info(f"Reference {i} has {num_hits} hits.")
@@ -490,10 +539,9 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
         logger.debug("Done applying callbacks.")
 
         if self.config["write_batches"]:
-            num_written = sum(
-                1 for _ in self.interfaces.IO.write(chains, self.paths.chains)
-            )
-            logger.info(f"Wrote {num_written} chains to {self.paths.chains}.")
+            paths = list(self.interfaces.IO.write(chains, self.paths.chains))
+            self.collection.link(paths)
+            logger.info(f"Wrote {len(paths)} chains to {self.paths.chains}.")
 
         try:
             self.collection.add(chains)
@@ -501,8 +549,62 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
         except Exception as e:
             logger.error(e)
             raise RuntimeError("Failed to add chains to collection.") from e
-        finally:
-            return chains
+
+        return chains
+
+    def _init_batches(self, ids: abc.Iterable[str], start: int):
+        self._batches = enumerate(
+            chunked_even(unique_everseen(ids), self.config["batch_size"]), start=start
+        )
+
+    def _prepend_batch(self, batch_i: int, batch: list[str]):
+        self._batches = chain([(batch_i, batch)], self._batches)
+
+    def _run(
+        self,
+        ids: abc.Iterable[str],
+        stop_on_batch_failure: bool,
+    ) -> abc.Iterator[list[str]]:
+        if self._batches is None:
+            self._init_batches(ids, 1)
+
+        for batch_i, batch in self._batches:
+            try:
+                chains = self.run_batch(batch)
+                cs = chains if self.config["keep_chains"] else None
+                self.history.data.append(BatchData(batch_i, batch, chains.ids, cs))
+            except Exception as e:
+                msg = f"Failed on batch {batch_i} of size {len(batch)}."
+                self.last_failed_batch = batch
+                if stop_on_batch_failure:
+                    raise RuntimeError(msg) from e
+                else:
+                    logger.warning(msg)
+                    logger.error(e)
+                    self.history.data.append(BatchData(batch_i, batch, [], None))
+            yield batch
+
+    def run(
+        self, ids: abc.Iterable[str], *, stop_on_batch_failure: bool = True
+    ) -> abc.Iterator[list[str]]:
+        self.history.cleanup()
+        self._batches = None
+        yield from self._run(ids, stop_on_batch_failure)
+
+    def resume(self, ids: abc.Iterable[str]) -> abc.Iterator[list[str]]:
+        last_step = self.history.last_step()
+        self._init_batches(ids, last_step + 1)
+        yield from self._run(ids, True)
+
+    def resume_with(self, ids: abc.Iterable[str]) -> abc.Iterator[list[str]]:
+        if self._batches is None:
+            raise ValueError(
+                "No existing batches to resume from. "
+                "Please call `run` with the provided ids."
+            )
+        last_step = self.history.last_step()
+        self._batches = chain([(last_step + 1, list(ids))], self._batches)
+        yield from self._run([], True)
 
     @abstractmethod
     def _setup_collection(self) -> _CT:

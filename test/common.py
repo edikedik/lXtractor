@@ -14,6 +14,10 @@ ALL_STRUCTURES = sorted(
 )
 
 
+class TestError(ValueError):
+    pass
+
+
 def basic_chain_seq(start=1, end=10, fill="A", name="chain") -> ChainSequence:
     return ChainSequence(
         start,
