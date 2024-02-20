@@ -35,6 +35,7 @@ _Joiner: t.TypeAlias = abc.Callable[[abc.Sequence[T], abc.Sequence[T]], abc.Sequ
 _Filler: t.TypeAlias = abc.Callable[[int], abc.Sequence[t.Any]]
 # _IterType = t.Union[abc.Iterator[tuple], abc.Iterator[namedtuple]]
 DATA_HANDLE_MODES = ("merge", "self", "other")
+DISALLOWED_NAME_SYMBOLS = ("|", "/", "\\")
 LOGGER = logging.getLogger(__name__)
 
 
@@ -131,7 +132,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         self,
         start: int,
         end: int,
-        name: str | None = None,
+        name: str = "S",
         seqs: dict[str, abc.Sequence[t.Any]] | None = None,
         parent: t.Self | None = None,
         children: abc.MutableSequence[t.Self] | None = None,
@@ -162,7 +163,7 @@ class Segment(abc.Sequence[NamedTupleT]):
             raise ValueError("Boundaries must start from 1")
         self._start = start
         self._end = end
-        self._name = str(name)
+        self._name = self._parse_name(name)
         self._parent = parent
         self.children = children or []
         self.meta: dict[str, t.Any] = meta or {}
@@ -175,6 +176,14 @@ class Segment(abc.Sequence[NamedTupleT]):
         self.variables: Variables = variables or Variables()
 
         self._setup_and_validate()
+
+    @staticmethod
+    def _parse_name(s: t.Any):
+        s = str(s)
+        for x in DISALLOWED_NAME_SYMBOLS:
+            if x in s:
+                raise NameError(f"Name {s} contains disallowed symbol {x}")
+        return s
 
     @property
     def name(self) -> str:
@@ -614,7 +623,7 @@ class Segment(abc.Sequence[NamedTupleT]):
             try:
                 seqs[_k] = j_fn(seqs_self[_k], seqs_other[_k])
             except Exception as e:
-                raise RuntimeError(f'Failed to join {_k}') from e
+                raise RuntimeError(f"Failed to join {_k}") from e
 
         return self.__class__(
             self.start, self.start + len(self) + len(other) - 1, self.name, seqs
@@ -781,7 +790,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         if deep_copy:
             seqs = deepcopy(seqs)
 
-        return self.__class__(start, end, name=name, seqs=seqs, parent=self, meta=meta)
+        return self.__class__(start, end, name, seqs=seqs, parent=self, meta=meta)
 
     def overlap(self, start: int, end: int) -> t.Self:
         """

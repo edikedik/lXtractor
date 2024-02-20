@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import operator as op
 import typing as t
 import warnings
@@ -51,6 +52,8 @@ if t.TYPE_CHECKING:
 T = t.TypeVar("T")
 R = t.TypeVar("R")
 
+_UniProtID = re.compile(r"[a-z0-9]{2}\|([A-Z0-9_]+)\|")
+
 
 # TODO: add "drop_index()" method for a segment
 # It "reenumerates" the segment from the new start (1 by default)
@@ -96,6 +99,15 @@ class ChainSequence(lxs.Segment):
     """
 
     __slots__ = ()
+
+    def _parse_name(self, s: t.Any):
+        s = str(s)
+        if '|' in s:
+            match = _UniProtID.match(s)
+            if match:
+                return match.group(1)
+        return super()._parse_name(s)
+
 
     @property
     def fields(self) -> tuple[str, ...]:
@@ -204,7 +216,7 @@ class ChainSequence(lxs.Segment):
         other: str | tuple[str, str] | ChainSequence | Alignment,
         align_method: AlignMethod = mafft_align,
         save: bool = True,
-        name: str | None = None,
+        name: str = "S",
         **kwargs,
     ) -> list[None | int]:
         """
@@ -583,10 +595,11 @@ class ChainSequence(lxs.Segment):
             meth:`lXtractor.core.segment.Segment.insert`.
         :return: A new patched segment.
         """
+
         def extract_segment(start, end):
             link_start, link_end = map_enum_link[start], map_enum_link[end]
             self_start, self_end = map_pointer_i[link_start], map_pointer_i[link_end]
-            seg = self[self_start + 1:self_end - 1]
+            seg = self[self_start + 1 : self_end - 1]
             seg.add_seq(link_name, seg[link_points_to])
             return seg
 
@@ -831,11 +844,10 @@ class ChainSequence(lxs.Segment):
                 self.map_boundaries(start, end, map_from, map_closest),
             )
 
-        name = name or self.name
-
         # TODO: there is no point in transferring meta info whatsoever --> make new
         child = self.sub(start, end, deep_copy=deep_copy, handle_mode="self")
-        child.name = name
+        if isinstance(name, str):
+            child.name = name
         child.meta[DefaultConfig["metadata"]["name"]] = name
         child.meta[DefaultConfig["metadata"]["id"]] = child.id
 
@@ -1003,7 +1015,7 @@ class ChainSequence(lxs.Segment):
         reader: SeqReader = read_fasta,
         start: t.Optional[int] = None,
         end: t.Optional[int] = None,
-        name: t.Optional[str] = None,
+        name: str = "S",
         meta: dict[str, t.Any] | None = None,
         **kwargs,
     ) -> ChainSequence:
@@ -1051,7 +1063,7 @@ class ChainSequence(lxs.Segment):
         s: str,
         start: t.Optional[int] = None,
         end: t.Optional[int] = None,
-        name: t.Optional[str] = None,
+        name: str = "S",
         meta: dict[str, t.Any] | None = None,
         **kwargs,
     ) -> ChainSequence:
@@ -1118,7 +1130,7 @@ class ChainSequence(lxs.Segment):
     def from_df(
         cls,
         df: Path | pd.DataFrame,
-        name: t.Optional[str] = None,
+        name: str = "S",
         meta: dict[str, t.Any] | None = None,
     ) -> t.Self:
         """
@@ -1171,9 +1183,9 @@ class ChainSequence(lxs.Segment):
             if DefaultConfig["metadata"]["name"] in meta:
                 name = meta[DefaultConfig["metadata"]["name"]]
             else:
-                name = "UnnamedSequence"
+                name = "S"
         else:
-            meta, name = {}, "UnnamedSequence"
+            meta, name = {}, "S"
 
         df = pd.read_csv(files[filenames["sequence"]], sep="\t")
         seq = cls.from_df(df, name)

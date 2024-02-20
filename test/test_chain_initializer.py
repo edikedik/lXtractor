@@ -23,9 +23,9 @@ def items(
 
 
 @pytest.fixture
-def mapping(chicken_src_str_path, chicken_src_seq_path, simple_structure):
+def mapping(chicken_src_str_path, chicken_src_seq, simple_structure):
     simple_seq = "".join(map(op.itemgetter(0), simple_structure.get_sequence()))
-    s = Chain.from_seq(chicken_src_seq_path)[0]
+    s = Chain.from_seq(chicken_src_seq)
     s.spawn_child(start=s.start + 1, end=s.end - 1)
     return {
         s: [(chicken_src_str_path, ["A"])],

@@ -101,9 +101,9 @@ def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
         )
 
 
-def test_iter(chicken_src_str):
+def test_iter():
     def get_name(_c):
-        return _c._seq.name
+        return _c.seq.name
 
     c = sample_chain()
 

@@ -1,4 +1,5 @@
-import typing as t
+from __future__ import annotations
+
 from copy import deepcopy
 from itertools import chain
 from pathlib import Path
@@ -6,7 +7,6 @@ from pathlib import Path
 from lXtractor.chain import Chain, ChainStructure, ChainSequence
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.structure import GenericStructure
-
 
 DATA = Path(__file__).parent / "data"
 ALL_STRUCTURES = sorted(
@@ -31,7 +31,7 @@ def basic_chain(start=1, end=10, fill="A", name="chain") -> Chain:
     return Chain.from_seq(basic_chain_seq(start, end, fill, name))
 
 
-def sample_chain(prefix: str = "c", structure: t.Optional[ChainStructure] = None):
+def sample_chain(prefix: str = "c", structure: ChainStructure | None = None):
     structures = [structure] if structure else None
     return Chain(
         basic_chain_seq(fill="K", name=f"{prefix}_root"),

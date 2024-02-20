@@ -633,7 +633,9 @@ class ChainStructure:
         """
         return topo_iter(self, lambda x: x.children)
 
-    def apply_children(self, fn: ApplyT[ChainStructure], inplace: bool = False) -> t.Self:
+    def apply_children(
+        self, fn: ApplyT[ChainStructure], inplace: bool = False
+    ) -> t.Self:
         """
         Apply some function to children.
 

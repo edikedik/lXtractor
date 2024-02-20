@@ -94,12 +94,14 @@ def human_abl_str(human_abl_str_path) -> GenericStructure:
 
 @pytest.fixture()
 def chicken_src_seq(chicken_src_seq_path) -> tuple[str, str]:
-    return next(read_fasta(chicken_src_seq_path))
+    h, s = next(read_fasta(chicken_src_seq_path))
+    return h.split("|")[1], s
 
 
 @pytest.fixture()
 def human_src_seq(human_src_seq_path) -> tuple[str, str]:
-    return next(read_fasta(human_src_seq_path))
+    h, s = next(read_fasta(human_src_seq_path))
+    return h.split("|")[1], s
 
 
 @pytest.fixture(scope="module")
