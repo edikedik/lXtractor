@@ -208,7 +208,7 @@ class Collection(t.Generic[_CT]):
             ("var_types", ((x.__name__,) for x in _VT_MAP)),
         ]
         for table_name, data in inserts:
-            if self._num_rows_for(table_name) == 1:
+            if self._num_rows_for(table_name) == 0:
                 self._insert(table_name, data, omit_first_id=True)
 
     def list_tables(self) -> list[str]:
