@@ -85,7 +85,7 @@ class Collection(t.Generic[_CT]):
 
     def _num_rows_for(self, table_name: str) -> int:
         res = self._execute(f"SELECT COUNT(*) from {table_name}")
-        return len(res.fetchall())
+        return res.fetchone()[0]
 
     def _execute(
         self,
