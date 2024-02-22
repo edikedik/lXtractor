@@ -366,7 +366,7 @@ class Collection(t.Generic[_CT]):
             self._chains += chains
 
     def _recover_structures(self, chains: lxc.ChainList[_CT]) -> None:
-        # Valid only for ChainCollection
+        # Valid only for MappingCollection
         pass
 
     def _get_all_children(self, chains: lxc.ChainList[_CT]) -> abc.Sequence[str]:
@@ -431,7 +431,7 @@ class Collection(t.Generic[_CT]):
             to ``True``; otherwise, loaded chains that initially had some
             parent will have different IDs.
         :param load_structures: Load structures associated with a chain
-            sequence. Valid only for :class:`ChainCollection`.
+            sequence. Valid only for :class:`MappingCollection`.
         :return: A chain list of loaded chain objects.
         """
         params = (chain_type,)
@@ -529,7 +529,7 @@ class Collection(t.Generic[_CT]):
         self._insert("variables", data)
 
     def _expand_structures(self, chain_path: Path) -> abc.Iterable[Path]:
-        """The method is only relevant for :class:`ChainCollection`, where
+        """The method is only relevant for :class:`MappingCollection`, where
         associated structure paths must be included as well"""
         yield from iter([])
 
@@ -632,7 +632,7 @@ class StructureCollection(Collection[lxc.ChainStructure]):
         _verify_chain_types(chains, lxc.ChainStructure)
 
 
-class ChainCollection(Collection[lxc.Chain]):
+class MappingCollection(Collection[lxc.Chain]):
     def __init__(self, loc: str | PathLike = ":memory:"):
         super().__init__(loc)
         self._make_structures_table()

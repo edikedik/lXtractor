@@ -5,9 +5,10 @@ import pytest
 
 import lXtractor.chain as lxc
 from lXtractor.chain import ChainIO
+from lXtractor.collection import SeqCollectionConstructor, StrCollectionConstructor
 from lXtractor.collection import (
     SequenceCollection,
-    ChainCollection,
+    MappingCollection,
     StructureCollection,
 )
 from lXtractor.collection.collection import Collection
@@ -16,8 +17,6 @@ from lXtractor.collection.support import (
     BatchData,
     BatchesHistory,
 )
-from lXtractor.collection.constructor import SeqCollectionConstructor, \
-    StrCollectionConstructor
 from lXtractor.core import Alignment
 from lXtractor.core.exceptions import MissingData
 from lXtractor.ext import PyHMMer
@@ -37,7 +36,7 @@ TABLE_NAMES = (
 COLLECTION_TYPES = (
     SequenceCollection,
     StructureCollection,
-    ChainCollection,
+    MappingCollection,
 )
 DATA = Path(__file__).parent / "data"
 
@@ -90,7 +89,7 @@ def test_setup(cls, loc):
         handle = tempfile.NamedTemporaryFile("w")
         col = cls(Path(handle.name))
     table_names = set(TABLE_NAMES)
-    if cls is ChainCollection:
+    if cls is MappingCollection:
         table_names.add("structures")
     assert table_names == set(col.list_tables())
 
@@ -138,7 +137,7 @@ def test_add_chains(cls, chain_sequences, chain_structures, chains):
 
 def test_add_chains_structures(chains):
     # Test if structures are correctly added in chain collection
-    col = ChainCollection()
+    col = MappingCollection()
     col.add(chains)
     df = col.get_table("structures", as_df=True)
     init_ids = set(chains.structures.ids + chains.collapse_children().structures.ids)
@@ -146,7 +145,7 @@ def test_add_chains_structures(chains):
 
 
 def test_rm_chains(chains):
-    col = ChainCollection()
+    col = MappingCollection()
     col.add(chains, load=True)
     assert len(col.loaded) == len(chains)
     col.remove(chains)
@@ -231,7 +230,7 @@ def test_link(cls, chain_sequences, chain_structures, chains):
 
 
 def test_load(chains):
-    col = ChainCollection()
+    col = MappingCollection()
     col.add(chains)
     df = col.get_table("chains", as_df=True)
     assert not df.data.isna().any()
@@ -247,7 +246,7 @@ def test_load(chains):
 
 
 def test_update_parents(chains):
-    col = ChainCollection()
+    col = MappingCollection()
     col.add(chains)
     p, c1, c2 = chains + chains.collapse_children()
     # initial c1 <- p, c2 <- c1

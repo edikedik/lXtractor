@@ -15,7 +15,7 @@ from lXtractor import chain as lxc
 from lXtractor.collection import (
     SequenceCollection,
     StructureCollection,
-    ChainCollection,
+    MappingCollection,
 )
 from lXtractor.collection.support import (
     BatchData,
@@ -33,8 +33,8 @@ from lXtractor.util.misc import get_cpu_count
 _RESOURCES = Path(__file__).parent / "resources"
 _DEFAULT_CONFIG_PATH = _RESOURCES / "collection_config.json"
 _USER_CONFIG_PATH = _RESOURCES / "collection_user_config.json"
-_CTA: t.TypeAlias = SequenceCollection | StructureCollection | ChainCollection
-_ColT = t.TypeVar("_ColT", SequenceCollection, StructureCollection, ChainCollection)
+_CTA: t.TypeAlias = SequenceCollection | StructureCollection | MappingCollection
+_ColT = t.TypeVar("_ColT", SequenceCollection, StructureCollection, MappingCollection)
 _CT = t.TypeVar("_CT", lxc.ChainSequence, lxc.ChainStructure, lxc.Chain)
 _SeqIt: t.TypeAlias = str
 _StrIt: t.TypeAlias = tuple[str, tuple[str, ...]]
@@ -114,7 +114,7 @@ def _init_reference(
 def _to_concrete_collection(desc: str) -> t.Type[_ColT]:
     match desc[:3].lower():
         case "cha":
-            return ChainCollection
+            return MappingCollection
         case "seq":
             return SequenceCollection
         case "str":
