@@ -6,18 +6,18 @@ import pytest
 import lXtractor.chain as lxc
 from lXtractor.chain import ChainIO
 from lXtractor.collection import (
-    Collection,
     SequenceCollection,
     ChainCollection,
     StructureCollection,
 )
-from lXtractor.collection_constructor import (
+from lXtractor.collection.collection import Collection
+from lXtractor.collection.support import (
     ConstructorConfig,
-    SeqCollectionConstructor,
-    StrCollectionConstructor,
     BatchData,
     BatchesHistory,
 )
+from lXtractor.collection.constructor import SeqCollectionConstructor, \
+    StrCollectionConstructor
 from lXtractor.core import Alignment
 from lXtractor.core.exceptions import MissingData
 from lXtractor.ext import PyHMMer
@@ -35,7 +35,6 @@ TABLE_NAMES = (
     "sqlite_sequence",
 )
 COLLECTION_TYPES = (
-    Collection,
     SequenceCollection,
     StructureCollection,
     ChainCollection,
@@ -106,7 +105,7 @@ def test_setup(cls, loc):
 def test_add_chains(cls, chain_sequences, chain_structures, chains):
     col = cls()
 
-    if cls is SequenceCollection or cls is Collection:
+    if cls is SequenceCollection:
         cs = chain_sequences
         ct = 1
     elif cls is StructureCollection:
@@ -180,7 +179,7 @@ def test_add_vs(chain_sequences):
 def test_link(cls, chain_sequences, chain_structures, chains):
     col = cls()
 
-    if cls is SequenceCollection or cls is Collection:
+    if cls is SequenceCollection:
         cs = chain_sequences
     elif cls is StructureCollection:
         cs = chain_structures

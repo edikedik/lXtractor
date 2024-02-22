@@ -6,6 +6,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import typing as t
 from collections import namedtuple, abc
 from concurrent.futures import ProcessPoolExecutor
@@ -31,6 +32,7 @@ __all__ = (
     "all_logging_disabled",
     "json_to_molgraph",
     "graph_reindex_nodes",
+    "get_cpu_count"
 )
 
 T = t.TypeVar("T")
@@ -315,6 +317,19 @@ def graph_reindex_nodes(g: rx.PyGraph) -> rx.PyGraph:
     gg.add_nodes_from(g.node_indexes())
     gg.add_edges_from_no_data(g.edge_list())
     return gg
+
+
+def get_cpu_count(c: int):
+    mc = os.cpu_count()
+    if c == -1:
+        return mc
+    elif 0 < c <= mc:
+        return c
+    else:
+        raise ValueError(
+            f"Invalid requested CPU count {c}. Must be between 1 and the maximum "
+            f"number of available cores {mc}."
+        )
 
 
 if __name__ == "__main__":

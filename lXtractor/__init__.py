@@ -1,1 +1,0 @@
-from lXtractor.collection import Collection
