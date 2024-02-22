@@ -7,12 +7,13 @@ import typing as t
 from abc import ABCMeta, abstractmethod
 from collections import abc
 from dataclasses import dataclass, field
-from itertools import chain
+from itertools import chain, groupby
 from pathlib import Path
 
 from loguru import logger
 from more_itertools import chunked_even, unique_everseen
 from toolz import curry
+from tqdm.auto import tqdm
 
 import lXtractor.chain as lxc
 from lXtractor.collection import (
@@ -292,23 +293,50 @@ class Interfaces:
         }
 
 
-@dataclass(frozen=True, repr=False)
+def _parse_inp_ids(inp_ids: abc.Iterable[str]) -> abc.Iterator[str]:
+    for x in inp_ids:
+        if ":" in x:
+            id_, chains = x.split(":", maxsplit=1)
+            for c in chains.split(","):
+                yield f"{id_}:{c}"
+        else:
+            yield x
+
+
+def _group_join_chains(ids: abc.Iterable[str]) -> abc.Iterator[str]:
+    def _get_chains(x: str):
+        if ":" in x:
+            return x.split(":")[1].split(",")
+        return []
+
+    groups = groupby(sorted(ids), lambda x: x.split(":")[0])
+    for g, gg in groups:
+        chains = ",".join(chain.from_iterable(map(_get_chains, gg)))
+        if chains:
+            yield f"{g}:{chains}"
+        else:
+            yield g
+
+
+@dataclass(repr=False)
 class BatchData:
     i: int
     ids_in: abc.Sequence[str]
     ids_out: abc.Sequence[str]
     chains: lxc.ChainList[_CT] | None
+    failed: bool = False
 
-    def parse_out_ids(self) -> set[str]:
-        return {x.split("|")[0].split(":")[0] for x in self.ids_out}
+    def __post_init__(self):
+        self._ids_in_parsed = tuple(unique_everseen(_parse_inp_ids(self.ids_in)))
+        self._ids_out_parsed = tuple(
+            unique_everseen(x.split("|")[0] for x in self.ids_out)
+        )
 
-    def filter_completed(self) -> abc.Iterator[str]:
-        ids_out = self.parse_out_ids()
-        yield from filter(lambda x: x in ids_out, self.ids_in)
+    def filter_done(self) -> abc.Iterator[str]:
+        yield from filter(lambda x: x in self._ids_out_parsed, self._ids_in_parsed)
 
-    def filter_omitted(self) -> abc.Iterator[str]:
-        ids_out = self.parse_out_ids()
-        yield from filter(lambda x: x not in ids_out, self.ids_in)
+    def filter_missed(self) -> abc.Iterator[str]:
+        yield from filter(lambda x: x not in self._ids_out_parsed, self._ids_in_parsed)
 
 
 @dataclass(repr=False)
@@ -330,15 +358,22 @@ class BatchesHistory(t.Generic[_CT]):
     def cleanup(self) -> None:
         self.data = []
 
-    def ids_done(self) -> abc.Iterator[str]:
-        return unique_everseen(chain.from_iterable(b.ids_out for b in self.data))
+    def iter_done(self) -> abc.Iterator[str]:
+        ids = chain.from_iterable(bd.filter_done() for bd in self.data)
+        yield from _group_join_chains(ids)
 
-    def ids_tried(self) -> abc.Iterator[str]:
-        return unique_everseen(chain.from_iterable(b.ids_in for b in self.data))
+    def iter_tried(self) -> abc.Iterator[str]:
+        yield from unique_everseen(chain.from_iterable(b.ids_in for b in self.data))
 
-    def ids_missed(self) -> abc.Iterator[str]:
-        # TODO: implement
-        pass
+    def iter_missed(self) -> abc.Iterator[str]:
+        ids = chain.from_iterable(bd.filter_missed() for bd in self.data)
+        yield from _group_join_chains(ids)
+
+    def iter_failed(self):
+        yield from (b for b in self.data if b.failed)
+
+    def iter_failed_ids(self):
+        yield from chain.from_iterable(b.ids_in for b in self.iter_failed())
 
 
 class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):

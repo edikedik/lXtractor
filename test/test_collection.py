@@ -15,6 +15,8 @@ from lXtractor.collection_constructor import (
     ConstructorConfig,
     SeqCollectionConstructor,
     StrCollectionConstructor,
+    BatchData,
+    BatchesHistory,
 )
 from lXtractor.core import Alignment
 from lXtractor.core.exceptions import MissingData
@@ -93,7 +95,7 @@ def test_setup(cls, loc):
         table_names.add("structures")
     assert table_names == set(col.list_tables())
 
-    if loc == 'file':
+    if loc == "file":
         assert isinstance(cls(Path(handle.name)), cls)
 
     if handle is not None:
@@ -454,3 +456,26 @@ def test_fail_resume(ct, source, ids, refs, tmp_path):
     batches = list(constructor.run(ids))
     assert len(batches) == len(ids)
     assert len(constructor.history) == len(ids)
+
+
+@pytest.mark.parametrize(
+    "inp_ids,out_ids,done_ids,missed_ids",
+    [
+        ((), (), (), ()),
+        (("XXXX", "YYYY"), (), (), ("XXXX", "YYYY")),
+        (
+            ("1ABC:A,B", "2ABC:A"),
+            ("1ABC:A|1-10", "1ABC:B|1-5"),
+            ("1ABC:A,B",),
+            ("2ABC:A",),
+        ),
+        (("1ABC:A,B", "2ABC:A"), ("1ABC:A|1-10",), ("1ABC:A",), ("2ABC:A", "1ABC:B")),
+    ],
+)
+def test_batch_data(inp_ids, out_ids, done_ids, missed_ids):
+    bd = BatchData(1, inp_ids, out_ids, None)
+    hist = BatchesHistory([bd])
+    assert hist.last_step() == 1
+    assert set(hist.iter_tried()) == set(inp_ids)
+    assert set(hist.iter_done()) == set(done_ids)
+    assert set(hist.iter_missed()) == set(missed_ids)
