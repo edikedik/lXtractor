@@ -77,8 +77,8 @@ def _validate_chain(structure: GenericStructure):
 
 def _validate_chain_seq(
     structure: GenericStructure, seq: ChainSequence, report_aln: bool = True
-):
-    str_seq = _str2seq(structure)
+) -> None:
+    str_seq = _str2seq(structure, None, None)
     if not seq.seq1 == str_seq.seq1:
         msg = (
             f"Primary sequences of structure's {structure} sequence "
@@ -95,28 +95,31 @@ def _validate_chain_seq(
 def _get_chain_id(structure: GenericStructure):
     if structure.is_empty:
         return DefaultConfig["unknowns"]["chain_id"]
-    if structure.is_singleton or len(structure) == 2:
-        return structure.array.chain_id[0]
-    return structure.chain_ids_polymer.pop()
+    chain_ids = structure.chain_ids_polymer or structure.chain_ids
+    if len(chain_ids) == 0:
+        raise MissingData(f"Cannot determine chain ID of structure {structure}")
+    return chain_ids.pop()
 
 
-def _str2seq(structure: GenericStructure):
+def _str2seq(
+    structure: GenericStructure, str_id: str | None, chain_id: str | None
+) -> ChainSequence:
+    chain_id = chain_id or _get_chain_id(structure)
+    str_id = str_id or structure.name
+    sep_chain = DefaultConfig["separators"]["chain"]
+    name = f"{str_id}{sep_chain}{chain_id}"
+
     str_seq = list(structure.get_sequence())
     if not str_seq:
-        return ChainSequence.make_empty()
+        return ChainSequence.make_empty(name=name)
 
     seq1, seq3, num = map(list, unzip(str_seq))
     seqs: dict[str, list[int] | list[str]] = {
         DefaultConfig["mapnames"]["seq3"]: seq3,
         DefaultConfig["mapnames"]["enum"]: num,
     }
-    chain_id = _get_chain_id(structure)
-    sep_chain = DefaultConfig["separators"]["chain"]
-    return ChainSequence.from_string(
-        "".join(seq1),
-        name=f"{structure.name}{sep_chain}{chain_id}",
-        **seqs,  # type: ignore  # Fails to recognize kwargs
-    )
+
+    return ChainSequence.from_string("".join(seq1), name=name, **seqs)
 
 
 class ChainStructure:
@@ -200,6 +203,8 @@ class ChainStructure:
 
         self._structure = structure
 
+        structure_id = structure_id or structure.name
+
         #: Variables assigned to this structure. Each should be of a
         #: :class:`lXtractor.variables.base.StructureVariable`.
         self.variables: Variables = variables or Variables()
@@ -209,7 +214,7 @@ class ChainStructure:
         self.children: ChainList[ChainStructure] = _wrap_children(children)
 
         if seq is None:
-            self._seq = _str2seq(structure)
+            self._seq = _str2seq(structure, structure_id, self.chain_id)
         else:
             if not structure.is_empty:
                 _validate_chain_seq(structure, seq)
@@ -220,7 +225,7 @@ class ChainStructure:
         self._id = self._make_id()
 
         names = DefaultConfig["metadata"]
-        self.seq.meta[names["structure_id"]] = structure.name
+        self.seq.meta[names["structure_id"]] = structure_id
         self.seq.meta[names["structure_chain_id"]] = chain_id
         self.seq.meta[names["altloc"]] = self.altloc
 

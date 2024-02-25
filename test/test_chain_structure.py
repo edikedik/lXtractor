@@ -110,36 +110,32 @@ def test_iterchildren(test_structure):
 
 
 @pytest.mark.parametrize("fmt", ["cif", "cif.gz", "mmtf.gz"])
-def test_io(test_structure, fmt):
+def test_io(test_structure, fmt, tmp_path):
     s = test_structure
     child1 = s.spawn_child(1, 10)
 
-    with TemporaryDirectory() as tmp:
-        fnames, mnames = DefaultConfig["filenames"], DefaultConfig["metadata"]
-        tmp = Path(tmp)
-        path = s.write(tmp, fmt=fmt, write_children=True)
+    fnames, mnames = DefaultConfig["filenames"], DefaultConfig["metadata"]
+    path = s.write(tmp_path, fmt=fmt, write_children=True)
 
-        files = get_files(path)
-        dirs = get_dirs(path)
+    files = get_files(path)
+    dirs = get_dirs(path)
 
-        print(files, dirs)
+    assert f"{fnames['structure_base_name']}.{fmt}" in files
+    assert fnames["sequence"] in files
+    assert fnames["meta"] in files
+    assert fnames["segments_dir"] in dirs
 
-        assert f"{fnames['structure_base_name']}.{fmt}" in files
-        assert fnames["sequence"] in files
-        assert fnames["meta"] in files
-        assert fnames["segments_dir"] in dirs
+    s_r = ChainStructure.read(path, search_children=True)
+    assert s_r.seq is not None
+    assert s_r.structure is not None
+    assert s_r.structure.name == s.structure.name
+    assert s_r.chain_id == s.chain_id
 
-        s_r = ChainStructure.read(path, search_children=True)
-        assert s_r.seq is not None
-        assert s_r.structure is not None
-        assert s_r.structure.name == s.structure.name
-        assert s_r.chain_id == s.chain_id
-
-        assert len(s_r.children) == 1
-        s_r_child = s_r.children.pop()
-        assert not s_r_child.seq.children
-        assert s_r_child.seq.meta[mnames["structure_id"]] == child1.structure.name
-        assert s_r_child.seq.meta[mnames["structure_chain_id"]] == child1.chain_id
+    assert len(s_r.children) == 1
+    s_r_child = s_r.children.pop()
+    assert not s_r_child.seq.children
+    assert s_r_child.meta[mnames["structure_id"]] == child1.structure.name
+    assert s_r_child.meta[mnames["structure_chain_id"]] == child1.chain_id
 
 
 def test_superpose(test_structure):

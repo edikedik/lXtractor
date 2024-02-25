@@ -1120,11 +1120,11 @@ class ChainSequence(lxs.Segment):
         )
 
     @classmethod
-    def make_empty(cls) -> ChainSequence:
+    def make_empty(cls, **kwargs) -> ChainSequence:
         """
         :return: An empty chain sequence.
         """
-        return cls.from_string("")
+        return cls.from_string("", **kwargs)
 
     @classmethod
     def from_df(
