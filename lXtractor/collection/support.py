@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import typing as t
+from abc import ABC, abstractmethod
 from collections import abc
 from dataclasses import dataclass, field
 from itertools import chain, groupby
@@ -11,8 +12,8 @@ from more_itertools import unique_everseen
 from toolz import curry
 
 import lXtractor.chain as lxc
-from lXtractor.core.config import Config
-from lXtractor.core.exceptions import MissingData
+from lXtractor.core.config import Config, DefaultConfig
+from lXtractor.core.exceptions import MissingData, FormatError
 from lXtractor.ext import AlphaFold, PDB, UniProt, SIFTS
 
 _RESOURCES = Path(__file__).parent.parent / "resources"
@@ -144,6 +145,110 @@ class Interfaces:
                 dir_=paths.structure_files, fmt=str_fmt, **kwargs
             ),
         }
+
+
+def _group_str_items(items: abc.Iterable[StrItem]) -> abc.Iterator[tuple[str, str]]:
+    key = lambda s: s.str_id
+    for g, gg in groupby(sorted(items, key=key), key=key):
+        g_chains = ",".join(x.str_chain for x in gg)
+        yield g, g_chains
+
+
+class ConstructorItem(ABC, t.Generic[_CT]):
+    @classmethod
+    @abstractmethod
+    def from_chain(cls, c: _CT) -> t.Self:
+        ...
+
+    @classmethod
+    @abstractmethod
+    def from_str(cls, inp: str) -> abc.Iterator[t.Self]:
+        ...
+
+    @abstractmethod
+    def to_str(self) -> str:
+        ...
+
+    @abstractmethod
+    def make_path(self, paths: CollectionPaths, fmt: str | tuple[str, str]):
+        ...
+
+
+@dataclass(frozen=True)
+class SeqItem(ConstructorItem[lxc.ChainSequence]):
+    seq_id: str
+
+    @classmethod
+    def from_chain(cls, c: lxc.ChainSequence) -> t.Self:
+        return cls(c.name)
+
+    @classmethod
+    def from_str(cls, inp: str) -> abc.Iterator[t.Self]:
+        yield cls(inp)
+
+    def to_str(self) -> str:
+        return self.seq_id
+
+    def make_path(self, paths: CollectionPaths, fmt: str = "fasta") -> Path:
+        return paths.sequence_files / f"{self.seq_id}.{fmt}"
+
+
+@dataclass(frozen=True)
+class StrItem(ConstructorItem[lxc.ChainStructure]):
+    str_id: str
+    str_chain: str
+
+    @classmethod
+    def from_chain(cls, c: lxc.ChainStructure) -> t.Self:
+        return cls(c.meta[DefaultConfig["metadata"]["structure_id"]], c.chain_id)
+
+    @classmethod
+    def from_str(cls, inp: str) -> abc.Iterator[t.Self]:
+        if ":" not in inp:
+            raise FormatError(f"Invalid input format in {inp}.")
+        str_id, chain_ids = inp.split(":", maxsplit=1)
+        for chain_id in chain_ids.split(","):
+            yield cls(str_id, chain_id)
+
+    def to_str(self) -> str:
+        return f"{self.str_id}:{self.str_chain}"
+
+    def make_path(self, paths: CollectionPaths, fmt: str) -> Path:
+        return paths.sequence_files / f"{self.str_id}.{fmt}"
+
+
+@dataclass(frozen=True)
+class MapItem(ConstructorItem[lxc.Chain]):
+    seq_item: SeqItem
+    str_items: abc.Sequence[StrItem]
+
+    @classmethod
+    def from_chain(cls, c: lxc.Chain) -> t.Self:
+        return cls(
+            SeqItem.from_chain(c.seq), list(map(StrItem.from_chain, c.structures))
+        )
+
+    @classmethod
+    def from_str(cls, inp: str) -> abc.Iterator[t.Self]:
+        seq_inp, str_inps = inp.split("=>", maxsplit=1)
+        yield cls(
+            next(SeqItem.from_str(seq_inp)),
+            list(chain.from_iterable(map(StrItem.from_str, str_inps.split(";")))),
+        )
+
+    def to_str(self) -> str:
+        str_joined = ";".join(map(":".join, _group_str_items(self.str_items)))
+        return f"{self.seq_item.to_str()}=>{str_joined}"
+
+    def make_path(
+        self, paths: CollectionPaths, fmt: tuple[str, str]
+    ) -> tuple[Path, list[tuple[Path, abc.Sequence[str]]]]:
+        seq_fmt, str_fmt = fmt
+        str_paths = [
+            (paths.structure_files / str_id, str_chains)
+            for str_id, str_chains in _group_str_items(self.str_items)
+        ]
+        return self.seq_item.make_path(paths, seq_fmt), str_paths
 
 
 def _parse_inp_ids(inp_ids: abc.Iterable[str]) -> abc.Iterator[str]:

@@ -8,7 +8,7 @@ from itertools import chain
 from pathlib import Path
 
 from loguru import logger
-from more_itertools import chunked_even, unique_everseen
+from more_itertools import chunked_even, unique_everseen, unzip
 from toolz import curry
 
 from lXtractor import chain as lxc
@@ -25,7 +25,7 @@ from lXtractor.collection.support import (
     CollectionPaths,
 )
 from lXtractor.core import Alignment
-from lXtractor.core.exceptions import ConfigError, MissingData
+from lXtractor.core.exceptions import ConfigError, MissingData, FormatError
 from lXtractor.ext import PyHMMer, SIFTS, AlphaFold, PDB, UniProt, Pfam
 from lXtractor.util import read_fasta
 from lXtractor.util.misc import get_cpu_count
@@ -113,7 +113,7 @@ def _init_reference(
 
 def _to_concrete_collection(desc: str) -> t.Type[_ColT]:
     match desc[:3].lower():
-        case "cha":
+        case "map":
             return MappingCollection
         case "seq":
             return SequenceCollection
@@ -145,7 +145,7 @@ def _filter_existing_seq(paths: abc.Iterable[Path]) -> abc.Iterator[Path]:
         if p.exists():
             yield p
         else:
-            logger.warning(f"Path to {p} does not exist.")
+            logger.warning(f"Path to the sequence {p} does not exist.")
 
 
 def _filter_existing_str(
@@ -155,7 +155,17 @@ def _filter_existing_str(
         if p.exists():
             yield p, xs
         else:
-            logger.warning(f"Path to {p} does not exist.")
+            logger.warning(f"Path to the structure {p} does not exist.")
+
+
+def _filter_existing_chains(
+    paths: abc.Iterable[tuple[Path, abc.Sequence[tuple[Path, _T]]]]
+) -> abc.Iterator[tuple[Path, abc.Sequence[tuple[Path, _T]]]]:
+    for seq_path, str_paths in paths:
+        if seq_path.exists():
+            yield seq_path, list(_filter_existing_str(str_paths))
+        else:
+            logger.warning(f"Path to the sequence {seq_path} does not exist.")
 
 
 class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
@@ -301,7 +311,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
 
         return chains
 
-    def fetch_missing(self, ids: abc.Iterable[_IT]) -> t.Any:
+    def fetch_missing(self, ids: abc.Iterable[_SeqIt] | abc.Iterable[_StrIt]) -> t.Any:
         """
         Fetch sequences/structures that are currently missing in the configured
         directories.
@@ -507,6 +517,49 @@ class StrCollectionConstructor(
         paths = _filter_existing_str(self.wrap_paths(ids))
         res = self.interfaces.Initializer.from_iterable(paths)
         return lxc.ChainList(chain.from_iterable(res))
+
+
+class MapCollectionConstructor(ConstructorBase[MappingCollection, lxc.Chain, _StrIt]):
+    def _setup_collection(self) -> MappingCollection:
+        return _setup_collection(self.config, "Map", ("sifts",))
+
+    def fetch_missing(self, ids: abc.Iterable[_MapIt]) -> t.Any:
+        seq_ids, str_ids = unzip(ids)
+
+        with self.config.temporary_namespace():
+            self.config['source'] = 'uniprot'
+            super().fetch_missing(seq_ids)
+            self.config['source'] = 'pdb'
+            super().fetch_missing(chain.from_iterable(str_ids))
+
+    def parse_ids(self, ids: abc.Iterable[str]) -> abc.Iterator[_MapIt]:
+        def _parse_id(id_: str) -> _MapIt:
+            try:
+                seq_id, str_ids = id_.split("=>", maxsplit=1)
+                str_ids = (x.split(":", maxsplit=1) for x in str_ids)
+                str_ids = [
+                    (str_id, tuple(chains.split(","))) for str_id, chains in str_ids
+                ]
+                return seq_id, str_ids
+            except Exception as e:
+                raise FormatError(f"Invalid mapping format for id {id_}") from e
+
+        yield from map(_parse_id, ids)
+
+    def wrap_paths(
+        self, ids: abc.Iterable[tuple[str, abc.Sequence[tuple[str, _T]]]]
+    ) -> abc.Iterator[tuple[Path, abc.Sequence[tuple[Path, _T]]]]:
+        fmt = self.config["str_fmt"]
+        seq_dir = self.paths.sequence_files
+        str_dir = self.paths.structure_files
+        for seq_id, str_ids in ids:
+            str_ids = [(str_dir / f"{x}.{fmt}", xs) for x, xs in str_ids]
+            yield seq_dir / f"{seq_id}.fasta", str_ids
+
+    def init_inputs(self, ids: abc.Iterable[_MapIt]) -> lxc.ChainList[lxc.Chain]:
+        paths = _filter_existing_chains(self.wrap_paths(ids))
+        res = self.interfaces.Initializer.from_mapping(dict(paths))
+        return lxc.ChainList(res)
 
 
 if __name__ == "__main__":

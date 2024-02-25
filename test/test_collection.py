@@ -16,6 +16,9 @@ from lXtractor.collection.support import (
     ConstructorConfig,
     BatchData,
     BatchesHistory,
+    StrItem,
+    SeqItem,
+    MapItem,
 )
 from lXtractor.core import Alignment
 from lXtractor.core.exceptions import MissingData
@@ -274,6 +277,62 @@ def test_update_variables(chain_sequences, set_calculated):
     row = df[df.variable_id == v2.id].iloc[0]
     assert row.variable_value == "Peek"
     assert row.variable_calculated == set_calculated
+
+
+@pytest.mark.parametrize(
+    "item_type,inp_chain,exp_item",
+    [
+        (SeqItem, lxc.ChainSequence.from_string("A", name="X"), SeqItem("X")),
+        (StrItem, lxc.ChainStructure(None, "A", "X"), StrItem("X", "A")),
+        (
+            MapItem,
+            lxc.Chain(
+                lxc.ChainSequence.from_string("A", name="X"),
+                [lxc.ChainStructure(None, "A", "X")],
+            ),
+            MapItem(SeqItem("X"), [StrItem("X", "A")]),
+        ),
+    ],
+)
+def test_item_from_chain(item_type, inp_chain, exp_item):
+    assert item_type.from_chain(inp_chain) == exp_item
+
+
+@pytest.mark.parametrize(
+    "item_type,inp_str,exp_items",
+    [
+        (SeqItem, "X", [SeqItem("X")]),
+        (
+            StrItem,
+            "1ABC:A,B,C",
+            [StrItem("1ABC", "A"), StrItem("1ABC", "B"), StrItem("1ABC", "C")],
+        ),
+        (
+            MapItem,
+            "X=>1ABC:A;2ABC:A,B",
+            [
+                MapItem(
+                    SeqItem("X"),
+                    [StrItem("1ABC", "A"), StrItem("2ABC", "A"), StrItem("2ABC", "B")],
+                )
+            ],
+        ),
+    ],
+)
+def test_item_from_str(item_type, inp_str, exp_items):
+    assert list(item_type.from_str(inp_str)) == exp_items
+
+
+@pytest.mark.parametrize(
+    "item,str_repr",
+    [
+        (SeqItem("X"), "X"),
+        (StrItem("X", "A"), "X:A"),
+        (MapItem(SeqItem("X"), [StrItem("X", "A"), StrItem("X", "B")]), 'X=>X:A,B'),
+    ],
+)
+def test_item_to_str(item, str_repr):
+    assert item.to_str() == str_repr
 
 
 def test_constructor_config():
