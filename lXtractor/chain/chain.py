@@ -595,8 +595,8 @@ class Chain:
                 InitError,
             ) as e:
                 msg = (
-                    f"Failed to spawn substructure from {structure} using boundaries "
-                    f"[{start, end}]"
+                    f"Cannot spawn child structure from {structure} "
+                    f"using boundaries {start, end}."
                 )
                 if tolerate_failure:
                     if not silent:
