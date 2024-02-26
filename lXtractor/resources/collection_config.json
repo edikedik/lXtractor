@@ -1,6 +1,7 @@
 {
   "annotator": "PyHMMer",
   "batch_size": "auto",
+  "default_chain": null,
   "child_filter": null,
   "parent_filter": null,
   "child_callback": null,
@@ -15,7 +16,6 @@
   "references_alphabet": "amino",
   "references_annotate_kw": {},
   "out_dir": "./collection",
-  "ref_dir": "./references",
   "seq_dir": "./sequences",
   "str_dir": "./structures",
   "str_fmt": "mmtf.gz",

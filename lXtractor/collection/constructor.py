@@ -180,7 +180,6 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
     def _setup_paths(self):
         paths = CollectionPaths(
             output=Path(self.config["out_dir"]),
-            references=Path(self.config["ref_dir"]),
             sequences=Path(self.config["seq_dir"]),
             structures=Path(self.config["str_dir"]),
             str_fmt=self.config["str_fmt"],
@@ -249,7 +248,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
     def _save_references(self):
         for ref in self.references:
             hmm_name = ref.hmm.name.decode("utf-8")
-            path = Path(self.config["ref_dir"] / f"{hmm_name}.hmm")
+            path = self.paths.references / f"{hmm_name}.hmm"
             with path.open("wb") as f:
                 ref.hmm.write(f, binary=False)
 
@@ -470,9 +469,9 @@ class SeqCollectionConstructor(
         return self._fetch((x.seq_id for x in items), self.config["source"])
 
     def init_inputs(self, items: SeqItemList) -> lxc.ChainList[lxc.ChainSequence]:
-        return lxc.ChainList(
-            self.interfaces.Initializer.from_iterable(items.prep_for_init(self.paths))
-        )
+        staged = items.prep_for_init(self.paths)
+        chains = self.interfaces.Initializer.from_iterable(staged)
+        return lxc.ChainList(filter(lambda x: x is not None, chains))
 
 
 class StrCollectionConstructor(
@@ -487,11 +486,16 @@ class StrCollectionConstructor(
             case StrItem():
                 yield x
             case str():
-                if (
-                    self.config["source"].lower() in ("af2", "af", "alphafold")
-                    and ":" not in x
-                ):
-                    x = f"{x}:A"
+                if ":" not in x:
+                    if self.config["source"].lower() in ("af2", "af", "alphafold"):
+                        x = f"{x}:A"
+                    else:
+                        if self.config["default_chain"] is None:
+                            raise FormatError(
+                                f"No chain specified for input {x} and no default "
+                                f"chain was set up in config."
+                            )
+                        x = f"{x}:{self.config['default_chain']}"
                 yield from StrItem.from_str(x)
             case (_, _):
                 yield from StrItem.from_tuple(x)
@@ -510,6 +514,7 @@ class StrCollectionConstructor(
     def init_inputs(self, items: StrItemList) -> lxc.ChainList[lxc.ChainStructure]:
         staged = items.prep_for_init(self.paths)
         chains = self.interfaces.Initializer.from_iterable(staged)
+        chains = filter(lambda x: x is not None, chains)
         return lxc.ChainList(chain.from_iterable(chains))
 
 

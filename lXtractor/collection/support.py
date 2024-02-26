@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import json
-import operator as op
 import typing as t
 from abc import ABC, abstractmethod
 from collections import abc
 from dataclasses import dataclass, field
-from functools import reduce
 from itertools import chain, groupby
 from pathlib import Path
 
@@ -53,7 +51,13 @@ class ConstructorConfig(Config):
         """
         :return: A tuple of fields that can have ``None``/``null`` values.
         """
-        return "child_filter", "parent_filter", "child_callback", "parent_callback"
+        return (
+            "default_chain",
+            "child_filter",
+            "parent_filter",
+            "child_callback",
+            "parent_callback",
+        )
 
     def reload(self):
         """
@@ -85,7 +89,6 @@ class ConstructorConfig(Config):
 @dataclass
 class CollectionPaths:
     output: Path
-    references: Path
     sequences: Path
     structures: Path
 
@@ -106,6 +109,10 @@ class CollectionPaths:
     @property
     def chains(self) -> Path:
         return self.output / "chains"
+
+    @property
+    def references(self) -> Path:
+        return self.output / "references"
 
     def get_all(self):
         return (
