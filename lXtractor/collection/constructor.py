@@ -8,7 +8,7 @@ from itertools import chain
 from pathlib import Path
 
 from loguru import logger
-from more_itertools import chunked_even, unique_everseen, unzip
+from more_itertools import chunked_even, unique_everseen
 from toolz import curry
 
 from lXtractor import chain as lxc
@@ -18,14 +18,22 @@ from lXtractor.collection import (
     MappingCollection,
 )
 from lXtractor.collection.support import (
+    SeqItem,
+    StrItem,
+    MapItem,
+    SeqItemList,
+    StrItemList,
+    MapItemList,
     BatchData,
     Interfaces,
     ConstructorConfig,
     BatchesHistory,
     CollectionPaths,
+    _ITL,
+    _IT,
 )
 from lXtractor.core import Alignment
-from lXtractor.core.exceptions import ConfigError, MissingData, FormatError
+from lXtractor.core.exceptions import ConfigError, FormatError, MissingData
 from lXtractor.ext import PyHMMer, SIFTS, AlphaFold, PDB, UniProt, Pfam
 from lXtractor.util import read_fasta
 from lXtractor.util.misc import get_cpu_count
@@ -36,14 +44,11 @@ _USER_CONFIG_PATH = _RESOURCES / "collection_user_config.json"
 _CTA: t.TypeAlias = SequenceCollection | StructureCollection | MappingCollection
 _ColT = t.TypeVar("_ColT", SequenceCollection, StructureCollection, MappingCollection)
 _CT = t.TypeVar("_CT", lxc.ChainSequence, lxc.ChainStructure, lxc.Chain)
-_SeqIt: t.TypeAlias = str
-_StrIt: t.TypeAlias = tuple[str, tuple[str, ...]]
-_MapIt: t.TypeAlias = tuple[_SeqIt, abc.Sequence[_StrIt]]
-_IT = t.TypeVar("_IT", _SeqIt, _StrIt, _MapIt)
 _U = t.TypeVar("_U", bound=int | float | str | None)
 _T = t.TypeVar("_T")
 
 # TODO: all configs should be stored within the database to be reusable
+# TODO: init existing items directly from the database (preserve children?)
 
 
 def _seqs_to_hmm(
@@ -140,35 +145,7 @@ def _setup_collection(
     return ct(coll_path)
 
 
-def _filter_existing_seq(paths: abc.Iterable[Path]) -> abc.Iterator[Path]:
-    for p in paths:
-        if p.exists():
-            yield p
-        else:
-            logger.warning(f"Path to the sequence {p} does not exist.")
-
-
-def _filter_existing_str(
-    paths: abc.Iterable[tuple[Path, _T]]
-) -> abc.Iterator[tuple[Path, _T]]:
-    for p, xs in paths:
-        if p.exists():
-            yield p, xs
-        else:
-            logger.warning(f"Path to the structure {p} does not exist.")
-
-
-def _filter_existing_chains(
-    paths: abc.Iterable[tuple[Path, abc.Sequence[tuple[Path, _T]]]]
-) -> abc.Iterator[tuple[Path, abc.Sequence[tuple[Path, _T]]]]:
-    for seq_path, str_paths in paths:
-        if seq_path.exists():
-            yield seq_path, list(_filter_existing_str(str_paths))
-        else:
-            logger.warning(f"Path to the sequence {seq_path} does not exist.")
-
-
-class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
+class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
     def __init__(self, config: ConstructorConfig):
         self.config = config
         self._max_cpu = get_cpu_count(config["max_proc"])
@@ -178,9 +155,9 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
         self.references: list[PyHMMer] = self._setup_references()
         self._ref_kws: abc.Sequence[abc.Mapping[str, t.Any]] = self._setup_ref_kws()
 
-        self.history = BatchesHistory()
-        self._batches: abc.Iterator[list[str]] = iter([])
-        self.last_failed_batch: None | list[str] = None
+        self.history = BatchesHistory(self.item_list_type)
+        self._batches: abc.Iterator[tuple[int, _ITL]] | None = None
+        self.last_failed_batch: _ITL | None = None
 
         self.config.validate()
         self._setup_logger()
@@ -189,6 +166,11 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
         config_path = self.config["out_dir"] / "collection_config.json"
         self.config.save(config_path)
         logger.info("Saved config to {}", config_path)
+
+    @property
+    @abstractmethod
+    def item_list_type(self) -> t.Type[_ITL]:
+        pass
 
     def _setup_logger(self):
         if self.config["verbose"]:
@@ -311,47 +293,42 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
 
         return chains
 
-    def fetch_missing(self, ids: abc.Iterable[_SeqIt] | abc.Iterable[_StrIt]) -> t.Any:
-        """
-        Fetch sequences/structures that are currently missing in the configured
-        directories.
+    def _fetch(self, ids: abc.Iterable[str], source: str) -> t.Any:
+        source = source.lower()
+        ids = list(ids)
 
-        :param ids: An iterable over input IDs.
+        if source == "local":
+            logger.debug("Local source, nothing to fetch.")
+            return
 
-        :return: Anything that the configured fetcher returns or ``None`` if
-            source is local or unrecognized.
-        """
+        fetchers = self.interfaces.get_fetchers(self.paths, self.config["str_fmt"])
+        if source not in fetchers:
+            raise ConfigError(f"Unrecognized source {source}.")
 
-        source = self.config["source"].lower()
+        logger.debug(f"Passing {len(ids)} inputs to {source} fetcher.")
 
-        if source in ("af", "af2"):
-            source = "alphafold"
+        res = fetchers[source](ids)
+        if isinstance(res, tuple) and len(res) == 2:
+            fetched, failed = res
+            logger.info(f"Fetched {len(fetched)} entries from {source}.")
+            if len(failed) > 0:
+                logger.warning(f"Failed on {len(failed)}: {failed}.")
 
-        logger.debug(f"Fetching source {source}")
+        return res
 
-        try:
-            fetchers = self.interfaces.get_fetchers(self.paths, self.config["str_fmt"])
-            ids = [inp if isinstance(inp, str) else inp[0] for inp in ids]
-            logger.debug(f"Passing {len(ids)} inputs to {source} fetcher.")
-            res = fetchers[source](ids)
-            if isinstance(res, tuple) and len(res) == 2:
-                fetched, failed = res
-                logger.info(f"Fetched {len(fetched)} entries from {source}.")
-                if len(failed) > 0:
-                    logger.warning(f"Failed on {len(failed)}: {failed}.")
-        except KeyError:
-            if source != "local":
-                raise ConfigError(f"Unrecognized source {self.config['source']}.")
+    def parse_inputs(self, inputs: abc.Iterable[t.Any]) -> abc.Iterator[_IT]:
+        yield from chain.from_iterable(map(self._parse_id, inputs))
 
-    def run_batch(self, ids: abc.Iterable[str]) -> lxc.ChainList[_CT]:
-        ids = list(self.parse_ids(ids))
-        logger.info(f"Received batch of {len(ids)}.")
+    def run_batch(self, items: _ITL) -> lxc.ChainList[_CT]:
+        logger.info(f"Received batch of {len(items)} items.")
 
         if self.config["fetch_missing"]:
-            logger.debug("Attempting to fetch missing entries.")
-            self.fetch_missing(ids)
+            logger.debug("Fetching missing entries.")
+            self.fetch_missing(items)
+        else:
+            logger.debug("Fetching disabled.")
 
-        chains = self.init_inputs(ids)
+        chains = self.init_inputs(items)
         logger.info(f"Initialized {len(chains)} chains.")
         if len(chains) == 0:
             logger.warning("No entries initialized.")
@@ -379,27 +356,26 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
 
         return chains
 
-    def _init_batches(self, ids: abc.Iterable[str], start: int):
-        self._batches = enumerate(
-            chunked_even(unique_everseen(ids), self.config["batch_size"]), start=start
-        )
-
-    def _prepend_batch(self, batch_i: int, batch: list[str]):
-        self._batches = chain([(batch_i, batch)], self._batches)
-
     def _run(
         self,
-        ids: abc.Iterable[str],
+        items: abc.Iterable[_IT] | None,
         stop_on_batch_failure: bool,
-    ) -> abc.Iterator[list[str]]:
+    ) -> abc.Iterator[BatchData[_ITL, _CT]]:
         if self._batches is None:
-            self._init_batches(ids, 1)
+            if items is None:
+                raise MissingData(
+                    "No items provided and no batches initialized -> nothing to run."
+                )
+            self.init_batches(items, 1)
 
         for batch_i, batch in self._batches:
             try:
                 chains = self.run_batch(batch)
                 cs = chains if self.config["keep_chains"] else None
-                self.history.data.append(BatchData(batch_i, batch, chains.ids, cs))
+                item_type = self.item_list_type().item_type
+                items_done = chain.from_iterable(map(item_type.from_chain, chains))
+                bd = BatchData(batch_i, batch, self.item_list_type(items_done), cs)
+                self.history.data.append(bd)
             except Exception as e:
                 msg = f"Failed on batch {batch_i} of size {len(batch)}."
                 self.last_failed_batch = batch
@@ -408,158 +384,168 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT], metaclass=ABCMeta):
                 else:
                     logger.warning(msg)
                     logger.error(e)
-                    self.history.data.append(
-                        BatchData(batch_i, batch, [], None, failed=True)
+                    bd = BatchData(
+                        batch_i, batch, self.item_list_type(), None, failed=True
                     )
-            yield batch
+                    self.history.data.append(bd)
+            yield bd
+
+    def make_batches(
+        self, items: abc.Iterable[_IT], start: int
+    ) -> abc.Iterator[tuple[int, _ITL]]:
+        items = unique_everseen(items)
+        chunks = chunked_even(unique_everseen(items), self.config["batch_size"])
+        chunks = map(self.item_list_type, chunks)
+        yield from enumerate(chunks, start=start)
+
+    def init_batches(self, items: abc.Iterable[_IT], start: int) -> None:
+        self._batches = self.make_batches(items, start)
+
+    def append_batches(self, batches: abc.Iterator[tuple[int, _ITL]]) -> None:
+        if self._batches is None:
+            self._batches = batches
+        else:
+            self._batches = chain(self._batches, batches)
+
+    def prepend_batches(self, batches: abc.Iterator[tuple[int, _ITL]]):
+        if self._batches is None:
+            self._batches = batches
+        else:
+            self._batches = chain(batches, self._batches)
 
     def run(
-        self, ids: abc.Iterable[str], *, stop_on_batch_failure: bool = True
-    ) -> abc.Iterator[list[str]]:
+        self, items: abc.Iterable[_IT], *, stop_on_batch_failure: bool = True
+    ) -> abc.Iterator[BatchData[_ITL, _CT]]:
         self.history.cleanup()
         self._batches = None
-        yield from self._run(ids, stop_on_batch_failure)
+        yield from self._run(items, stop_on_batch_failure)
 
-    def resume(self, ids: abc.Iterable[str]) -> abc.Iterator[list[str]]:
-        last_step = self.history.last_step()
-        self._init_batches(ids, last_step + 1)
-        yield from self._run(ids, True)
+    def resume(self) -> abc.Iterator[BatchData[_ITL, _CT]]:
+        yield from self._run(None, True)
 
-    def resume_with(self, ids: abc.Iterable[str]) -> abc.Iterator[list[str]]:
-        if self._batches is None:
-            raise ValueError(
-                "No existing batches to resume from. "
-                "Please call `run` with the provided ids."
-            )
-        last_step = self.history.last_step()
-        self._batches = chain([(last_step + 1, list(ids))], self._batches)
-        yield from self._run([], True)
+    def resume_with(
+        self, items: abc.Iterable[_IT]
+    ) -> abc.Iterator[BatchData[_ITL, _CT]]:
+        last_step = self.history.last_step
+        batches = self.make_batches(items, start=last_step + 1)
+        self.prepend_batches(batches)
+        yield from self._run(None, True)
+
+    @abstractmethod
+    def _parse_id(self, x: t.Any) -> abc.Iterator[_IT]:
+        pass
 
     @abstractmethod
     def _setup_collection(self) -> _CT:
         pass
 
     @abstractmethod
-    def parse_ids(self, ids):
+    def fetch_missing(self, items: abc.Iterable[_IT]) -> t.Any:
         pass
 
     @abstractmethod
-    def wrap_paths(self, ids):
-        pass
-
-    @abstractmethod
-    def init_inputs(self, ids):
+    def init_inputs(self, items: _ITL) -> lxc.ChainList[_CT]:
         pass
 
 
 class SeqCollectionConstructor(
-    ConstructorBase[SequenceCollection, lxc.ChainSequence, _SeqIt]
+    ConstructorBase[SequenceCollection, lxc.ChainSequence, SeqItem, SeqItemList]
 ):
+    @property
+    def item_list_type(self) -> t.Type[SeqItemList]:
+        return SeqItemList
+
+    def _parse_id(self, x: t.Any) -> abc.Iterator[SeqItem]:
+        if isinstance(x, SeqItem):
+            yield x
+        elif isinstance(x, str):
+            yield from SeqItem.from_str(x)
+        else:
+            raise FormatError(f"Invalid value while parsing ID {x}.")
+
     def _setup_collection(self) -> SequenceCollection:
         return _setup_collection(self.config, "Seq", ("uniprot",))
 
-    def parse_ids(self, ids: _T) -> _T:
-        return ids
+    def fetch_missing(self, items: abc.Iterable[SeqItem]) -> t.Any:
+        return self._fetch((x.seq_id for x in items), self.config["source"])
 
-    def wrap_paths(self, ids: abc.Iterable[str]) -> abc.Iterator[Path]:
-        yield from (self.paths.sequence_files / f"{x}.fasta" for x in ids)
-
-    def init_inputs(self, ids: abc.Iterable[str]) -> lxc.ChainList[lxc.ChainSequence]:
-        paths = _filter_existing_seq(self.wrap_paths(ids))
-        res = self.interfaces.Initializer.from_iterable(paths)
-        return lxc.ChainList(res)
+    def init_inputs(self, items: SeqItemList) -> lxc.ChainList[lxc.ChainSequence]:
+        return lxc.ChainList(
+            self.interfaces.Initializer.from_iterable(items.prep_for_init(self.paths))
+        )
 
 
 class StrCollectionConstructor(
-    ConstructorBase[StructureCollection, lxc.ChainStructure, _StrIt]
+    ConstructorBase[StructureCollection, lxc.ChainStructure, StrItem, StrItemList]
 ):
+    @property
+    def item_list_type(self) -> t.Type[StrItemList]:
+        return StrItemList
+
+    def _parse_id(self, x: t.Any) -> abc.Iterator[StrItem]:
+        match x:
+            case StrItem():
+                yield x
+            case str():
+                if (
+                    self.config["source"].lower() in ("af2", "af", "alphafold")
+                    and ":" not in x
+                ):
+                    x = f"{x}:A"
+                yield from StrItem.from_str(x)
+            case (_, _):
+                yield from StrItem.from_tuple(x)
+            case _:
+                raise FormatError(f"Invalid value while parsing ID {x}.")
+
     def _setup_collection(self) -> SequenceCollection:
         return _setup_collection(self.config, "Str", ("pdb", "af", "af2"))
 
-    def parse_ids(
-        self, ids: abc.Iterable[str]
-    ) -> abc.Iterator[str | tuple[str, tuple[str, ...]]]:
-        def _parse_id(x: str) -> tuple[str, tuple[str, ...]]:
-            if ":" in x:
-                id_, chains = x.split(":", maxsplit=1)
-                return id_, tuple(chains.split(","))
+    def fetch_missing(self, items: abc.Iterable[StrItem]) -> t.Any:
+        source = self.config["source"].lower()
+        if source in ("af2", "af"):
+            source = "alphafold"
+        return self._fetch((x.str_id for x in items), source)
 
-            match self.config["source"].lower():
-                case "af" | "af2":
-                    return x, ("A",)
-                case "pdb":
-                    pdb_chains = self.interfaces.SIFTS.map_id(x)
-                    if pdb_chains is None:
-                        raise MissingData(
-                            f"Failed to find chains valid for PDB ID {x}. "
-                            f"Please provide them manually."
-                        )
-                    return x, tuple(pdb_chains)
-                case _:
-                    raise MissingData(
-                        "For local sources, please provide chains for each structure "
-                        "using the {ID}:{Chains} format."
-                    )
-
-        yield from map(_parse_id, ids)
-
-    def wrap_paths(
-        self, ids: abc.Iterable[tuple[str, _T]]
-    ) -> abc.Iterator[tuple[Path, _T]]:
-        fmt = self.config["str_fmt"]
-        yield from (
-            (self.paths.structure_files / f"{id_}.{fmt}", xs) for id_, xs in ids
-        )
-
-    def init_inputs(
-        self, ids: abc.Iterable[_StrIt]
-    ) -> lxc.ChainList[lxc.ChainSequence]:
-        paths = _filter_existing_str(self.wrap_paths(ids))
-        res = self.interfaces.Initializer.from_iterable(paths)
-        return lxc.ChainList(chain.from_iterable(res))
+    def init_inputs(self, items: StrItemList) -> lxc.ChainList[lxc.ChainStructure]:
+        staged = items.prep_for_init(self.paths)
+        chains = self.interfaces.Initializer.from_iterable(staged)
+        return lxc.ChainList(chain.from_iterable(chains))
 
 
-class MapCollectionConstructor(ConstructorBase[MappingCollection, lxc.Chain, _StrIt]):
+class MapCollectionConstructor(
+    ConstructorBase[MappingCollection, lxc.Chain, MapItem, MapItemList]
+):
+    @property
+    def item_list_type(self) -> t.Type[MapItemList]:
+        return MapItemList
+
+    def _parse_id(self, x: t.Any) -> abc.Iterator[MapItem]:
+        match x:
+            case MapItem():
+                yield x
+            case str():
+                yield from MapItem.from_str(x)
+            case (_, _):
+                yield from MapItem.from_tuple(x)
+            case _:
+                raise FormatError(f"Invalid value while parsing ID {x}.")
+
     def _setup_collection(self) -> MappingCollection:
         return _setup_collection(self.config, "Map", ("sifts",))
 
-    def fetch_missing(self, ids: abc.Iterable[_MapIt]) -> t.Any:
-        seq_ids, str_ids = unzip(ids)
+    def fetch_missing(self, items: abc.Iterable[MapItem]) -> tuple[t.Any, t.Any]:
+        items = list(items)
+        res_seq = self._fetch((x.seq_item.seq_id for x in items), "uniprot")
+        res_str = self._fetch((x.str_item.str_id for x in items), "pdb")
+        return res_seq, res_str
 
-        with self.config.temporary_namespace():
-            self.config['source'] = 'uniprot'
-            super().fetch_missing(seq_ids)
-            self.config['source'] = 'pdb'
-            super().fetch_missing(chain.from_iterable(str_ids))
-
-    def parse_ids(self, ids: abc.Iterable[str]) -> abc.Iterator[_MapIt]:
-        def _parse_id(id_: str) -> _MapIt:
-            try:
-                seq_id, str_ids = id_.split("=>", maxsplit=1)
-                str_ids = (x.split(":", maxsplit=1) for x in str_ids)
-                str_ids = [
-                    (str_id, tuple(chains.split(","))) for str_id, chains in str_ids
-                ]
-                return seq_id, str_ids
-            except Exception as e:
-                raise FormatError(f"Invalid mapping format for id {id_}") from e
-
-        yield from map(_parse_id, ids)
-
-    def wrap_paths(
-        self, ids: abc.Iterable[tuple[str, abc.Sequence[tuple[str, _T]]]]
-    ) -> abc.Iterator[tuple[Path, abc.Sequence[tuple[Path, _T]]]]:
-        fmt = self.config["str_fmt"]
-        seq_dir = self.paths.sequence_files
-        str_dir = self.paths.structure_files
-        for seq_id, str_ids in ids:
-            str_ids = [(str_dir / f"{x}.{fmt}", xs) for x, xs in str_ids]
-            yield seq_dir / f"{seq_id}.fasta", str_ids
-
-    def init_inputs(self, ids: abc.Iterable[_MapIt]) -> lxc.ChainList[lxc.Chain]:
-        paths = _filter_existing_chains(self.wrap_paths(ids))
-        res = self.interfaces.Initializer.from_mapping(dict(paths))
-        return lxc.ChainList(res)
+    def init_inputs(self, items: MapItemList) -> lxc.ChainList[lxc.Chain]:
+        return lxc.ChainList(
+            self.interfaces.Initializer.from_mapping(
+                dict(items.prep_for_init(self.paths))
+            )
+        )
 
 
 if __name__ == "__main__":

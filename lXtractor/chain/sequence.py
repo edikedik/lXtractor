@@ -102,12 +102,11 @@ class ChainSequence(lxs.Segment):
 
     def _parse_name(self, s: t.Any):
         s = str(s)
-        if '|' in s:
+        if "|" in s:
             match = _UniProtID.match(s)
             if match:
                 return match.group(1)
         return super()._parse_name(s)
-
 
     @property
     def fields(self) -> tuple[str, ...]:
@@ -1013,9 +1012,9 @@ class ChainSequence(lxs.Segment):
         cls,
         inp: Path | TextIOBase | abc.Iterable[str],
         reader: SeqReader = read_fasta,
-        start: t.Optional[int] = None,
-        end: t.Optional[int] = None,
-        name: str = "S",
+        start: int | None = None,
+        end: int | None = None,
+        name: str | None = None,
         meta: dict[str, t.Any] | None = None,
         **kwargs,
     ) -> ChainSequence:
@@ -1035,11 +1034,12 @@ class ChainSequence(lxs.Segment):
             (as used during initialization via `_seq` attribute).
         :return: Initialized chain sequence.
         """
+        # TODO: introduce a header format name|start-end
         seqs = list(reader(inp))
         if not seqs:
-            raise MissingData("No sequences in provided inp")
+            raise MissingData("No sequences in provided inp.")
         if len(seqs) > 1:
-            raise ValueError("Input contains more than one sequence")
+            raise ValueError("Input contains more than one sequence.")
 
         seq = seqs.pop()
 

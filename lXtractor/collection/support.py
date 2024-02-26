@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import operator as op
 import typing as t
 from abc import ABC, abstractmethod
 from collections import abc
 from dataclasses import dataclass, field
+from functools import reduce
 from itertools import chain, groupby
 from pathlib import Path
 
@@ -13,7 +15,7 @@ from toolz import curry
 
 import lXtractor.chain as lxc
 from lXtractor.core.config import Config, DefaultConfig
-from lXtractor.core.exceptions import MissingData, FormatError
+from lXtractor.core.exceptions import MissingData
 from lXtractor.ext import AlphaFold, PDB, UniProt, SIFTS
 
 _RESOURCES = Path(__file__).parent.parent / "resources"
@@ -147,30 +149,15 @@ class Interfaces:
         }
 
 
-def _group_str_items(items: abc.Iterable[StrItem]) -> abc.Iterator[tuple[str, str]]:
-    key = lambda s: s.str_id
-    for g, gg in groupby(sorted(items, key=key), key=key):
-        g_chains = ",".join(x.str_chain for x in gg)
-        yield g, g_chains
-
-
 class ConstructorItem(ABC, t.Generic[_CT]):
     @classmethod
     @abstractmethod
-    def from_chain(cls, c: _CT) -> t.Self:
+    def from_chain(cls, c: _CT) -> abc.Iterator[t.Self]:
         ...
 
     @classmethod
     @abstractmethod
     def from_str(cls, inp: str) -> abc.Iterator[t.Self]:
-        ...
-
-    @abstractmethod
-    def to_str(self) -> str:
-        ...
-
-    @abstractmethod
-    def make_path(self, paths: CollectionPaths, fmt: str | tuple[str, str]):
         ...
 
 
@@ -179,135 +166,206 @@ class SeqItem(ConstructorItem[lxc.ChainSequence]):
     seq_id: str
 
     @classmethod
-    def from_chain(cls, c: lxc.ChainSequence) -> t.Self:
-        return cls(c.name)
+    def from_chain(cls, c: lxc.ChainSequence) -> abc.Iterator[t.Self]:
+        yield cls(c.name)
 
     @classmethod
     def from_str(cls, inp: str) -> abc.Iterator[t.Self]:
         yield cls(inp)
 
-    def to_str(self) -> str:
-        return self.seq_id
-
-    def make_path(self, paths: CollectionPaths, fmt: str = "fasta") -> Path:
-        return paths.sequence_files / f"{self.seq_id}.{fmt}"
-
 
 @dataclass(frozen=True)
 class StrItem(ConstructorItem[lxc.ChainStructure]):
     str_id: str
-    str_chain: str
+    chain_id: str
 
     @classmethod
-    def from_chain(cls, c: lxc.ChainStructure) -> t.Self:
-        return cls(c.meta[DefaultConfig["metadata"]["structure_id"]], c.chain_id)
+    def from_chain(cls, c: lxc.ChainStructure) -> abc.Iterator[t.Self]:
+        yield cls(c.meta[DefaultConfig["metadata"]["structure_id"]], c.chain_id)
 
     @classmethod
     def from_str(cls, inp: str) -> abc.Iterator[t.Self]:
-        if ":" not in inp:
-            raise FormatError(f"Invalid input format in {inp}.")
         str_id, chain_ids = inp.split(":", maxsplit=1)
         for chain_id in chain_ids.split(","):
             yield cls(str_id, chain_id)
 
-    def to_str(self) -> str:
-        return f"{self.str_id}:{self.str_chain}"
-
-    def make_path(self, paths: CollectionPaths, fmt: str) -> Path:
-        return paths.sequence_files / f"{self.str_id}.{fmt}"
+    @classmethod
+    def from_tuple(cls, inp: tuple[str, abc.Sequence[str]]) -> abc.Iterator[t.Self]:
+        for chain_id in inp[1]:
+            yield cls(inp[0], chain_id)
 
 
 @dataclass(frozen=True)
 class MapItem(ConstructorItem[lxc.Chain]):
     seq_item: SeqItem
-    str_items: abc.Sequence[StrItem]
+    str_item: StrItem
 
     @classmethod
-    def from_chain(cls, c: lxc.Chain) -> t.Self:
-        return cls(
-            SeqItem.from_chain(c.seq), list(map(StrItem.from_chain, c.structures))
-        )
+    def from_chain(cls, c: lxc.Chain) -> abc.Iterator[t.Self]:
+        seq_item = next(SeqItem.from_chain(c.seq))
+        for s in c.structures:
+            yield cls(seq_item, next(StrItem.from_chain(s)))
 
     @classmethod
     def from_str(cls, inp: str) -> abc.Iterator[t.Self]:
         seq_inp, str_inps = inp.split("=>", maxsplit=1)
-        yield cls(
-            next(SeqItem.from_str(seq_inp)),
-            list(chain.from_iterable(map(StrItem.from_str, str_inps.split(";")))),
+        seq_item = next(SeqItem.from_str(seq_inp))
+        for s in str_inps.split(";"):
+            for str_item in StrItem.from_str(s):
+                yield cls(seq_item, str_item)
+
+    @classmethod
+    def from_tuple(
+        cls,
+        inp: tuple[
+            str, str | abc.Sequence[str] | abc.Sequence[tuple[str, abc.Sequence[str]]]
+        ],
+    ) -> abc.Iterator[t.Self]:
+        match inp:
+            case (str(), str()):
+                seq_item = SeqItem(inp[0])
+                str_items = StrItem.from_str(inp[1])
+                for str_item in str_items:
+                    yield cls(seq_item, str_item)
+            case (str(), abc.Sequence()) if all(isinstance(x, str) for x in inp[1]):
+                seq_item = SeqItem(inp[0])
+                str_items = chain.from_iterable(map(StrItem.from_str, inp[1]))
+                for str_item in str_items:
+                    yield cls(seq_item, str_item)
+            case (str(), abc.Sequence()) if all(
+                isinstance(x, tuple)
+                and len(x) == 2
+                and isinstance(x[0], str)
+                and isinstance(x[1], abc.Sequence)
+                for x in inp[1]
+            ):
+                seq_item = SeqItem(inp[0])
+                str_items = chain.from_iterable(map(StrItem.from_tuple, inp[1]))
+                for str_item in str_items:
+                    yield cls(seq_item, str_item)
+            case _:
+                raise ValueError(f"Invalid input format for {inp}.")
+
+
+_IT = t.TypeVar("_IT", SeqItem, StrItem, MapItem)
+
+
+class ItemList(ABC, list, t.Generic[_IT]):
+    @abstractmethod
+    def prep_for_init(self, paths: CollectionPaths):
+        pass
+
+    @abstractmethod
+    def as_strings(self):
+        pass
+
+    @property
+    @abstractmethod
+    def item_type(self) -> t.Type[_IT]:
+        pass
+
+    @classmethod
+    def from_chains(cls):
+        return cls()
+
+
+class SeqItemList(ItemList[SeqItem]):
+    @property
+    def item_type(self) -> t.Type[SeqItem]:
+        return SeqItem
+
+    def prep_for_init(self, paths: CollectionPaths):
+        yield from (
+            paths.sequence_files / f"{seq_item.seq_id}.fasta" for seq_item in self
         )
 
-    def to_str(self) -> str:
-        str_joined = ";".join(map(":".join, _group_str_items(self.str_items)))
-        return f"{self.seq_item.to_str()}=>{str_joined}"
-
-    def make_path(
-        self, paths: CollectionPaths, fmt: tuple[str, str]
-    ) -> tuple[Path, list[tuple[Path, abc.Sequence[str]]]]:
-        seq_fmt, str_fmt = fmt
-        str_paths = [
-            (paths.structure_files / str_id, str_chains)
-            for str_id, str_chains in _group_str_items(self.str_items)
-        ]
-        return self.seq_item.make_path(paths, seq_fmt), str_paths
+    def as_strings(self):
+        yield from (s.seq_id for s in self)
 
 
-def _parse_inp_ids(inp_ids: abc.Iterable[str]) -> abc.Iterator[str]:
-    for x in inp_ids:
-        if ":" in x:
-            id_, chains = x.split(":", maxsplit=1)
-            for c in chains.split(","):
-                yield f"{id_}:{c}"
-        else:
-            yield x
+class StrItemList(ItemList[StrItem]):
+    @property
+    def item_type(self) -> t.Type[StrItem]:
+        return StrItem
 
+    def iter_groups(self):
+        key = lambda s: s.str_id
+        yield from groupby(sorted(self, key=key), key=key)
 
-def _group_join_chains(ids: abc.Iterable[str]) -> abc.Iterator[str]:
-    def _get_chains(x: str):
-        if ":" in x:
-            return x.split(":")[1].split(",")
-        return []
+    def prep_for_init(self, paths: CollectionPaths):
+        for g, gg in self.iter_groups():
+            str_path = paths.structure_files / f"{g}.{paths.str_fmt}"
+            yield str_path, [it.chain_id for it in gg]
 
-    groups = groupby(sorted(ids), lambda x: x.split(":")[0])
-    for g, gg in groups:
-        chains = ",".join(chain.from_iterable(map(_get_chains, gg)))
-        if chains:
+    def as_strings(self):
+        for g, gg in self.iter_groups():
+            chains = ",".join(it.chain_id for it in gg)
             yield f"{g}:{chains}"
-        else:
-            yield g
 
 
-@dataclass(repr=False)
-class BatchData:
+class MapItemList(ItemList[MapItem]):
+    @property
+    def item_type(self) -> t.Type[MapItem]:
+        return MapItem
+
+    def iter_groups(self):
+        key = lambda s: s.seq_item.seq_id
+        yield from groupby(sorted(self, key=key), key=key)
+
+    def prep_for_init(self, paths: CollectionPaths):
+        for g, gg in self.iter_groups():
+            str_items = StrItemList(it.str_item for it in gg)
+            seq_path = paths.sequence_files / f"{g}.fasta"
+            yield seq_path, list(str_items.prep_for_init())
+
+    def as_strings(self):
+        for g, gg in self.iter_groups():
+            str_items = StrItemList(it.str_item for it in gg)
+            strs = ";".join(str_items.as_strings())
+            yield f"{g}:{strs}"
+
+
+_ITL = t.TypeVar("_ITL", SeqItemList, StrItemList, MapItemList)
+
+
+@dataclass(frozen=True, repr=False)
+class BatchData(t.Generic[_ITL, _CT]):
     i: int
-    ids_in: abc.Sequence[str]
-    ids_out: abc.Sequence[str]
+    items_in: _ITL
+    items_out: _ITL
     chains: lxc.ChainList[_CT] | None
     failed: bool = False
 
-    def __post_init__(self):
-        self._ids_in_parsed = tuple(unique_everseen(_parse_inp_ids(self.ids_in)))
-        self._ids_out_parsed = tuple(
-            unique_everseen(x.split("|")[0] for x in self.ids_out)
-        )
+    @property
+    def item_list_type(self) -> t.Type[_ITL]:
+        return self.items_in.__class__
 
-    def filter_done(self) -> abc.Iterator[str]:
-        yield from filter(lambda x: x in self._ids_out_parsed, self._ids_in_parsed)
+    def items_done(self) -> _ITL:
+        return self.item_list_type(set(self.items_out) & set(self.items_in))
 
-    def filter_missed(self) -> abc.Iterator[str]:
-        yield from filter(lambda x: x not in self._ids_out_parsed, self._ids_in_parsed)
+    def items_missed(self) -> _ITL:
+        return self.item_list_type(set(self.items_in) - set(self.items_out))
 
 
 @dataclass(repr=False)
-class BatchesHistory(t.Generic[_CT]):
-    data: list[BatchData] = field(default_factory=list)
+class BatchesHistory(t.Generic[_ITL, _CT]):
+    _item_list_type: t.Type[_ITL]
+    data: list[BatchData[_ITL, _CT]] = field(default_factory=list)
 
     def __len__(self) -> int:
         return len(self.data)
+
+    def __getitem__(self, i: int) -> BatchData[_ITL, _CT]:
+        return self.data.__getitem__(i)
+
+    def _init_item_list(self, items: abc.Iterable[_ITL]) -> _ITL:
+        return self._item_list_type(unique_everseen(chain.from_iterable(items)))
 
     def join_chains(self) -> lxc.ChainList[_CT]:
         chains = (x.chains for x in self.data if x.chains is not None)
         return lxc.ChainList(chain.from_iterable(chains))
 
+    @property
     def last_step(self) -> int:
         if len(self.data) == 0:
             return 0
@@ -316,22 +374,20 @@ class BatchesHistory(t.Generic[_CT]):
     def cleanup(self) -> None:
         self.data = []
 
-    def iter_done(self) -> abc.Iterator[str]:
-        ids = chain.from_iterable(bd.filter_done() for bd in self.data)
-        yield from _group_join_chains(ids)
+    def items_done(self) -> _ITL:
+        return self._init_item_list(x.items_done() for x in self.data)
 
-    def iter_tried(self) -> abc.Iterator[str]:
-        yield from unique_everseen(chain.from_iterable(b.ids_in for b in self.data))
+    def items_missed(self) -> set[str]:
+        return self._init_item_list(x.items_missed() for x in self.data)
 
-    def iter_missed(self) -> abc.Iterator[str]:
-        ids = chain.from_iterable(bd.filter_missed() for bd in self.data)
-        yield from _group_join_chains(ids)
+    def items_tried(self):
+        return self._init_item_list(x.items_in for x in self.data)
+
+    def items_failed(self):
+        return self._init_item_list(x.items_in for x in self.iter_failed())
 
     def iter_failed(self):
         yield from (b for b in self.data if b.failed)
-
-    def iter_failed_ids(self):
-        yield from chain.from_iterable(b.ids_in for b in self.iter_failed())
 
 
 if __name__ == "__main__":

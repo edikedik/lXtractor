@@ -14,8 +14,6 @@ from lXtractor.collection import (
 from lXtractor.collection.collection import Collection
 from lXtractor.collection.support import (
     ConstructorConfig,
-    BatchData,
-    BatchesHistory,
     StrItem,
     SeqItem,
     MapItem,
@@ -280,22 +278,28 @@ def test_update_variables(chain_sequences, set_calculated):
 
 
 @pytest.mark.parametrize(
-    "item_type,inp_chain,exp_item",
+    "item_type,inp_chain,exp_items",
     [
-        (SeqItem, lxc.ChainSequence.from_string("A", name="X"), SeqItem("X")),
-        (StrItem, lxc.ChainStructure(None, "A", "X"), StrItem("X", "A")),
+        (SeqItem, lxc.ChainSequence.from_string("A", name="X"), [SeqItem("X")]),
+        (StrItem, lxc.ChainStructure(None, "A", "X"), [StrItem("X", "A")]),
         (
             MapItem,
             lxc.Chain(
                 lxc.ChainSequence.from_string("A", name="X"),
-                [lxc.ChainStructure(None, "A", "X")],
+                [
+                    lxc.ChainStructure(None, "A", "X"),
+                    lxc.ChainStructure(None, "B", "X"),
+                ],
             ),
-            MapItem(SeqItem("X"), [StrItem("X", "A")]),
+            [
+                MapItem(SeqItem("X"), StrItem("X", "A")),
+                MapItem(SeqItem("X"), StrItem("X", "B")),
+            ],
         ),
     ],
 )
-def test_item_from_chain(item_type, inp_chain, exp_item):
-    assert item_type.from_chain(inp_chain) == exp_item
+def test_item_from_chain(item_type, inp_chain, exp_items):
+    assert list(item_type.from_chain(inp_chain)) == exp_items
 
 
 @pytest.mark.parametrize(
@@ -311,28 +315,15 @@ def test_item_from_chain(item_type, inp_chain, exp_item):
             MapItem,
             "X=>1ABC:A;2ABC:A,B",
             [
-                MapItem(
-                    SeqItem("X"),
-                    [StrItem("1ABC", "A"), StrItem("2ABC", "A"), StrItem("2ABC", "B")],
-                )
+                MapItem(SeqItem("X"), StrItem("1ABC", "A")),
+                MapItem(SeqItem("X"), StrItem("2ABC", "A")),
+                MapItem(SeqItem("X"), StrItem("2ABC", "B")),
             ],
         ),
     ],
 )
 def test_item_from_str(item_type, inp_str, exp_items):
     assert list(item_type.from_str(inp_str)) == exp_items
-
-
-@pytest.mark.parametrize(
-    "item,str_repr",
-    [
-        (SeqItem("X"), "X"),
-        (StrItem("X", "A"), "X:A"),
-        (MapItem(SeqItem("X"), [StrItem("X", "A"), StrItem("X", "B")]), 'X=>X:A,B'),
-    ],
-)
-def test_item_to_str(item, str_repr):
-    assert item.to_str() == str_repr
 
 
 def test_constructor_config():
@@ -352,8 +343,16 @@ def test_constructor_config():
         assert cfg == _cfg
 
 
-def make_config(base: Path, source, refs, ids):
-    dirs = [base / x for x in ("output", "sequences", "structures", "references")]
+def make_config(base: Path, source, refs, ids, local=False):
+    if local:
+        dirs = [
+            base / 'output',
+            DATA / 'collection' / 'sequences',
+            DATA / 'collection' / 'structures',
+
+        ]
+    else:
+        dirs = [base / x for x in ("output", "sequences", "structures", "references")]
     kws = dict(
         source=source,
         out_dir=dirs[0],
@@ -448,15 +447,11 @@ def test_callback_and_filter(tmp_path):
     assert all(x.name == "!" for x in chains.collapse_children())
 
 
+PKP = DATA / "Pkinase.hmm"
 TEST_BATCHES = [
-    (
-        SeqCollectionConstructor,
-        "UniProt",
-        ["P12931", "Q16644"],
-        [DATA / "Pkinase.hmm"],
-    ),
-    (StrCollectionConstructor, "PDB", ["2SRC:A", "2OIQ:A"], [DATA / "Pkinase.hmm"]),
-    (StrCollectionConstructor, "AF", ["P12931", "Q16644"], [DATA / "Pkinase.hmm"]),
+    (SeqCollectionConstructor, "UniProt", ["P12931", "Q16644"], [PKP]),
+    (StrCollectionConstructor, "PDB", ["2SRC:A", "2OIQ:A"], [PKP]),
+    (StrCollectionConstructor, "AF", ["P12931", "Q16644"], [PKP]),
 ]
 
 
@@ -464,11 +459,13 @@ TEST_BATCHES = [
 def test_run_batch(ct, source, ids, refs, tmp_path):
     config, dirs = make_config(tmp_path, source, refs, ())
     constructor = ct(config)
-    res = constructor.run_batch(ids)
+    itl = constructor.item_list_type(constructor.parse_inputs(ids))
+    res = constructor.run_batch(itl)
     assert isinstance(res, lxc.ChainList)
-    assert len(res) == len(ids)
-    assert len(res.collapse_children()) == len(ids)
-    assert len(constructor.collection.get_ids()) == len(ids) * 2
+    assert len(res) == len(itl)
+    assert len(res.collapse_children()) == len(itl)
+    assert len(constructor.collection.get_ids()) == len(itl) * 2
+    assert len(constructor.history) == 0
 
 
 @pytest.mark.parametrize("ct,source,ids,refs", TEST_BATCHES)
@@ -477,8 +474,16 @@ def test_run(ct, source, ids, refs, tmp_path):
     config["batch_size"] = 1
 
     constructor = ct(config)
-    for batch in constructor.run(ids):
-        assert len(batch) == 1
+    for batch in constructor.run(constructor.parse_inputs(ids)):
+        assert len(batch.items_in) == 1
+
+    hist = constructor.history
+    assert hist.last_step == 2
+    assert len(hist.items_done()) == len(ids)
+    assert len(hist.items_tried()) == len(ids)
+
+    assert len(hist.items_missed()) == 0
+    assert len(hist.items_failed()) == 0
 
     assert len(constructor.collection.get_ids()) == len(ids) * 2
 
@@ -494,45 +499,26 @@ def test_fail_resume(ct, source, ids, refs, tmp_path):
     config["parent_callback"] = bad_fn
     constructor = ct(config)
 
+    items = list(constructor.parse_inputs(ids))
+
     # whatever the error, it's caught and the runtime exception is raised
     with pytest.raises(RuntimeError):
-        next(constructor.run(ids))
+        next(constructor.run(items))
 
-    assert constructor.last_failed_batch == ids[:1]
+    assert constructor.last_failed_batch == items[:1]
     assert len(constructor.history) == 0
     assert len(constructor.collection.get_ids()) == 0
 
     # Remove callback from config and continue from the last failed batch
     config["parent_callback"] = None
     batches = list(constructor.resume_with(constructor.last_failed_batch))
-    assert len(batches) == len(ids)
-    assert len(constructor.history) == len(ids)
-    assert len(constructor.collection.get_ids()) == len(ids) * 2
+    assert len(batches) == len(items)
+    assert len(constructor.history) == len(items)
+    assert len(constructor.collection.get_ids()) == len(items) * 2
 
+    # reinitializing and rerunning doesn't cause an exception
     constructor = ct(config)
-    batches = list(constructor.run(ids))
-    assert len(batches) == len(ids)
-    assert len(constructor.history) == len(ids)
+    batches = list(constructor.run(items))
+    assert len(batches) == len(items)
+    assert len(constructor.history) == len(items)
 
-
-@pytest.mark.parametrize(
-    "inp_ids,out_ids,done_ids,missed_ids",
-    [
-        ((), (), (), ()),
-        (("XXXX", "YYYY"), (), (), ("XXXX", "YYYY")),
-        (
-            ("1ABC:A,B", "2ABC:A"),
-            ("1ABC:A|1-10", "1ABC:B|1-5"),
-            ("1ABC:A,B",),
-            ("2ABC:A",),
-        ),
-        (("1ABC:A,B", "2ABC:A"), ("1ABC:A|1-10",), ("1ABC:A",), ("2ABC:A", "1ABC:B")),
-    ],
-)
-def test_batch_data(inp_ids, out_ids, done_ids, missed_ids):
-    bd = BatchData(1, inp_ids, out_ids, None)
-    hist = BatchesHistory([bd])
-    assert hist.last_step() == 1
-    assert set(hist.iter_tried()) == set(inp_ids)
-    assert set(hist.iter_done()) == set(done_ids)
-    assert set(hist.iter_missed()) == set(missed_ids)
