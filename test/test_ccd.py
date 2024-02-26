@@ -6,9 +6,7 @@ import pytest
 
 from lXtractor.ext import CCD
 from lXtractor.ext.ccd import Field
-
-
-DATA = Path(__file__).parent / "data"
+from test.common import DATA
 
 
 @pytest.fixture

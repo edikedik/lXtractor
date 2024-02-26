@@ -12,6 +12,7 @@ from lXtractor.collection import (
     StructureCollection,
 )
 from lXtractor.collection.collection import Collection
+from lXtractor.collection.constructor import MapCollectionConstructor
 from lXtractor.collection.support import (
     ConstructorConfig,
     StrItem,
@@ -22,7 +23,7 @@ from lXtractor.core import Alignment
 from lXtractor.core.exceptions import MissingData
 from lXtractor.ext import PyHMMer
 from lXtractor.variables import SeqEl
-from test.common import TestError
+from test.common import TestError, DATA, SEQUENCES
 
 GET_TABLE_NAMES = """SELECT name FROM sqlite_master WHERE type='table';"""
 TABLE_NAMES = (
@@ -39,7 +40,6 @@ COLLECTION_TYPES = (
     StructureCollection,
     MappingCollection,
 )
-DATA = Path(__file__).parent / "data"
 
 
 def get_all_ids(chains: lxc.ChainList, nested_structures=True):
@@ -346,26 +346,27 @@ def test_constructor_config():
 def make_config(base: Path, source, refs, ids, local=False):
     if local:
         dirs = [
-            base / 'output',
-            DATA / 'collection' / 'sequences',
-            DATA / 'collection' / 'structures',
-
+            base / "output",
+            DATA / "sequences",
+            DATA / "structures",
         ]
     else:
-        dirs = [base / x for x in ("output", "sequences", "structures", "references")]
+        dirs = [base / x for x in ("output", "sequences", "structures")]
     kws = dict(
         source=source,
         out_dir=dirs[0],
         seq_dir=dirs[1],
         str_dir=dirs[2],
-        ref_dir=dirs[3],
         references=refs,
         ids=ids,
         PDB_kwargs=dict(verbose=True),
         AF2_kwargs=dict(verbose=True),
     )
-    if source.lower() in ("af", "af2"):
+    if source.lower() in ("af", "af2", "alphafold"):
         kws["str_fmt"] = "cif"
+    if local:
+        kws["source"] = "local"
+        kws["default_chain"] = "A"
 
     return ConstructorConfig(**kws), dirs
 
@@ -373,10 +374,10 @@ def make_config(base: Path, source, refs, ids, local=False):
 @pytest.mark.parametrize(
     "inp",
     [
-        # ("SIFTS", "chain", "str"),
         ("UniProt", SeqCollectionConstructor),
         ("PDB", StrCollectionConstructor),
         ("AF2", StrCollectionConstructor),
+        ("SIFTS", MapCollectionConstructor),
     ],
 )
 @pytest.mark.parametrize("references", [()])
@@ -393,11 +394,11 @@ def test_constructor_setup(inp, references, tmp_path):
     "ref",
     [
         DATA / "Pkinase.hmm",
-        DATA / "simple.fasta",
+        SEQUENCES / "fasta" / "simple.fasta",
         PyHMMer(DATA / "Pkinase.hmm"),
         Alignment([("REF_SEQ", "KAL"), ("s2", "KKL")]),
         lxc.ChainSequence.from_string("KAL", name="REF_SEQ"),
-        ("REF", DATA / "simple.fasta"),
+        ("REF", SEQUENCES / "fasta" / "simple.fasta"),
         ("ALN", Alignment([("REF_SEQ", "KAL"), ("s2", "KKL")])),
         ("REF", "KAL"),
         ("REF", lxc.ChainSequence.from_string("KAL", name="REF_SEQ")),
@@ -413,7 +414,7 @@ def test_setup_references(source, const_type, ref, tmp_path):
     else:
         constructor = const_type(config)
         assert all(isinstance(x, PyHMMer) for x in constructor.references)
-        written_refs = {x.stem for x in dirs[-1].glob("*.hmm")}
+        written_refs = {x.stem for x in constructor.paths.references.glob("*.hmm")}
         ref_names = {r.hmm.name.decode("utf-8") for r in constructor.references}
         assert ref_names == written_refs
 
@@ -456,8 +457,10 @@ TEST_BATCHES = [
 
 
 @pytest.mark.parametrize("ct,source,ids,refs", TEST_BATCHES)
-def test_run_batch(ct, source, ids, refs, tmp_path):
-    config, dirs = make_config(tmp_path, source, refs, ())
+@pytest.mark.parametrize("local", [True, False])
+def test_run_batch(ct, source, ids, refs, local, tmp_path):
+    config, _ = make_config(tmp_path, source, refs, (), local)
+
     constructor = ct(config)
     itl = constructor.item_list_type(constructor.parse_inputs(ids))
     res = constructor.run_batch(itl)
@@ -468,9 +471,18 @@ def test_run_batch(ct, source, ids, refs, tmp_path):
     assert len(constructor.history) == 0
 
 
+def test_run_empty_batch(tmp_path):
+    config, _ = make_config(tmp_path, "", [PKP], (), True)
+    constructor = StrCollectionConstructor(config)
+    res = constructor.run_batch(constructor.item_list_type())
+    assert isinstance(res, lxc.ChainList)
+    assert len(res) == 0
+
+
 @pytest.mark.parametrize("ct,source,ids,refs", TEST_BATCHES)
-def test_run(ct, source, ids, refs, tmp_path):
-    config, dirs = make_config(tmp_path, source, refs, ())
+@pytest.mark.parametrize("local", [True])
+def test_run(ct, source, ids, refs, local, tmp_path):
+    config, dirs = make_config(tmp_path, source, refs, (), local)
     config["batch_size"] = 1
 
     constructor = ct(config)
@@ -489,12 +501,13 @@ def test_run(ct, source, ids, refs, tmp_path):
 
 
 @pytest.mark.parametrize("ct,source,ids,refs", TEST_BATCHES)
-def test_fail_resume(ct, source, ids, refs, tmp_path):
+@pytest.mark.parametrize("local", [True])
+def test_fail_resume(ct, source, ids, refs, local, tmp_path):
     def bad_fn(_):
         # I always fail
         raise TestError()
 
-    config, dirs = make_config(tmp_path, source, refs, ())
+    config, dirs = make_config(tmp_path, source, refs, (), local)
     config["batch_size"] = 1
     config["parent_callback"] = bad_fn
     constructor = ct(config)
@@ -521,4 +534,3 @@ def test_fail_resume(ct, source, ids, refs, tmp_path):
     batches = list(constructor.run(items))
     assert len(batches) == len(items)
     assert len(constructor.history) == len(items)
-

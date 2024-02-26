@@ -23,11 +23,11 @@ def test_parse(sifts):
 
 
 @pytest.mark.parametrize(
-    'u_id,base_path,pdb_method',
+    "u_id,base_path,pdb_method",
     [
-        (['P12931'], None, None),
-        ({'P12931': ('id', 'fakeseq')}, Path(__file__), None),
-        ({'P12931': ('id', 'fakeseq')}, Path(__file__), 'X-ray'),
+        (["P12931"], None, None),
+        ({"P12931": ("id", "fakeseq")}, Path(__file__), None),
+        ({"P12931": ("id", "fakeseq")}, Path(__file__), "X-ray"),
     ],
 )
 def test_prepare_mapping(sifts, u_id, base_path, pdb_method):

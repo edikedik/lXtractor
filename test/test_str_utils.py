@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import rustworkx as rx
 
-from test.common import ALL_STRUCTURES
+from test.common import ALL_STRUCTURES, STRUCTURES
 from lXtractor.core.config import STRUCTURE_FMT, EMPTY_ALTLOC
 from lXtractor.util.structure import (
     filter_to_common_atoms,
@@ -18,8 +18,6 @@ from lXtractor.util.structure import (
     iter_altloc_masks,
     to_graph,
 )
-
-DATA = Path(__file__).parent / "data"
 
 
 @pytest.fixture()
@@ -116,11 +114,11 @@ def test_observed_atoms_fraction(gly, ala):
 @pytest.mark.parametrize(
     "path",
     [
-        DATA / "1aki.pdb",
-        DATA / "2oiq.cif",
-        DATA / "2oiq.cif.gz",
-        DATA / "1rdq.mmtf",
-        DATA / "1rdq.mmtf.gz",
+        STRUCTURES / "pdb" / "1aki.pdb",
+        STRUCTURES / "cif" / "2oiq.cif",
+        STRUCTURES / "cif.gz" / "2oiq.cif.gz",
+        STRUCTURES / "mmtf" / "1rdq.mmtf",
+        STRUCTURES / "mmtf.gz" / "1rdq.mmtf.gz",
     ],
 )
 def test_load_structure(path):

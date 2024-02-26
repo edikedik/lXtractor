@@ -1,24 +1,22 @@
 from collections import defaultdict
-from pathlib import Path
 
 import pandas as pd
 import pytest
 from toolz import valmap
 
 from lXtractor.core.structure import GenericStructure
-
-DATA = Path(__file__).parent / "data"
+from test.common import STRUCTURES
 
 
 @pytest.mark.parametrize(
     "path,expected",
     [
-        (DATA / "2oiq.cif", {("STI", ("A",))}),
-        (DATA / "5hu9.cif", {("66K", ("A",))}),
-        (DATA / "1aki.pdb", set()),
-        (DATA / "3uec.cif", set()),
+        (STRUCTURES / "cif" / "2oiq.cif", {("STI", ("A",))}),
+        (STRUCTURES / "cif" / "5hu9.cif", {("66K", ("A",))}),
+        (STRUCTURES / "pdb" / "1aki.pdb", set()),
+        (STRUCTURES / "cif" / "3uec.cif", set()),
         (
-            DATA / "7fsh.cif",
+            STRUCTURES / "cif" / "7fsh.cif",
             {
                 ("ALA", ("D",)),
                 ("DGL", ("B", "D")),
@@ -26,8 +24,8 @@ DATA = Path(__file__).parent / "data"
                 ("UXA", ("C", "D")),
             },
         ),
-        (DATA / "3unk.cif", {("0BY", ("A",))}),
-        (DATA / "4hvd.mmtf.gz", {("933", ("A",)), ("PHU", ("A",))}),
+        (STRUCTURES / "cif" / "3unk.cif", {("0BY", ("A",))}),
+        (STRUCTURES / "mmtf.gz" / "4hvd.mmtf.gz", {("933", ("A",)), ("PHU", ("A",))}),
     ],
 )
 def test_find_ligands(path, expected):
@@ -43,7 +41,7 @@ def test_find_ligands(path, expected):
     "path,expected",
     [
         (
-            DATA / "7m0y.mmtf.gz",
+            STRUCTURES / "mmtf.gz" / "7m0y.mmtf.gz",
             {
                 ("A", "ANP", "A"),
                 ("A", "QOM", "B"),
@@ -52,7 +50,7 @@ def test_find_ligands(path, expected):
             },
         ),
         (
-            DATA / "7fsh.cif",
+            STRUCTURES / "cif" / "7fsh.cif",
             {
                 ("B", "DGL", "B"),
                 # ("C", "GLY", "C"),
@@ -64,7 +62,7 @@ def test_find_ligands(path, expected):
             },
         ),
         (
-            DATA / "4TWC.mmtf.gz",
+            STRUCTURES / "mmtf.gz" / "4TWC.mmtf.gz",
             {
                 ("A", "37J", "A"),
                 ("B", "37J", "B"),
@@ -88,7 +86,7 @@ def test_split_chains(path, expected):
 
 @pytest.mark.parametrize(
     "inp_path,altloc,lig_names",
-    [(DATA / "1rdq.mmtf", ["A", "B"], [{"ADP_599:E"}, {"ATP_600:E"}])],
+    [(STRUCTURES / "mmtf" / "1rdq.mmtf", ["A", "B"], [{"ADP_599:E"}, {"ATP_600:E"}])],
 )
 def test_split_altloc(inp_path, altloc, lig_names):
     s = GenericStructure.read(inp_path, altloc=True)
@@ -99,7 +97,7 @@ def test_split_altloc(inp_path, altloc, lig_names):
         assert {lig.id.split("<-")[0] for lig in s_alt.ligands} == exp_lig
 
 
-@pytest.mark.parametrize("inp", [DATA / "3unk.cif"])
+@pytest.mark.parametrize("inp", [STRUCTURES / "cif" / "3unk.cif"])
 @pytest.mark.parametrize("meta", [True, False])
 def test_summary(inp, meta):
     s = GenericStructure.read(inp)
@@ -116,11 +114,9 @@ def test_summary(inp, meta):
 
 
 @pytest.mark.parametrize(
-    "inp,out", [(DATA / "5ACB.mmtf.gz", {("5I1", "C"), ("5I1", "D")})]
+    "inp,out", [(STRUCTURES / "mmtf.gz" / "5ACB.mmtf.gz", {("5I1", "C"), ("5I1", "D")})]
 )
 def test_covalent_ligand(inp, out):
     s = GenericStructure.read(inp)
     outputs = {(lig.res_name, lig.chain_id) for lig in s.ligands}
     assert outputs == out
-
-

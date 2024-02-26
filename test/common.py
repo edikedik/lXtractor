@@ -9,8 +9,10 @@ from lXtractor.core.config import DefaultConfig
 from lXtractor.core.structure import GenericStructure
 
 DATA = Path(__file__).parent / "data"
+STRUCTURES = DATA / "structures"
+SEQUENCES = DATA / "sequences"
 ALL_STRUCTURES = sorted(
-    chain(DATA.glob("*mmtf*"), DATA.glob("*cif*"), DATA.glob("*pdb*"))
+    chain(STRUCTURES.glob("mmtf*/*"), DATA.glob("cif*/*"), DATA.glob("pdb*/*"))
 )
 
 

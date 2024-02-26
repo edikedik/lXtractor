@@ -10,50 +10,63 @@ from lXtractor.core.structure import GenericStructure
 from lXtractor.util.seq import read_fasta
 from lXtractor.variables.sequential import SeqEl
 from lXtractor.variables.structural import Dist, PseudoDihedral
-from test.common import sample_chain, get_fst_chain
+from test.common import sample_chain, get_fst_chain, STRUCTURES, SEQUENCES, DATA
 
-DATA = Path(__file__).parent / "data"
 EPS = 10e-5
 
 
 @pytest.fixture(scope="module")
 def simple_structure_path() -> Path:
-    path = DATA / "1aki.pdb"
+    path = STRUCTURES / "pdb" / "1aki.pdb"
     assert path.exists()
     return path
 
 
 @pytest.fixture(scope="module")
 def four_chain_structure_path() -> Path:
-    path = DATA / "3i6x.pdb"
-    assert path.exists()
-    return path
-
-
-@pytest.fixture(scope="module")
-def four_chain_structure_seq_path() -> Path:
-    path = DATA / "P46940.fasta"
+    path = STRUCTURES / "pdb" / "3i6x.pdb"
     assert path.exists()
     return path
 
 
 @pytest.fixture(scope="module")
 def chicken_src_str_path() -> Path:
-    path = DATA / "2oiq.cif"
+    path = STRUCTURES / "cif" / "2oiq.cif"
+    assert path.exists()
+    return path
+
+
+@pytest.fixture(scope="module")
+def human_abl_str_path() -> Path:
+    path = STRUCTURES / "cif" / "5hu9.cif"
+    assert path.exists()
+    return path
+
+
+@pytest.fixture(scope="module")
+def four_chain_structure_seq_path() -> Path:
+    path = SEQUENCES / "fasta" / "P46940.fasta"
     assert path.exists()
     return path
 
 
 @pytest.fixture(scope="module")
 def chicken_src_seq_path() -> Path:
-    path = DATA / "P00523.fasta"
+    path = SEQUENCES / "fasta" / "P00523.fasta"
     assert path.exists()
     return path
 
 
 @pytest.fixture(scope="module")
 def human_src_seq_path() -> Path:
-    path = DATA / "P12931.fasta"
+    path = SEQUENCES / "fasta" / "P12931.fasta"
+    assert path.exists()
+    return path
+
+
+@pytest.fixture(scope="module")
+def simple_fasta_path() -> Path:
+    path = SEQUENCES / "fasta" / "simple.fasta"
     assert path.exists()
     return path
 
@@ -61,13 +74,6 @@ def human_src_seq_path() -> Path:
 @pytest.fixture(scope="module")
 def pkinase_hmm_path() -> Path:
     path = DATA / "Pkinase.hmm"
-    assert path.exists()
-    return path
-
-
-@pytest.fixture(scope="module")
-def human_abl_str_path() -> Path:
-    path = DATA / "5hu9.cif"
     assert path.exists()
     return path
 
@@ -102,13 +108,6 @@ def chicken_src_seq(chicken_src_seq_path) -> tuple[str, str]:
 def human_src_seq(human_src_seq_path) -> tuple[str, str]:
     h, s = next(read_fasta(human_src_seq_path))
     return h.split("|")[1], s
-
-
-@pytest.fixture(scope="module")
-def simple_fasta_path() -> Path:
-    path = DATA / "simple.fasta"
-    assert path.exists()
-    return path
 
 
 @pytest.fixture()

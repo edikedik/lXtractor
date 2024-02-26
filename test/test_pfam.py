@@ -5,8 +5,7 @@ import pytest
 
 from lXtractor.ext.hmm import Pfam
 from lXtractor.util import get_dirs
-
-DATA = Path(__file__).parent / "data"
+from test.common import DATA
 
 
 @pytest.fixture(scope="module")

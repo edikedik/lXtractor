@@ -14,15 +14,13 @@ from lXtractor.core.structure import (
     ProteinStructure,
 )
 from lXtractor.util import compare_arrays
-from test.common import ALL_STRUCTURES
+from test.common import ALL_STRUCTURES, STRUCTURES
 from test.conftest import EPS
-
-DATA = Path(__file__).parent / "data"
 
 
 @pytest.fixture()
 def peptide_dna_complex() -> Path:
-    path = DATA / "1yrn.cif.gz"
+    path = STRUCTURES / "cif.gz" / "1yrn.cif.gz"
     assert path.exists()
     return path
 
@@ -48,7 +46,7 @@ def test_io(inp):
     s = ProteinStructure.read(inp)
 
     with TemporaryDirectory() as d:
-        basename = inp.stem.split('.')[0]
+        basename = inp.stem.split(".")[0]
         path = Path(d) / f"{basename}.mmtf.gz"
         s.write(path)
 
@@ -105,7 +103,11 @@ def test_split_chains(simple_structure):
 
 
 @pytest.mark.parametrize(
-    "inp", [(DATA / "1aki.pdb", [""]), (DATA / "1rdq.mmtf", ["", "A", "B"])]
+    "inp",
+    [
+        (STRUCTURES / "pdb" / "1aki.pdb", [""]),
+        (STRUCTURES / "mmtf" / "1rdq.mmtf", ["", "A", "B"]),
+    ],
 )
 def test_read_altloc(inp):
     path, expected_ids = inp
@@ -113,7 +115,10 @@ def test_read_altloc(inp):
     assert s.altloc_ids == expected_ids
 
 
-@pytest.mark.parametrize("inp", [(DATA / "1aki.pdb", 1), (DATA / "1rdq.mmtf", 2)])
+@pytest.mark.parametrize(
+    "inp",
+    [(STRUCTURES / "pdb" / "1aki.pdb", 1), (STRUCTURES / "mmtf" / "1rdq.mmtf", 2)],
+)
 def test_split_altloc(inp):
     path, n_chains = inp
     s = GenericStructure.read(path, altloc=True)
@@ -207,7 +212,7 @@ def test_atom_marks_splitting(peptide_dna_complex):
 @pytest.mark.parametrize(
     "str_path",
     # sorted(chain(DATA.glob("*mmtf*"), DATA.glob("*cif*"), DATA.glob("*pdb*"))),
-    [DATA / "4TWC.mmtf.gz"],
+    [STRUCTURES / "mmtf.gz" / "4TWC.mmtf.gz"],
 )
 def test_atom_marks_no_unk(str_path):
     s = GenericStructure.read(str_path, altloc=True)
