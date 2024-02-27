@@ -475,7 +475,7 @@ class SIFTS(AbstractResource):
         seqs: abc.Iterable[str] | abc.Mapping[str, _Mkey],
         pdb_method: str | None = "X-ray",
         pdb_base: Path | None = None,
-        pdb_fmt: str = "cif",
+        pdb_fmt: str = "mmtf.gz",
         pdb_method_filter_kwargs: abc.Mapping[str, t.Any] | None = None,
     ) -> abc.Mapping[str | _Mkey, list[tuple[str | Path, list[str]]]]:
         """
@@ -514,13 +514,14 @@ class SIFTS(AbstractResource):
         if pdb_method:
             from lXtractor.ext import filter_by_method
 
-            pdb_kwargs = (
-                {} if pdb_method_filter_kwargs is None else pdb_method_filter_kwargs
-            )
+            kw = {} if pdb_method_filter_kwargs is None else pdb_method_filter_kwargs
+            if pdb_base is not None and "dir_" not in kw:
+                kw["dir_"] = pdb_base / "info"
+
             pdb_ids = chain.from_iterable(
                 map(lambda val: (x[0] for x in val), m.values())
             )
-            pdb_ids = filter_by_method(pdb_ids, method=pdb_method, **pdb_kwargs)
+            pdb_ids = filter_by_method(pdb_ids, method=pdb_method, **kw)
             m = valmap(lambda val: list(filter(lambda x: x[0] in pdb_ids, val)), m)
             m = valfilter(bool, m)
 
