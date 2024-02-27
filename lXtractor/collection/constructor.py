@@ -10,6 +10,7 @@ from pathlib import Path
 from loguru import logger
 from more_itertools import chunked_even, unique_everseen
 from toolz import curry
+from tqdm.auto import tqdm
 
 from lXtractor import chain as lxc
 from lXtractor.collection import (
@@ -158,6 +159,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
         self.history = BatchesHistory(self.item_list_type)
         self._batches: abc.Iterator[tuple[int, _ITL]] | None = None
         self.last_failed_batch: _ITL | None = None
+        self._pbar: tqdm | None = None
 
         self.config.validate()
         self._setup_logger()
@@ -173,6 +175,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
         pass
 
     def _setup_logger(self):
+        logger.remove()
         if self.config["verbose"]:
             logger.add(sys.stdout, level="INFO")
         logger.add(self.paths.output / "log.txt", backtrace=True, level="DEBUG")
@@ -248,6 +251,10 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
             lxc.ChainIO(num_proc=io_proc, verbose=self.config["verbose"]),
         )
 
+    def _setup_pbar(self):
+        if self.config['verbose']:
+            self._pbar = tqdm(desc='Running batches')
+
     def _save_references(self):
         for ref in self.references:
             hmm_name = ref.hmm.name.decode("utf-8")
@@ -318,6 +325,30 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
 
         return res
 
+    def _report_batch(self, batch_data: BatchData) -> None:
+        prog = dict(
+            batch_i=batch_data.i,
+            success=not batch_data.failed,
+            size=len(batch_data.items_in),
+            done=len(batch_data.items_done()),
+            missed=len(batch_data.items_missed())
+        )
+        if batch_data.chains is not None:
+            prog['chains'] = len(batch_data.chains)
+            prog['segments'] = len(batch_data.chains.collapse_children())
+
+        status = 'FAILED' if batch_data.failed else 'completed'
+        logger.info(
+            f"Batch {prog['batch_i']} {status}. "
+            f"Input items={prog['size']}. "
+            f"Done items={prog['done']}. "
+            f"Missed items={prog['missed']}"
+        )
+
+        if self._pbar is not None:
+            self._pbar.update(1)
+            self._pbar.set_postfix(prog)
+
     def parse_inputs(self, inputs: abc.Iterable[t.Any]) -> abc.Iterator[_IT]:
         yield from chain.from_iterable(map(self._parse_inp, inputs))
 
@@ -370,6 +401,8 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
                 )
             self.init_batches(items, 1)
 
+        self._setup_pbar()
+
         for batch_i, batch in self._batches:
             try:
                 chains = self.run_batch(batch)
@@ -390,6 +423,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
                         batch_i, batch, self.item_list_type(), None, failed=True
                     )
                     self.history.data.append(bd)
+            self._report_batch(bd)
             yield bd
 
     def make_batches(
@@ -401,6 +435,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
         yield from enumerate(chunks, start=start)
 
     def init_batches(self, items: abc.Iterable[_IT], start: int) -> None:
+        logger.debug('Initializing batches.')
         self._batches = self.make_batches(items, start)
 
     def append_batches(self, batches: abc.Iterator[tuple[int, _ITL]]) -> None:
