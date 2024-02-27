@@ -211,7 +211,10 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
         elif isinstance(ref_kw, abc.Mapping):
             return [ref_kw for _ in range(num_refs)]
         else:
-            raise TypeError("Invalid type for a reference arguments. Expected a")
+            raise TypeError(
+                f"Invalid type {type(ref_kw)} for a reference arguments. "
+                f"Expected a mapping or a sequence."
+            )
 
     def _setup_references(self) -> list[PyHMMer]:
         try:
@@ -316,7 +319,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
         return res
 
     def parse_inputs(self, inputs: abc.Iterable[t.Any]) -> abc.Iterator[_IT]:
-        yield from chain.from_iterable(map(self._parse_id, inputs))
+        yield from chain.from_iterable(map(self._parse_inp, inputs))
 
     def run_batch(self, items: _ITL) -> lxc.ChainList[_CT]:
         logger.info(f"Received batch of {len(items)} items.")
@@ -431,7 +434,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
         yield from self._run(None, True)
 
     @abstractmethod
-    def _parse_id(self, x: t.Any) -> abc.Iterator[_IT]:
+    def _parse_inp(self, x: t.Any) -> abc.Iterator[_IT]:
         pass
 
     @abstractmethod
@@ -454,7 +457,7 @@ class SeqCollectionConstructor(
     def item_list_type(self) -> t.Type[SeqItemList]:
         return SeqItemList
 
-    def _parse_id(self, x: t.Any) -> abc.Iterator[SeqItem]:
+    def _parse_inp(self, x: t.Any) -> abc.Iterator[SeqItem]:
         if isinstance(x, SeqItem):
             yield x
         elif isinstance(x, str):
@@ -481,7 +484,7 @@ class StrCollectionConstructor(
     def item_list_type(self) -> t.Type[StrItemList]:
         return StrItemList
 
-    def _parse_id(self, x: t.Any) -> abc.Iterator[StrItem]:
+    def _parse_inp(self, x: t.Any) -> abc.Iterator[StrItem]:
         match x:
             case StrItem():
                 yield x
@@ -525,7 +528,7 @@ class MapCollectionConstructor(
     def item_list_type(self) -> t.Type[MapItemList]:
         return MapItemList
 
-    def _parse_id(self, x: t.Any) -> abc.Iterator[MapItem]:
+    def _parse_inp(self, x: t.Any) -> abc.Iterator[MapItem]:
         match x:
             case MapItem():
                 yield x

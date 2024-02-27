@@ -13,7 +13,7 @@ from toolz import curry
 
 import lXtractor.chain as lxc
 from lXtractor.core.config import Config, DefaultConfig
-from lXtractor.core.exceptions import MissingData
+from lXtractor.core.exceptions import MissingData, FormatError
 from lXtractor.ext import AlphaFold, PDB, UniProt, SIFTS
 
 _RESOURCES = Path(__file__).parent.parent / "resources"
@@ -21,19 +21,6 @@ _DEFAULT_CONFIG_PATH = _RESOURCES / "collection_config.json"
 _USER_CONFIG_PATH = _RESOURCES / "collection_user_config.json"
 
 _CT = t.TypeVar("_CT", lxc.ChainSequence, lxc.ChainStructure, lxc.Chain)
-
-
-def _parse_str_id(x: str) -> str | tuple[str, tuple[str, ...]]:
-    if ":" in x:
-        id_, chains = x.split(":", maxsplit=1)
-        return id_, tuple(chains.split(","))
-    return x
-
-
-def _validate_seq_id(x: t.Any) -> str:
-    if not isinstance(x, str):
-        raise TypeError(f"Expected sequence ID to be of string type, got {type(x)}.")
-    return x
 
 
 class ConstructorConfig(Config):
@@ -198,6 +185,10 @@ class StrItem(ConstructorItem[lxc.ChainStructure]):
 
     @classmethod
     def from_tuple(cls, inp: tuple[str, abc.Sequence[str]]) -> abc.Iterator[t.Self]:
+        if isinstance(inp[1], str):
+            raise FormatError(
+                f"Strings are disallowed as a second element in input {inp}"
+            )
         for chain_id in inp[1]:
             yield cls(inp[0], chain_id)
 
@@ -271,10 +262,6 @@ class ItemList(ABC, list, t.Generic[_IT]):
     def item_type(self) -> t.Type[_IT]:
         pass
 
-    @classmethod
-    def from_chains(cls):
-        return cls()
-
 
 class SeqItemList(ItemList[SeqItem]):
     @property
@@ -323,13 +310,13 @@ class MapItemList(ItemList[MapItem]):
         for g, gg in self.iter_groups():
             str_items = StrItemList(it.str_item for it in gg)
             seq_path = paths.sequence_files / f"{g}.fasta"
-            yield seq_path, list(str_items.prep_for_init())
+            yield seq_path, list(str_items.prep_for_init(paths))
 
     def as_strings(self):
         for g, gg in self.iter_groups():
             str_items = StrItemList(it.str_item for it in gg)
             strs = ";".join(str_items.as_strings())
-            yield f"{g}:{strs}"
+            yield f"{g}=>{strs}"
 
 
 _ITL = t.TypeVar("_ITL", SeqItemList, StrItemList, MapItemList)
