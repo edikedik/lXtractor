@@ -3,13 +3,12 @@ from __future__ import annotations
 import logging
 import typing as t
 from collections import abc
-from concurrent.futures import ProcessPoolExecutor, as_completed, Future
+from concurrent.futures import Future
 from dataclasses import dataclass, asdict
 from itertools import chain
 from pathlib import Path
 
 from toolz import curry, merge, valfilter, valmap
-from tqdm.auto import tqdm
 
 from lXtractor.chain import ChainList, Chain, ChainSequence, ChainStructure
 from lXtractor.core.config import DefaultConfig
@@ -23,7 +22,7 @@ _P = t.TypeVar("_P", dict, Path)
 _ChildDict: t.TypeAlias = dict[Path, list[_P]]
 
 
-__all__ = ('ChainIOConfig', 'ChainIO', 'read_chains')
+__all__ = ("ChainIOConfig", "ChainIO", "read_chains")
 
 
 @dataclass
@@ -55,7 +54,8 @@ def _read_obj(
 
 
 @curry
-def _write_obj(obj: CT, path: Path, tolerate_failures: bool, **kwargs) -> Path | None:
+def _write_obj(obj: CT, base: Path, tolerate_failures: bool, **kwargs) -> Path | None:
+    path = base / obj.id
     try:
         return obj.write(path, **kwargs)
     except Exception as e:
@@ -217,8 +217,8 @@ class ChainIO:
             callbacks=callbacks,
             **kwargs,
         )
-        fnames = DefaultConfig['filenames']
-        if fnames['segments_dir'] in dirs or not dirs and isinstance(path, Path):
+        fnames = DefaultConfig["filenames"]
+        if fnames["segments_dir"] in dirs or not dirs and isinstance(path, Path):
             paths = [path]
         else:
             paths = iter(dirs.values())
@@ -280,48 +280,30 @@ class ChainIO:
 
     def write(
         self,
-        objs: CT | abc.Iterable[CT],
+        chains: CT | abc.Iterable[CT],
         base: Path,
-        non_blocking: bool = False,
         **kwargs,
     ) -> abc.Generator[Path | None | Future, None, None]:
         """
-        :param objs: A single or multiple objects to write.
-            Each must have a `write` method accepting a directory.
-        :param base: A writable dir. If `objs` are many, dump into `id`
-            directories.
-        :param non_blocking: If :attr:`num_proc` is >= 1, return `Future`
-            objects instead of waiting for the result.
-        :param kwargs: Passed to the `write` method of each object.
+        :param chains: A single or multiple chains to write.
+        :param base: A writable dir. For multiple chains, will use
+            `base/chain.id` directory.
+        :param kwargs: Passed to a chain's `write` method.
         :return: Whatever `write` method returns.
         """
-        if isinstance(objs, (ChainSequence, ChainStructure, Chain)):
-            yield objs.write(base)
+        if isinstance(chains, (ChainSequence, ChainStructure, Chain)):
+            yield chains.write(base)
         else:
-            _write = _write_obj(tolerate_failures=self.tolerate_failures, **kwargs)
-
-            if self.num_proc is None:
-                if self.verbose:
-                    objs = tqdm(objs, desc="Writing objects")
-                for obj in objs:
-                    yield _write(obj, base / obj.id)
-            else:
-                with ProcessPoolExecutor(self.num_proc) as executor:
-                    futures = as_completed(
-                        [executor.submit(_write, obj, base / obj.id) for obj in objs]
-                    )
-
-                    if non_blocking:
-                        yield from futures
-
-                    _futures = (
-                        tqdm(futures, desc="Writing objects")
-                        if self.verbose
-                        else futures
-                    )
-
-                    for f in _futures:
-                        yield f.result()
+            fn = _write_obj(
+                base=base, tolerate_failures=self.tolerate_failures, **kwargs
+            )
+            yield from apply(
+                fn,
+                chains,
+                verbose=self.verbose,
+                desc="Writing objects",
+                num_proc=self.num_proc,
+            )
 
 
 if __name__ == "__main__":
