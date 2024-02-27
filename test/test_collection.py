@@ -395,7 +395,7 @@ def test_constructor_config():
         assert cfg == _cfg
 
 
-def make_config(base: Path, source, refs, ids, local=False):
+def make_config(base: Path, source, refs, local=False):
     if local:
         dirs = [
             base / "output",
@@ -410,7 +410,6 @@ def make_config(base: Path, source, refs, ids, local=False):
         seq_dir=dirs[1],
         str_dir=dirs[2],
         references=refs,
-        ids=ids,
         PDB_kwargs=dict(verbose=True),
         AF2_kwargs=dict(verbose=True),
         write_batches=True,
@@ -437,7 +436,7 @@ def make_config(base: Path, source, refs, ids, local=False):
 @pytest.mark.parametrize("references", [()])
 def test_constructor_setup(inp, references, tmp_path):
     source, constr_type = inp
-    config, dirs = make_config(tmp_path, source, references, ())
+    config, dirs = make_config(tmp_path, source, references)
     if source == "INVALID":
         with pytest.raises(ConfigError):
             constr_type(config)
@@ -466,7 +465,7 @@ def test_constructor_setup(inp, references, tmp_path):
     ],
 )
 def test_setup_references(source, const_type, ref, tmp_path):
-    config, dirs = make_config(tmp_path, source, [ref], ())
+    config, dirs = make_config(tmp_path, source, [ref])
 
     if isinstance(ref, tuple) and ref[0] == "INVALID":
         with pytest.raises(TypeError):
@@ -499,7 +498,7 @@ def test_callback_and_filter(tmp_path):
     chains[0].spawn_child(1, 3)
     chains[1].spawn_child(1, 2)
 
-    config, dirs = make_config(tmp_path, "local", (), ())
+    config, dirs = make_config(tmp_path, "local", ())
     config["child_callback"] = rename
     config["child_filter"] = lambda x: len(x) > 2
     config["parent_callback"] = rename
@@ -562,7 +561,7 @@ def test_inp_parsing(ct, inputs, valid, exp_items, tmp_path):
         source = "pdb"
     else:
         source = "sifts"
-    config, _ = make_config(tmp_path, source, [], ())
+    config, _ = make_config(tmp_path, source, [])
     constructor = ct(config)
     if valid:
         assert list(constructor.parse_inputs(inputs)) == exp_items
@@ -583,7 +582,7 @@ TEST_BATCHES = [
 @pytest.mark.parametrize("ct,source,ids,refs", TEST_BATCHES)
 @pytest.mark.parametrize("local", [True, False])
 def test_run_batch(ct, source, ids, refs, local, tmp_path):
-    config, _ = make_config(tmp_path, source, refs, (), local)
+    config, _ = make_config(tmp_path, source, refs, local)
 
     if ct is MapCollectionConstructor:
         config["references_annotate_kw"] = dict(str_map_from="map_canonical")
@@ -609,7 +608,7 @@ def test_run_batch(ct, source, ids, refs, local, tmp_path):
     "ct", [SeqCollectionConstructor, StrCollectionConstructor, MapCollectionConstructor]
 )
 def test_run_empty_batch(ct, tmp_path):
-    config, _ = make_config(tmp_path, "", [PKP], (), True)
+    config, _ = make_config(tmp_path, "", [PKP], True)
     constructor = ct(config)
     res = constructor.run_batch(constructor.item_list_type())
     assert isinstance(res, lxc.ChainList)
@@ -619,7 +618,7 @@ def test_run_empty_batch(ct, tmp_path):
 @pytest.mark.parametrize("ct,source,ids,refs", TEST_BATCHES[:-1])
 @pytest.mark.parametrize("local", [True])
 def test_run(ct, source, ids, refs, local, tmp_path):
-    config, dirs = make_config(tmp_path, source, refs, (), local)
+    config, dirs = make_config(tmp_path, source, refs, local)
     config["batch_size"] = 1
     config["keep_chains"] = True
 
@@ -647,7 +646,7 @@ def test_fail_resume(ct, source, ids, refs, local, tmp_path):
         # I always fail
         raise TestError()
 
-    config, dirs = make_config(tmp_path, source, refs, (), local)
+    config, dirs = make_config(tmp_path, source, refs, local)
     config["batch_size"] = 1
     config["parent_callback"] = bad_fn
     constructor = ct(config)

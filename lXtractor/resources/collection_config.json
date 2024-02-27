@@ -20,7 +20,6 @@
   "str_dir": "./structures",
   "str_fmt": "mmtf.gz",
   "source": null,
-  "ids": null,
   "AlphaFold_kwargs": {},
   "PDB_kwargs": {},
   "SIFTS_kwargs": {},
