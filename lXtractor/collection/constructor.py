@@ -177,7 +177,8 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
     def _setup_logger(self):
         logger.remove()
         if self.config["verbose"]:
-            logger.add(sys.stdout, level="INFO")
+            level = "DEBUG" if self.config["debug"] else "INFO"
+            logger.add(sys.stdout, level=level)
         logger.add(self.paths.output / "log.txt", backtrace=True, level="DEBUG")
 
     def _setup_paths(self):
@@ -252,8 +253,8 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
         )
 
     def _setup_pbar(self):
-        if self.config['verbose']:
-            self._pbar = tqdm(desc='Running batches')
+        if self.config["verbose"]:
+            self._pbar = tqdm(desc="Running batches")
 
     def _save_references(self):
         for ref in self.references:
@@ -304,7 +305,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
 
     def _fetch(self, ids: abc.Iterable[str], source: str) -> t.Any:
         source = source.lower()
-        ids = list(ids)
+        ids = list(unique_everseen(ids))
 
         if source == "local":
             logger.debug("Local source, nothing to fetch.")
@@ -322,6 +323,8 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
             logger.info(f"Fetched {len(fetched)} entries from {source}.")
             if len(failed) > 0:
                 logger.warning(f"Failed on {len(failed)}: {failed}.")
+        if source == "uniprot" and isinstance(res, abc.Sequence):
+            logger.info(f"Fetched {len(res)} entries from UniProt.")
 
         return res
 
@@ -331,13 +334,13 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
             success=not batch_data.failed,
             size=len(batch_data.items_in),
             done=len(batch_data.items_done()),
-            missed=len(batch_data.items_missed())
+            missed=len(batch_data.items_missed()),
         )
         if batch_data.chains is not None:
-            prog['chains'] = len(batch_data.chains)
-            prog['segments'] = len(batch_data.chains.collapse_children())
+            prog["chains"] = len(batch_data.chains)
+            prog["segments"] = len(batch_data.chains.collapse_children())
 
-        status = 'FAILED' if batch_data.failed else 'completed'
+        status = "FAILED" if batch_data.failed else "completed"
         logger.info(
             f"Batch {prog['batch_i']} {status}. "
             f"Input items={prog['size']}. "
@@ -375,17 +378,23 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
         chains = self._callback_and_filter(chains)
         logger.debug("Done applying callbacks.")
 
-        if self.config["write_batches"]:
-            paths = list(self.interfaces.IO.write(chains, self.paths.chains))
-            self.collection.link(paths)
-            logger.info(f"Wrote {len(paths)} chains to {self.paths.chains}.")
-
         try:
             self.collection.add(chains)
-            logger.debug("Added chains to the collection.")
+            logger.debug(f"Added {len(chains)} chains to the collection.")
         except Exception as e:
             logger.error(e)
             raise RuntimeError("Failed to add chains to collection.") from e
+
+        if self.config["write_batches"]:
+            paths = list(
+                self.interfaces.IO.write(
+                    chains,
+                    self.paths.chains,
+                    overwrite=self.config["write_batches_overwrite"],
+                )
+            )
+            self.collection.link(paths)
+            logger.info(f"Wrote {len(paths)} chains to {self.paths.chains}.")
 
         return chains
 
@@ -435,7 +444,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
         yield from enumerate(chunks, start=start)
 
     def init_batches(self, items: abc.Iterable[_IT], start: int) -> None:
-        logger.debug('Initializing batches.')
+        logger.debug("Initializing batches.")
         self._batches = self.make_batches(items, start)
 
     def append_batches(self, batches: abc.Iterator[tuple[int, _ITL]]) -> None:

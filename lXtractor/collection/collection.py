@@ -129,6 +129,8 @@ class Collection(t.Generic[_CT]):
         columns: abc.Sequence[str] = None,
         omit_first_id: bool = False,
         execute: bool = True,
+        on_conflict: str | None = None,
+        conflict_action: str | None = None,
     ) -> tuple[str | None, abc.Iterable[abc.Sequence[_T]]]:
         data_size, data = self._peek_data_size(data)
         if data_size == -1:
@@ -139,10 +141,18 @@ class Collection(t.Generic[_CT]):
             columns = self._column_names_for(table_name)
         if omit_first_id:
             columns = columns[1:]
-        columns = ", ".join(columns)
-        statement = f"INSERT INTO {table_name}({columns}) VALUES({placeholders})"
+        columns_str = ", ".join(columns)
+        statement = f"INSERT INTO {table_name}({columns_str}) VALUES({placeholders})"
+
+        # Handling ON CONFLICT clause
+        if on_conflict and conflict_action:
+            statement += f" ON CONFLICT({on_conflict}) DO {conflict_action}"
+
         if execute:
+            init_rows = self._num_rows_for(table_name)
             self._execute(statement, data, many=True)
+            res_rows = self._num_rows_for(table_name)
+            logger.debug(f"Added {res_rows - init_rows} new rows to {table_name}.")
         return statement, data
 
     def _setup(self):
@@ -171,6 +181,7 @@ class Collection(t.Generic[_CT]):
             FOREIGN KEY (chain_id_child) REFERENCES chains (id)
                 ON UPDATE CASCADE
                 ON DELETE CASCADE 
+            UNIQUE(chain_id_parent, chain_id_child)
         ); """
         make_variables = """ CREATE TABLE IF NOT EXISTS variables (
             chain_id TEXT NOT NULL,
@@ -190,6 +201,7 @@ class Collection(t.Generic[_CT]):
             FOREIGN KEY (chain_id) REFERENCES chains (id)
                 ON UPDATE CASCADE
                 ON DELETE CASCADE
+            UNIQUE (chain_id, chain_path)
         ); """
 
         self._execute("PRAGMA foreign_keys = 1")
@@ -324,9 +336,16 @@ class Collection(t.Generic[_CT]):
     def _insert_chains_data(
         self, chains: lxc.ChainList[_CT], chain_type: int, level: int
     ):
-        data = [(c.id, chain_type, level, None) for c in chains]
-        self._insert("chains", data)
-        logger.debug(f"Inserted data for {len(data)} chains.")
+        # Temporarily cleanup any existing children
+        id2children = {c.id: c.children for c in chains}
+        for c in chains:
+            c.children = lxc.ChainList([])
+        # Insert the data
+        data = ((c.id, chain_type, level, c) for c in chains)
+        self._insert("chains", data, on_conflict="id", conflict_action="NOTHING")
+        # Restore the children
+        for c in chains:
+            c.children = id2children[c.id]
 
     def _add_chains_data(self, chains: lxc.ChainList[_CT], chain_type: int) -> None:
         for i, _chains in enumerate((chains, *chains.iter_children()), start=0):
@@ -334,9 +353,13 @@ class Collection(t.Generic[_CT]):
                 self._insert_chains_data(_chains, chain_type, i)
 
     def _add_parents_data(self, chains: lxc.ChainList[_CT]) -> None:
-        data = [(child.parent.id, child.id) for child in chains.collapse_children()]
-        self._insert("parents", data)
-        logger.debug(f"Inserted data for {len(data)} parent-child pairs.")
+        data = ((child.parent.id, child.id) for child in chains.collapse_children())
+        self._insert(
+            "parents",
+            data,
+            on_conflict="chain_id_parent, chain_id_child",
+            conflict_action="NOTHING",
+        )
 
     def _add_chain_objects(self, chains: lxc.ChainList[_CT]) -> None:
         all_chains = chains + chains.collapse_children()
@@ -360,14 +383,17 @@ class Collection(t.Generic[_CT]):
         """
         if not chains:
             return
+        if not isinstance(chains, lxc.ChainList):
+            chains = lxc.ChainList(chains)
+
         self._verify_chain_types(chains)
         chain_type = _CT_MAP[chains[0].__class__]
-        chains = lxc.ChainList[_CT](self._filter_absent_chains(chains))
-        logger.debug(f"Adding {len(chains)} of type {chain_type}.")
+        # chains = lxc.ChainList[_CT](self._filter_absent_chains(chains))
+        logger.debug(f"Adding {len(chains)} chains of type {chain_type}.")
 
         self._add_chains_data(chains, chain_type)
         self._add_parents_data(chains)
-        self._add_chain_objects(chains)
+        # self._add_chain_objects(chains)
         if load:
             self._chains += chains
             logger.debug(
@@ -565,23 +591,24 @@ class Collection(t.Generic[_CT]):
         """
         existing_ids = self.get_ids()
 
-        paths = filter(lambda x: x.exists() and x.is_dir(), map(Path, paths))
-        p1, p2, p3 = tee(paths, 3)
-        paths = chain(
-            p1,
-            chain.from_iterable(map(self._expand_children, p2)),
-            chain.from_iterable(map(self._expand_structures, p3)),
-        )
-        paths = filter(lambda x: x.name in existing_ids, paths)
+        paths = list(filter(lambda x: x.exists() and x.is_dir(), map(Path, paths)))
 
-        data = ((x.name, x) for x in paths)
-        statement, data = self._insert("paths", data, execute=False)
-        if statement is None:
-            return
-        statement += (
-            " ON CONFLICT(chain_id) DO UPDATE SET chain_path=excluded.chain_path"
+        paths_children = chain.from_iterable(map(self._expand_children, paths))
+        paths_structures = chain.from_iterable(
+            map(self._expand_structures, chain(paths, paths_children))
         )
-        self._execute(statement, data, many=True)
+        paths_to_add = filter(
+            lambda x: x.name in existing_ids,
+            chain(paths, paths_children, paths_structures),
+        )
+
+        data = ((x.name, x) for x in paths_to_add)
+        self._insert(
+            "paths",
+            data,
+            on_conflict="chain_id",
+            conflict_action="UPDATE SET chain_path=excluded.chain_path",
+        )
 
     def _update(
         self,
@@ -661,6 +688,7 @@ class MappingCollection(Collection[lxc.Chain]):
             FOREIGN KEY(structure_id) REFERENCES chains(id)
                 ON UPDATE CASCADE
                 ON DELETE CASCADE
+            UNIQUE(chain_id, structure_id)
         ); """
         self._execute(make_structures)
 
@@ -670,42 +698,43 @@ class MappingCollection(Collection[lxc.Chain]):
     def _insert_chains_data(
         self, chains: lxc.ChainList[_CT], chain_type: int, level: int
     ) -> None:
-        data_chains = [(c.id, chain_type, level, None) for c in chains]
-        data_structures = list(
-            chain.from_iterable(
-                ((s.id, 2, level, None) for s in c.structures) for c in chains
-            )
-        )
-        self._insert("chains", chain(data_chains, data_structures))
-        logger.debug(
-            f"Inserted data for {len(chains)} sequences "
-            f"and {len(data_structures)} structures."
-        )
-        # Add chain--structure relationships
-        data = list(
-            chain.from_iterable(((c.id, s.id) for s in c.structures) for c in chains)
-        )
-        self._insert("structures", data)
-        logger.debug(f"Inserted {len(data)} seq-str links to the structures table.")
+        id2children = {c.id: c.children for c in chains}
+        id2structures = {c.id: c.structures for c in chains}
+        structures = chains.structures
 
-    def _add_chain_objects(self, chains: lxc.ChainList[lxc.Chain]) -> None:
-        all_chains = chains + chains.collapse_children()
-        structures = all_chains.structures
-        id2children = {c.id: c.children for c in all_chains}
-        id2structures = {c.id: c.structures for c in all_chains}
-        for c in all_chains:
+        # Temporarily cleanup children and structures to avoid storing the same
+        # data multiple times
+        for c in chains:
             c.children = lxc.ChainList([])
             c.structures = lxc.ChainList([])
-        statement = "UPDATE chains SET data=? WHERE id=?"
-        data = [(c, c.id) for c in chain(all_chains, structures)]
-        self._execute(statement, data, many=True)
-        logger.debug(f"Inserted raw {len(data)} chains.")
-        for c in all_chains:
+
+        data = chain(
+            ((c.id, chain_type, level, c) for c in chains),
+            ((s.id, 2, level, s) for s in structures),
+        )
+
+        # Insert new chains
+        self._insert("chains", data, on_conflict="id", conflict_action="NOTHING")
+
+        # Populate back children and structures
+        for c in chains:
             c.children = id2children[c.id]
             c.structures = id2structures[c.id]
 
+        # Insert chain-structure relationships
+        data = chain.from_iterable(((c.id, s.id) for s in c.structures) for c in chains)
+        self._insert(
+            "structures",
+            data,
+            on_conflict="chain_id, structure_id",
+            conflict_action="NOTHING",
+        )
+
     def _expand_structures(self, chain_path: Path) -> abc.Iterator[Path]:
-        yield from chain_path.glob("structures/*")
+        for root, dirs, _ in os.walk(chain_path):
+            root = Path(root)
+            if root.name == "structures":
+                yield from (root / x for x in dirs)
 
     def _recover_structures(self, chains: lxc.ChainList[_CT]) -> None:
         if not chains:

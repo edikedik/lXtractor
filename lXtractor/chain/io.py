@@ -54,8 +54,12 @@ def _read_obj(
 
 
 @curry
-def _write_obj(obj: CT, base: Path, tolerate_failures: bool, **kwargs) -> Path | None:
+def _write_obj(
+    obj: CT, base: Path, tolerate_failures: bool, overwrite: bool, **kwargs
+) -> Path | None:
     path = base / obj.id
+    if path.exists() and not overwrite:
+        return path
     try:
         return obj.write(path, **kwargs)
     except Exception as e:
@@ -282,12 +286,16 @@ class ChainIO:
         self,
         chains: CT | abc.Iterable[CT],
         base: Path,
+        overwrite: bool = False,
         **kwargs,
     ) -> abc.Generator[Path | None | Future, None, None]:
         """
         :param chains: A single or multiple chains to write.
         :param base: A writable dir. For multiple chains, will use
             `base/chain.id` directory.
+        :param overwrite: If the destination folder exists, ``False`` means
+            returning the destination path without attempting to write the
+            chain, whereas ``True`` results in an explicit ``.write()`` call.
         :param kwargs: Passed to a chain's `write` method.
         :return: Whatever `write` method returns.
         """
@@ -295,7 +303,10 @@ class ChainIO:
             yield chains.write(base)
         else:
             fn = _write_obj(
-                base=base, tolerate_failures=self.tolerate_failures, **kwargs
+                base=base,
+                overwrite=overwrite,
+                tolerate_failures=self.tolerate_failures,
+                **kwargs,
             )
             yield from apply(
                 fn,

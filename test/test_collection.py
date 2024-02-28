@@ -413,6 +413,8 @@ def make_config(base: Path, source, refs, local=False):
         PDB_kwargs=dict(verbose=True),
         AF2_kwargs=dict(verbose=True),
         write_batches=True,
+        debug=True,
+        max_proc=1,
     )
     if source.lower() in ("af", "af2", "alphafold"):
         kws["str_fmt"] = "cif"
@@ -646,7 +648,7 @@ def test_fail_resume(ct, source, ids, refs, local, tmp_path):
         # I always fail
         raise TestError()
 
-    config, dirs = make_config(tmp_path, source, refs, local)
+    config, _ = make_config(tmp_path, source, refs, local)
     config["batch_size"] = 1
     config["parent_callback"] = bad_fn
     constructor = ct(config)
@@ -678,8 +680,25 @@ def test_fail_resume(ct, source, ids, refs, local, tmp_path):
     # However, the collection was previously constructed and remains unchanged
     assert len(constructor.collection.get_ids()) == len(items) * 2
 
-    # # reinitializing and rerunning doesn't cause an exception
-    # constructor = ct(config)
-    # batches = list(constructor.run(items))
-    # assert len(batches) == len(items)
-    # assert len(constructor.history) == len(items)
+
+def test_run_mapping(tmp_path):
+    inputs = ["P12931=>2SRC:A;2OIQ:A,B"]
+    config, _ = make_config(tmp_path, "SIFTS", [PKP], True)
+    config["batch_size"] = 1
+    config["references_annotate_kw"] = dict(str_map_from="map_canonical")
+    config["keep_chains"] = True
+    config["max_proc"] = 1
+
+    constructor = MapCollectionConstructor(config)
+    itl = constructor.parse_inputs(inputs)
+    batches = list(constructor.run(itl))
+    assert len(batches) == 3
+    hist = constructor.history
+    assert len(hist.items_done()) == len(batches)
+    assert len(hist.join_chains()) == len(batches)
+
+    # 1 seq and 1 seq child, 3 str and 3 str children
+    assert len(constructor.collection.get_ids()) == 8
+    # all paths were linked
+    if config["write_batches"]:
+        assert len(constructor.collection.get_table("paths", as_df=True)) == 8
