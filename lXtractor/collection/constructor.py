@@ -130,7 +130,7 @@ def _to_concrete_collection(desc: str) -> t.Type[_ColT]:
 
 
 def _setup_collection(
-    config: ConstructorConfig, prefix: str, sources: abc.Iterable[str]
+    config: ConstructorConfig, prefix: str, sources: abc.Iterable[str], overwrite: bool
 ) -> _CTA:
     ct = _to_concrete_collection(prefix)
 
@@ -143,15 +143,15 @@ def _setup_collection(
             f"Invalid source {config['source']} for a {prefix} collection"
         )
     coll_path = config["out_dir"] / f"{config['collection_name']}.sqlite"
-    return ct(coll_path)
+    return ct(coll_path, overwrite)
 
 
 class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
-    def __init__(self, config: ConstructorConfig):
+    def __init__(self, config: ConstructorConfig, overwrite: bool = False):
         self.config = config
         self._max_cpu = get_cpu_count(config["max_proc"])
         self.paths = self._setup_paths()
-        self.collection: _ColT = self._setup_collection()
+        self.collection: _ColT = self._setup_collection(overwrite)
         self.interfaces: Interfaces = self._setup_interfaces()
         self.references: list[PyHMMer] = self._setup_references()
         self._ref_kws: abc.Sequence[abc.Mapping[str, t.Any]] = self._setup_ref_kws()
@@ -482,7 +482,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def _setup_collection(self) -> _CT:
+    def _setup_collection(self, overwrite: bool) -> _CT:
         pass
 
     @abstractmethod
@@ -509,8 +509,8 @@ class SeqCollectionConstructor(
         else:
             raise FormatError(f"Invalid value while parsing ID {x}.")
 
-    def _setup_collection(self) -> SequenceCollection:
-        return _setup_collection(self.config, "Seq", ("uniprot",))
+    def _setup_collection(self, overwrite: bool) -> SequenceCollection:
+        return _setup_collection(self.config, "Seq", ("uniprot",), overwrite)
 
     def fetch_missing(self, items: abc.Iterable[SeqItem]) -> t.Any:
         return self._fetch((x.seq_id for x in items), self.config["source"])
@@ -549,8 +549,8 @@ class StrCollectionConstructor(
             case _:
                 raise FormatError(f"Invalid value while parsing ID {x}.")
 
-    def _setup_collection(self) -> SequenceCollection:
-        return _setup_collection(self.config, "Str", ("pdb", "af", "af2"))
+    def _setup_collection(self, overwrite: bool) -> SequenceCollection:
+        return _setup_collection(self.config, "Str", ("pdb", "af", "af2"), overwrite)
 
     def fetch_missing(self, items: abc.Iterable[StrItem]) -> t.Any:
         source = self.config["source"].lower()
@@ -583,8 +583,8 @@ class MapCollectionConstructor(
             case _:
                 raise FormatError(f"Invalid value while parsing ID {x}.")
 
-    def _setup_collection(self) -> MappingCollection:
-        return _setup_collection(self.config, "Map", ("sifts",))
+    def _setup_collection(self, overwrite: bool) -> MappingCollection:
+        return _setup_collection(self.config, "Map", ("sifts",), overwrite)
 
     def fetch_missing(self, items: abc.Iterable[MapItem]) -> tuple[t.Any, t.Any]:
         items = list(items)

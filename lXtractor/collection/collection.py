@@ -54,12 +54,15 @@ def _make_placeholders(n: int) -> str:
 
 
 class Collection(t.Generic[_CT]):
-    def __init__(self, loc: str | PathLike = ":memory:"):
+    def __init__(self, loc: str | PathLike = ":memory:", overwrite: bool = False):
         """
         :param loc: Location of the data collection. By default, will use RAM
             to store the data.
+        :param overwrite: If `loc` is Path to an existing file, overwrite it.
         """
         self._loc = loc if loc == ":memory:" else Path(loc)
+        if isinstance(self._loc, Path) and self._loc.exists() and overwrite:
+            self._loc.unlink()
         _create_chain_converters()
         self._db = self._connect()
         self._setup()
@@ -674,8 +677,8 @@ class StructureCollection(Collection[lxc.ChainStructure]):
 
 
 class MappingCollection(Collection[lxc.Chain]):
-    def __init__(self, loc: str | PathLike = ":memory:"):
-        super().__init__(loc)
+    def __init__(self, loc: str | PathLike = ":memory:", overwrite: bool = False):
+        super().__init__(loc, overwrite)
         self._make_structures_table()
 
     def _make_structures_table(self):

@@ -220,7 +220,7 @@ def test_link(cls, chain_sequences, chain_structures, chains):
         df = col.get_table("paths", as_df=True)
         assert len(df) > 0
         added_ids = set(df.chain_id)
-        chain_ids = set(get_all_ids(cs, nested_structures=False))
+        chain_ids = set(get_all_ids(cs, nested_structures=True))
         assert added_ids == chain_ids
 
     # 4. Test for updating behavior
