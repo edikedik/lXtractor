@@ -23,30 +23,32 @@ def test_parse(sifts):
 
 
 @pytest.mark.parametrize(
-    "u_id,base_path,pdb_method",
+    "up_ids,pdb_ids,base_path,pdb_method",
     [
-        (["P12931"], None, None),
-        ({"P12931": ("id", "fakeseq")}, Path(__file__), None),
-        ({"P12931": ("id", "fakeseq")}, Path(__file__), "X-ray"),
+        (["P12931"], None, None, None),
+        ({"P12931": ("id", "fakeseq")}, None, Path(__file__), None),
+        ({"P12931": ("id", "fakeseq")}, ["2SRC:A"], Path(__file__), "X-ray"),
     ],
 )
-def test_prepare_mapping(sifts, u_id, base_path, pdb_method):
+def test_prepare_mapping(sifts, up_ids, pdb_ids, base_path, pdb_method):
     m = sifts.prepare_mapping(
-        u_id,
+        up_ids,
+        pdb_ids,
         pdb_method=pdb_method,
         pdb_base=base_path,
-        pdb_method_filter_kwargs=dict(pdb=PDB(num_threads=3)),
+        pdb_method_filter_kwargs=dict(pdb=PDB(num_threads=3), dir_=None),
     )
-    assert len(m) == len(u_id)
+    assert len(m) == len(up_ids)
     pdb_ids = next(iter(m.values()))
-    orig_key = list(u_id).pop()
+    orig_key = list(up_ids).pop()
     key = next(iter(m.keys()))
     assert all(isinstance(x[1], list) for x in pdb_ids)
 
     if base_path:
         assert all(isinstance(x[0], Path) for x in pdb_ids)
 
-    if isinstance(u_id, abc.Mapping):
+    if isinstance(up_ids, abc.Mapping):
         assert isinstance(key, tuple)
 
+    assert len(pdb_ids) > 0
     assert len(pdb_ids) < len(sifts[orig_key])

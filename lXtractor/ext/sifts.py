@@ -429,7 +429,8 @@ class SIFTS(AbstractResource):
     @t.overload
     def prepare_mapping(
         self,
-        seqs: abc.Iterable[str],
+        up_ids: abc.Iterable[str],
+        pdb_ids: abc.Iterable[str] | None = None,
         pdb_method: str | None = "X-ray",
         pdb_base: Path | None = None,
         pdb_fmt: str = "cif",
@@ -440,7 +441,8 @@ class SIFTS(AbstractResource):
     @t.overload
     def prepare_mapping(
         self,
-        seqs: abc.Mapping[str, _Mkey],
+        up_ids: abc.Mapping[str, _Mkey],
+        pdb_ids: abc.Iterable[str] | None = None,
         pdb_method: str | None = "X-ray",
         pdb_base: Path | None = None,
         pdb_fmt: str = "cif",
@@ -451,7 +453,8 @@ class SIFTS(AbstractResource):
     @t.overload
     def prepare_mapping(
         self,
-        seqs: abc.Iterable[str] | abc.Mapping[str, _Mkey],
+        up_ids: abc.Iterable[str] | abc.Mapping[str, _Mkey],
+        pdb_ids: abc.Iterable[str] | None = None,
         pdb_method: str | None = "X-ray",
         pdb_base: None = None,
         pdb_fmt: str = "cif",
@@ -462,7 +465,8 @@ class SIFTS(AbstractResource):
     @t.overload
     def prepare_mapping(
         self,
-        seqs: abc.Iterable[str] | abc.Mapping[str, _Mkey],
+        up_ids: abc.Iterable[str] | abc.Mapping[str, _Mkey],
+        pdb_ids: abc.Iterable[str] | None = None,
         pdb_method: str | None = "X-ray",
         pdb_base: Path = None,
         pdb_fmt: str = "cif",
@@ -472,7 +476,8 @@ class SIFTS(AbstractResource):
 
     def prepare_mapping(
         self,
-        seqs: abc.Iterable[str] | abc.Mapping[str, _Mkey],
+        up_ids: abc.Iterable[str] | abc.Mapping[str, _Mkey],
+        pdb_ids: abc.Iterable[str] | None = None,
         pdb_method: str | None = "X-ray",
         pdb_base: Path | None = None,
         pdb_fmt: str = "mmtf.gz",
@@ -486,8 +491,10 @@ class SIFTS(AbstractResource):
 
             UniProtID => [(PDB code, [PDB chains]), ...]
 
-        :param seqs: UniProt IDs to map with :class:`SIFTS` or a mapping of
+        :param up_ids: UniProt IDs to map with :class:`SIFTS` or a mapping of
             UniProt IDs to objects allowed as keys in ``from_mapping()``.
+        :param pdb_ids: PDB IDs to restrict the mapping to. Can be regular IDs
+            or with chain specifier (eg "1ABC:A").
         :param pdb_method: Filter PDB IDs by experimental method.
         :param pdb_base: A path to a PDB files' dir. If provided, the mapping
             takes the form::
@@ -507,7 +514,15 @@ class SIFTS(AbstractResource):
             groups = valmap(lambda val: [x[1] for x in val], groups)
             return list(groups.items())
 
-        m = {u_id: self.map_id(u_id) for u_id in seqs}
+        m = {u_id: self.map_id(u_id) for u_id in up_ids}
+        if pdb_ids is not None:
+            pdb_ids = set(pdb_ids)
+            m = valmap(
+                lambda xs: list(
+                    filter(lambda x: x in pdb_ids or x.split(":")[0] in pdb_ids, xs)
+                ),
+                m,
+            )
         m = itemfilter(lambda item: item[1] is not None, m)
         m = valmap(group_chains, m)
 
@@ -532,8 +547,8 @@ class SIFTS(AbstractResource):
                 lambda val: [(pdb_base / f"{x[0]}.{pdb_fmt}", x[1]) for x in val], m
             )
 
-        if isinstance(seqs, abc.Mapping):
-            m = keymap(lambda x: seqs[x], m)
+        if isinstance(up_ids, abc.Mapping):
+            m = keymap(lambda x: up_ids[x], m)
 
         return m
 
