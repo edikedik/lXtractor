@@ -2,7 +2,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from more_itertools import consume
+from more_itertools import consume, unique_everseen
 
 import lXtractor.chain as lxc
 from lXtractor.chain import ChainIO
@@ -53,19 +53,23 @@ def get_all_ids(chains: lxc.ChainList, nested_structures=True):
         ids = chains.ids + chains.structures.ids + chains.collapse_children().ids
         if nested_structures:
             ids += chains.collapse_children().structures.ids
-        return ids
+            ids += chains.structures.collapse_children().ids
+        return list(unique_everseen(ids))
     return chains.ids + chains.collapse_children().ids
 
 
 def iter_parent_child_ids(chains: lxc.ChainList):
     for child in chains.collapse_children():
         yield child.parent.id, child.id
+    if isinstance(chains[0], lxc.Chain):
+        for child in chains.structures.collapse_children():
+            yield child.parent.id, child.id
 
 
 @pytest.fixture()
 def chain_structures(simple_chain_structure) -> lxc.ChainList[lxc.ChainStructure]:
-    c = simple_chain_structure.spawn_child(1, 20)
-    c.spawn_child(5, 10)
+    c = simple_chain_structure.spawn_child(1, 50)
+    c.spawn_child(30, 40)
     return lxc.ChainList([simple_chain_structure])
 
 
@@ -82,6 +86,22 @@ def chains(chain_structures) -> lxc.ChainList[lxc.Chain]:
     cc = c.spawn_child(1, 20)
     cc.spawn_child(1, 10)
     return lxc.ChainList([c])
+
+
+@pytest.fixture()
+def chains_child_parent_maps(chains):
+    base_chains = chains.collapse()
+    structures = chains.structures.collapse()
+    c2parent, c2children = {}, {}
+
+    for c in base_chains:
+        c2parent[c] = c.parent
+        c2children[c] = c.children
+    for c in structures:
+        c2parent[c] = c.parent
+        c2children[c] = c.children
+
+    return c2parent, c2children
 
 
 @pytest.mark.parametrize("cls", COLLECTION_TYPES)
@@ -122,7 +142,8 @@ def test_add_chains(cls, chain_sequences, chain_structures, chains):
     ids = get_all_ids(cs)
     col.add(cs)
 
-    added_ids = col.get_ids()
+    df_chains = col.get_table("chains", as_df=True)
+    added_ids = list(df_chains.id)
 
     assert set(added_ids) == set(ids)
 
@@ -138,6 +159,19 @@ def test_add_chains(cls, chain_sequences, chain_structures, chains):
     # Adding the same chains second time does nothing
     col.add(cs)
     assert set(col.get_ids()) == set(ids)
+
+    # Chains raw data is stored
+    assert all(
+        isinstance(c, (lxc.ChainSequence, lxc.ChainStructure, lxc.Chain))
+        for c in df_chains.data
+    )
+
+    # Raw stored chains do not have parent/children unless explicitly loaded
+    for c in df_chains.data:
+        assert len(c.children) == 0
+        assert c.parent is None
+        if ct is MapCollectionConstructor:
+            assert len(c.structures) == 0
 
 
 def test_add_chains_structures(chains):
@@ -220,8 +254,10 @@ def test_link(cls, chain_sequences, chain_structures, chains):
         df = col.get_table("paths", as_df=True)
         assert len(df) > 0
         added_ids = set(df.chain_id)
-        chain_ids = set(get_all_ids(cs, nested_structures=True))
-        assert added_ids == chain_ids
+        chain_ids = cs.collapse().ids
+        if cls is MappingCollection:
+            chain_ids += cs.collapse().structures.ids
+        assert added_ids == set(chain_ids)
 
     # 4. Test for updating behavior
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -234,20 +270,26 @@ def test_link(cls, chain_sequences, chain_structures, chains):
         assert path.exists() and path == paths[0]
 
 
-def test_load(chains):
+def test_load_strs(chain_structures):
+    col = StructureCollection()
+    col.add(chain_structures)
+
+    chains_loaded = col.load(2, 0)
+    assert chain_structures.collapse() == chains_loaded.collapse()
+
+
+def test_load_chains(chains):
     col = MappingCollection()
     col.add(chains)
-    df = col.get_table("chains", as_df=True)
-    assert not df.data.isna().any()
-    assert len(col.loaded) == 0
 
-    # loading without level loads all chains
-    loaded = col.load(3)
-    assert loaded == chains + chains.collapse_children()
-    # loading only the first level should load exactly one chain
-    loaded = col.load(3, level=1)
-    assert len(loaded) == 1
-    assert loaded == next(chains.iter_children())
+    chains_loaded = col.load(3, 0)
+
+    assert chains == chains_loaded
+    all_str = chains.collapse().structures.collapse().drop_duplicates().sort()
+    all_str_loaded = (
+        chains_loaded.collapse().structures.collapse().drop_duplicates().sort()
+    )
+    assert all_str == all_str_loaded
 
 
 def test_update_parents(chains):

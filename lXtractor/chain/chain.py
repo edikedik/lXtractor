@@ -530,7 +530,7 @@ class Chain:
         str_deep_copy: bool = False,
         str_map_from: str | None = None,
         str_map_closest: bool = True,
-        str_keep_child: bool = False,
+        str_keep_child: bool = True,
         str_seq_keep_child: bool = False,
     ) -> Chain:
         """

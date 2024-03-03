@@ -2,6 +2,7 @@ import os
 import pickle
 import sqlite3
 import typing as t
+import operator as op
 from collections import abc
 from itertools import chain, tee, groupby
 from os import PathLike
@@ -9,11 +10,12 @@ from pathlib import Path, PosixPath
 
 import pandas as pd
 from loguru import logger
-from more_itertools import spy, unzip
+from more_itertools import spy, unzip, unique_everseen
 from toolz import curry
 
 import lXtractor.chain as lxc
-from lXtractor.chain import make_str_tree
+from lXtractor.chain import make_str_tree, recover
+from lXtractor.core.exceptions import MissingData
 from lXtractor.util.typing import is_sequence_of
 from lXtractor.variables.base import SequenceVariable, StructureVariable, LigandVariable
 from lXtractor.variables.manager import CalcRes
@@ -321,6 +323,25 @@ class Collection(t.Generic[_CT]):
         for query in ids:
             yield [child_id for parent_id, child_id in res if parent_id == query]
 
+    def get_parents_of(self, ids: abc.Sequence[str]) -> list[str | None]:
+        if not ids:
+            return []
+
+        # Prepare placeholders and query
+        placeholders = _make_placeholders(len(ids))
+        statement = (
+            f"SELECT chain_id_child, chain_id_parent FROM parents "
+            f"WHERE chain_id_child IN ({placeholders})"
+        )
+        res = self._execute(statement, ids).fetchall()
+
+        # Create a dictionary mapping child IDs to their parent IDs
+        child_to_parent = dict(res)
+
+        # Prepare the result ensuring the order and inclusion of None for IDs
+        # without parents
+        return [child_to_parent.get(id, None) for x in ids]
+
     def _verify_chain_types(self, chains: t.Any) -> None:
         pass
 
@@ -339,16 +360,23 @@ class Collection(t.Generic[_CT]):
     def _insert_chains_data(
         self, chains: lxc.ChainList[_CT], chain_type: int, level: int
     ):
-        # Temporarily cleanup any existing children
+        # Associate initial chain IDs and chain objects here
+        id2chain = {c.id: c for c in chains}
+        # Create maps to children and parents
         id2children = {c.id: c.children for c in chains}
+        id2parent = {c.id: c.parent for c in chains}
+        # Set up the data to insert
+        data = ((c_id, chain_type, level, c) for c_id, c in id2chain.items())
+        # Temporarily cleanup any existing children and parents
         for c in chains:
             c.children = lxc.ChainList([])
+            c.parent = None
         # Insert the data
-        data = ((c.id, chain_type, level, c) for c in chains)
         self._insert("chains", data, on_conflict="id", conflict_action="NOTHING")
-        # Restore the children
-        for c in chains:
-            c.children = id2children[c.id]
+        # Restore children and parents
+        for c_id, c in id2chain.items():
+            c.children = id2children[c_id]
+            c.parent = id2parent[c_id]
 
     def _add_chains_data(self, chains: lxc.ChainList[_CT], chain_type: int) -> None:
         for i, _chains in enumerate((chains, *chains.iter_children()), start=0):
@@ -360,21 +388,9 @@ class Collection(t.Generic[_CT]):
         self._insert(
             "parents",
             data,
-            on_conflict="chain_id_parent, chain_id_child",
+            on_conflict="chain_id_parent,chain_id_child",
             conflict_action="NOTHING",
         )
-
-    def _add_chain_objects(self, chains: lxc.ChainList[_CT]) -> None:
-        all_chains = chains + chains.collapse_children()
-        id2children = {c.id: c.children for c in all_chains}
-        for c in all_chains:
-            c.children = lxc.ChainList([])
-        statement = "UPDATE chains SET data=? WHERE id=?"
-        data = ((c, c.id) for c in all_chains)
-        self._execute(statement, data, many=True)
-        for c in all_chains:
-            c.children = id2children[c.id]
-        logger.debug(f"Added {len(chains)} serialized chain objects.")
 
     def add(self, chains: abc.Sequence[_CT], load: bool = False) -> None:
         """
@@ -404,7 +420,9 @@ class Collection(t.Generic[_CT]):
                 f"Total loaded: {len(self._chains)}."
             )
 
-    def _recover_structures(self, chains: lxc.ChainList[_CT]) -> None:
+    def _recover_structures(
+        self, chains: lxc.ChainList[_CT], parents: bool, children: bool
+    ) -> None:
         # Valid only for MappingCollection
         pass
 
@@ -425,18 +443,49 @@ class Collection(t.Generic[_CT]):
             return None
 
         chain_type = _CT_MAP[chains[0].__class__]
+        # Get IDs of all children of chains
         child_ids = self._get_all_children(chains)
+        # Filter to chains already loaded
         _chains = chains.filter(lambda x: x.id in child_ids or x.id in chains.ids)
+        # Find IDs of chains that weren't yet loaded
         absent = [x for x in child_ids if x not in _chains.ids]
+        # If any, load them
         if absent:
             _chains += self.load(
                 chain_type,
                 ids=absent,
                 keep=False,
-                recover_tree=False,
-                load_structures=False,
+                parents=False,
+                children=False,
+                structures=False,
             )
+        # Recover ancestral relationships: link children and parents
         make_str_tree(_chains, connect=True)
+
+    def _recover_parents(self, chains: lxc.ChainList[_CT]) -> None:
+        if not chains:
+            return None
+        chain_type = _CT_MAP[chains[0].__class__]
+        query_ids = chains.ids
+        while query_ids:
+            parent_ids = self.get_parents_of(query_ids)
+            parent2query = {
+                p: q for p, q in zip(parent_ids, query_ids) if p is not None
+            }
+            if not parent2query:
+                break
+            parent_chains = self.load(chain_type, ids=list(parent2query))
+            for parent in parent_chains:
+                try:
+                    query_id = parent2query[parent.id]
+                except KeyError as e:
+                    raise MissingData(
+                        f"Loaded parent ID {parent.id} matches none of the initial "
+                        f"query parent IDs."
+                    ) from e
+                query_chain = chains[query_id].pop()
+                query_chain.parent = parent
+            query_ids = list(parent2query)
 
     def clean_loaded(self):
         """
@@ -447,14 +496,14 @@ class Collection(t.Generic[_CT]):
     def load(
         self,
         chain_type: int,
-        level: int = 0,
+        level: int | None = None,
         ids: abc.Sequence[str] | None = None,
         keep: bool = False,
-        recover_tree: bool = True,
-        load_structures: bool = True,
+        clean: bool = False,
+        parents: bool = True,
+        children: bool = True,
+        structures: bool = True,
     ) -> lxc.ChainList:
-        # TODO: add "recover" call if `recover_tree=False` and update docs
-
         """
         Load chains into RAM and return.
 
@@ -464,18 +513,28 @@ class Collection(t.Generic[_CT]):
         :param ids: A list of target IDs, which chains should be loaded.
         :param keep: Keep loaded chains in :meth:`loaded`. Note that for this
             to work, chains loaded here must be of the same type.
-        :param recover_tree: Recover parent-child relationships for loaded
-            chains. This will populate ``parent`` and ``children`` attributes
-            and also load any children into memory, too. This should be set
-            to ``True``; otherwise, loaded chains that initially had some
-            parent will have different IDs.
-        :param load_structures: Load structures associated with a chain
-            sequence. Valid only for :class:`MappingCollection`.
+        :param clean: If `keep` is ``True``, call :meth:`clean_loaded` before
+            adding loaded chains.
+        :param parents: Explicitly load chain parents. If ``False``, will
+            recover ancestry based on IDs.
+        :param children: Recover any recorded children.
+        :param structures: If the collection is of type :class:`MapCollection`,
+            and the loaded objects are :class:`lXtractor.chain.chain.Chain`,
+            recover associated structures.
         :return: A chain list of loaded chain objects.
+
+        ..note ::
+            if `structures` is ``True``, parameters `parents` and `children`
+            are passed to a recursive :meth:`load` call loading structures.
+
+        ,,seealso ::
+            :func:`lXtractor.chain.tree.recover` used to recover ancestry when
+            `parents` is ``False``.
         """
+        # Form query
         params = (chain_type,)
         statement = "SELECT data FROM chains WHERE chain_type=?"
-        if level:
+        if level is not None:
             params += (level,)
             statement += " AND level=?"
         if ids is not None:
@@ -484,13 +543,22 @@ class Collection(t.Generic[_CT]):
             params += tuple(ids)
             placeholders = _make_placeholders(len(ids))
             statement += f" AND id IN ({placeholders})"
+        # Load chains
         res = self._execute(statement, params)
         chains = lxc.ChainList(x[0] for x in res)
-        if recover_tree:
+        if parents:
+            self._recover_parents(chains)
+        else:
+            # This is still needed for correct ID assignment
+            for c in chains:
+                recover(c)
+        if children:
             self._recover_children(chains)
-        if load_structures:
-            self._recover_structures(chains)
+        if structures and chain_type == 3:
+            self._recover_structures(chains, parents, children)
         if keep:
+            if clean:
+                self.clean_loaded()
             self._chains += chains
         logger.debug(f"Loaded {len(chains)} chains from the database.")
         return chains
@@ -529,9 +597,13 @@ class Collection(t.Generic[_CT]):
             return
         if isinstance(targets[0], (lxc.Chain, lxc.ChainSequence, lxc.ChainStructure)):
             cl = lxc.ChainList(targets)
-            ids = cl.ids + cl.collapse_children().ids
+            ids = cl.collapse().ids
             if isinstance(cl[0], lxc.Chain):
-                ids += cl.structures.ids + cl.collapse_children().structures.ids
+                structures = cl.collapse().structures
+                structure_ids = unique_everseen(
+                    chain(structures.ids, structures.collapse_children().ids)
+                )
+                ids += list(structure_ids)
         else:
             ids = targets
         ids = [(x,) for x in ids]
@@ -698,31 +770,39 @@ class MappingCollection(Collection[lxc.Chain]):
     def _verify_chain_types(self, chains: abc.Sequence[t.Any]) -> None:
         _verify_chain_types(chains, lxc.Chain)
 
+    def _add_chains_data(
+        self, chains: lxc.ChainList[lxc.Chain], chain_type: int
+    ) -> None:
+        super()._add_chains_data(chains.structures, 2)
+        super()._add_chains_data(chains, chain_type)
+
     def _insert_chains_data(
         self, chains: lxc.ChainList[_CT], chain_type: int, level: int
     ) -> None:
-        id2children = {c.id: c.children for c in chains}
-        id2structures = {c.id: c.structures for c in chains}
-        structures = chains.structures
+        if not chains or not isinstance(chains[0], lxc.Chain):
+            return super()._insert_chains_data(chains, chain_type, level)
 
-        # Temporarily cleanup children and structures to avoid storing the same
-        # data multiple times
+        # Similarly, set up mappings and data to add
+        id2chain = {c.id: c for c in chains}
+        id2children = {c.id: c.children for c in chains}
+        id2parent = {c.id: c.parent for c in chains}
+        id2structures = {c.id: c.structures for c in chains}
+        data = ((c_id, chain_type, level, c) for c_id, c in id2chain.items())
+
+        # Temporarily cleanup children, parents, and structures.
         for c in chains:
             c.children = lxc.ChainList([])
+            c.parent = None
             c.structures = lxc.ChainList([])
-
-        data = chain(
-            ((c.id, chain_type, level, c) for c in chains),
-            ((s.id, 2, level, s) for s in structures),
-        )
 
         # Insert new chains
         self._insert("chains", data, on_conflict="id", conflict_action="NOTHING")
 
-        # Populate back children and structures
-        for c in chains:
-            c.children = id2children[c.id]
-            c.structures = id2structures[c.id]
+        # Populate back children, parents, and structures
+        for c_id, c in id2chain.items():
+            c.children = id2children[c_id]
+            c.parent = id2parent[c_id]
+            c.structures = id2structures[c_id]
 
         # Insert chain-structure relationships
         data = chain.from_iterable(((c.id, s.id) for s in c.structures) for c in chains)
@@ -733,32 +813,45 @@ class MappingCollection(Collection[lxc.Chain]):
             conflict_action="NOTHING",
         )
 
+    def _add_parents_data(self, chains: lxc.ChainList[lxc.Chain]) -> None:
+        super()._add_parents_data(chains)
+        super()._add_parents_data(chains.structures)
+
     def _expand_structures(self, chain_path: Path) -> abc.Iterator[Path]:
         for root, dirs, _ in os.walk(chain_path):
             root = Path(root)
             if root.name == "structures":
                 yield from (root / x for x in dirs)
 
-    def _recover_structures(self, chains: lxc.ChainList[_CT]) -> None:
+    def _recover_structures(
+        self, chains: lxc.ChainList[_CT], parents: bool, children: bool
+    ) -> None:
         if not chains:
             return None
 
-        id2chain = {c.id: c for c in chains + chains.collapse_children()}
+        # Map id to chain for all chains
+        id2chain = {c.id: c for c in chains.collapse()}
+        # Get all chain-structure pairs for these IDs
         placeholders = _make_placeholders(len(id2chain))
-        statement = f"SELECT * FROM structures where chain_id in ({placeholders})"
+        statement = (
+            f"SELECT * FROM structures where chain_id in ({placeholders}) "
+            f"ORDER BY chain_id"
+        )
         res = self._execute(statement, list(id2chain)).fetchall()
         if not res:
             return None
-
-        for g, gg in groupby(res, lambda x: x[0]):
-            structures = self.load(
-                2,
-                ids=[x[1] for x in gg],
-                keep=False,
-                recover_tree=False,
-                load_structures=False,
-            )
-            id2chain[g].structures = lxc.ChainList(structures)
+        # Map chain ID to structure IDs
+        id2strs = {g: [x[1] for x in gg] for g, gg in groupby(res, op.itemgetter(0))}
+        # Load all these structures
+        str_ids = list(chain.from_iterable(id2strs.values()))
+        structures = self.load(
+            2, ids=str_ids, parents=parents, children=children, structures=False
+        )
+        # Assign structures to chains
+        for chain_id, str_ids in id2strs.items():
+            c = id2chain[chain_id]
+            str_ids = id2strs[chain_id]
+            c.structures = structures.filter(lambda x: x.id in str_ids)
 
 
 if __name__ == "__main__":
