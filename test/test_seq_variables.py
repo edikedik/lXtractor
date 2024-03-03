@@ -25,7 +25,7 @@ def test_seq_el(simple_chain_seq):
 def test_prot_fp(simple_chain_seq):
     s = simple_chain_seq
     # 1st component of A and 5th component of E
-    assert (PFP(1, 1).calculate(s.seq1), PFP(5, 5).calculate(s.seq1) == -0.1, -2.14)
+    assert PFP(1, 1).calculate(s.seq1), PFP(5, 5).calculate(s.seq1) == (-0.1, -2.14)
 
     with pytest.raises(FailedCalculation):
         PFP(1, 6).calculate(s.seq1)
