@@ -238,7 +238,7 @@ class ChainStructure:
     def __len__(self) -> int:
         if self.structure is None or self.structure.is_empty:
             return 0
-        return len(self.array)
+        return len(self.seq)
 
     def __eq__(self, other: t.Any) -> bool:
         if isinstance(other, ChainStructure):
