@@ -532,7 +532,9 @@ class Chain:
         str_map_closest: bool = True,
         str_keep_child: bool = True,
         str_seq_keep_child: bool = False,
-    ) -> Chain:
+        str_min_size: int | float = 1,
+        str_accept_fn: abc.Callable[[ChainStructure], bool] = lambda _: True,
+    ) -> t.Self:
         """
         Subset a :attr:`_seq` and (optionally) each structure in
         :attr:`structures` using the provided :attr:`_seq` boundaries
@@ -572,12 +574,18 @@ class Chain:
             :attr:`ChainStructure._seq` of a spawned structure. Should be
             ``False`` if `keep` or `str_keep_child` is ``True`` to avoid
             data duplication.
+        :param str_min_size: A minimum number of residues in a structure to be
+            accepted after subsetting.
+        :param str_accept_fn: A filter function accepting a
+            :class:`~lXtractor.chain.structure.ChainStructure` and returning
+            a boolean value indicating whether this structure should be
+            retained in :attr:`structures`.
         :return: A sub-chain with sub-sequence and (optionally) sub-structures.
         """
 
         def subset_structure(structure: ChainStructure) -> ChainStructure | None:
             try:
-                return structure.spawn_child(
+                c = structure.spawn_child(
                     start,
                     end,
                     name,
@@ -587,6 +595,10 @@ class Chain:
                     keep=str_keep_child,
                     keep_seq_child=str_seq_keep_child,
                 )
+                if len(c) >= str_min_size and str_accept_fn(c):
+                    return c
+                structure.children.remove(c)
+                return None
             except (
                 AmbiguousMapping,
                 MissingData,
