@@ -19,6 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Documentation :: Sphinx",
 ]
@@ -62,7 +63,8 @@ exclude = [
     "lXtractor/resources/.*",
     "lXtractor/resources/Pfam",
     "lXtractor/resources/CCD.msgpack",
-    "lXtractor/resources/sifts.tsv"
+    "lXtractor/resources/sifts.tsv",
+    "lXtractor/resources/id_mapping.json"
 ]
 
 [tool.hatch.build.targets.wheel]
