@@ -648,19 +648,24 @@ class ChainSequence(lxs.Segment):
         map_name2: str,
         as_fraction: bool = True,
         save: bool = True,
+        name: str = 'auto',
     ) -> float:
         """
         :param map_name1: Mapping name 1.
         :param map_name2: Mapping name 2.
         :param as_fraction: Divide by the total length.
-        :param save: Save to meta as 'Match_{map_name1}_{map_name2}'.
+        :param save: Save the result to :attr:`meta`.
+        :param name: Name of the saved metadata entry. If "auto", will derive
+            from given map names.
         :return: The total number or a fraction of matching characters between maps.
         """
         res: float = sum(1 for x, y in zip(self[map_name1], self[map_name2]) if x == y)
         div = len(self) if as_fraction else 1
         res = res / div
         if save:
-            self.meta[f"Match_{map_name1}_{map_name2}"] = res
+            if name == 'auto':
+                name = f"Match_{map_name1}_{map_name2}"
+            self.meta[name] = res
         return res
 
     def get_map(
