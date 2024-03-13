@@ -25,6 +25,7 @@
   "SIFTS_kwargs": {},
   "UniProt_kwargs": {},
   "Initializer_kwargs": {},
+  "Initializer_init_kw": {},
   "write_batches": false,
   "write_batches_overwrite": true,
   "keep_chains": false,

@@ -517,7 +517,9 @@ class SeqCollectionConstructor(
 
     def init_inputs(self, items: SeqItemList) -> lxc.ChainList[lxc.ChainSequence]:
         staged = items.prep_for_init(self.paths)
-        chains = self.interfaces.Initializer.from_iterable(staged)
+        chains = self.interfaces.Initializer.from_iterable(
+            staged, **self.config["Initializer_init_kw"]
+        )
         return lxc.ChainList(filter(lambda x: x is not None, chains))
 
 
@@ -560,7 +562,9 @@ class StrCollectionConstructor(
 
     def init_inputs(self, items: StrItemList) -> lxc.ChainList[lxc.ChainStructure]:
         staged = items.prep_for_init(self.paths)
-        chains = self.interfaces.Initializer.from_iterable(staged)
+        chains = self.interfaces.Initializer.from_iterable(
+            staged, **self.config["Initializer_init_kw"]
+        )
         chains = filter(lambda x: x is not None, chains)
         return lxc.ChainList(chain.from_iterable(chains))
 
@@ -595,7 +599,8 @@ class MapCollectionConstructor(
     def init_inputs(self, items: MapItemList) -> lxc.ChainList[lxc.Chain]:
         return lxc.ChainList(
             self.interfaces.Initializer.from_mapping(
-                dict(items.prep_for_init(self.paths))
+                dict(items.prep_for_init(self.paths)),
+                **self.config["Initializer_init_kw"],
             )
         )
 
