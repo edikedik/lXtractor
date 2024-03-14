@@ -231,3 +231,18 @@ def test_drop_duplicates():
     cl_ = cl.drop_duplicates(key=identity)
     assert len(cl_) == 2
     assert cl_ == cl
+
+
+def test_sort_groupby():
+    get_name = lambda c: c.name
+
+    s1 = ChainSequence.from_string("X", name="B")
+    s2 = ChainSequence.from_string("Y", name="A")
+    cl = ChainList([s1, s2])
+    groups = list(cl.groupby(get_name))
+    assert len(groups) == 2
+    assert [x[0] for x in groups] == ["B", "A"]
+    assert [isinstance(x[1], ChainList) for x in groups]
+
+    groups = list(cl.sort(get_name).groupby(get_name))
+    assert [x[0] for x in groups] == ["A", "B"]

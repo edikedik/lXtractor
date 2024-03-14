@@ -623,8 +623,16 @@ class ChainList(abc.MutableSequence[CT]):
         return pd.concat([c.summary(**kwargs) for c in self])
 
     def groupby(self, key: abc.Callable[[CT], T]) -> abc.Iterator[tuple[T, t.Self]]:
+        """
+        Group sequences in this list by a given key.
+
+        :param key: Some callable accepting a single chain and returning
+            a grouper value.
+        :return: An iterator over pairs ``(group, chains)``, where ``chains``
+            is a chain list of chains that belong to ``group``.
+        """
         for g, gg in groupby(self._chains, key):
-            yield g, self.__class__([x[1] for x in gg])
+            yield g, self.__class__(gg)
 
     def sort(self, key: abc.Callable[[CT], T] = lambda x: x.id) -> ChainList[CT]:
         return self.__class__(sorted(self._chains, key=key))
