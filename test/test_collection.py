@@ -292,6 +292,28 @@ def test_load_chains(chains):
     assert all_str == all_str_loaded
 
 
+def test_nested_child_recovery():
+    s1 = lxc.ChainSequence.from_string('X' * 6, name='X')
+    s2 = lxc.ChainSequence.from_string('Y' * 6, name='Y')
+    sc1 = s1.spawn_child(2, 5, 'A')
+    sc2 = s2.spawn_child(2, 5, 'A')
+    sc11 = sc1.spawn_child(3, 4, 'B')
+    sc21 = sc2.spawn_child(3, 4, 'B')
+
+    col = SequenceCollection()
+    col.add([s1, s2])
+
+    loaded = col.load(1, 0)
+    assert len(loaded) == 2
+    sl1, sl2 = loaded
+    assert sl1.children == lxc.ChainList([sc1])
+    assert sl2.children == lxc.ChainList([sc2])
+    sc1l = sl1.children[0]
+    sc2l = sl2.children[0]
+    assert sc1l.children == lxc.ChainList([sc11])
+    assert sc2l.children == lxc.ChainList([sc21])
+
+
 def test_update_parents(chains):
     col = MappingCollection()
     col.add(chains)

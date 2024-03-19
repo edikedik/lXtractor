@@ -340,7 +340,11 @@ class Collection(t.Generic[_CT]):
 
         # Prepare the result ensuring the order and inclusion of None for IDs
         # without parents
-        return [child_to_parent.get(id, None) for x in ids]
+        return [child_to_parent.get(x, None) for x in ids]
+
+    def get_parent_of(self, chain_id: str):
+        statement = "SELECT chain_id_parent FROM parents WHERE chain_id_child=?"
+        return self._execute(statement, [chain_id]).fetchone()
 
     def _verify_chain_types(self, chains: t.Any) -> None:
         pass
@@ -443,24 +447,25 @@ class Collection(t.Generic[_CT]):
             return None
 
         chain_type = _CT_MAP[chains[0].__class__]
-        # Get IDs of all children of chains
-        child_ids = self._get_all_children(chains)
-        # Filter to chains already loaded
-        _chains = chains.filter(lambda x: x.id in child_ids or x.id in chains.ids)
-        # Find IDs of chains that weren't yet loaded
-        absent = [x for x in child_ids if x not in _chains.ids]
-        # If any, load them
-        if absent:
-            _chains += self.load(
+        _chains = lxc.ChainList(chains)
+
+        for c in chains:
+            child_ids = next(self.get_children_of([c.id]))
+            child_ids = list(set(child_ids) - set(c.children.ids))
+            if not child_ids:
+                continue
+            child_chains = self.load(
                 chain_type,
-                ids=absent,
+                ids=child_ids,
                 keep=False,
                 parents=False,
                 children=False,
                 structures=False,
             )
-        # Recover ancestral relationships: link children and parents
-        make_str_tree(_chains, connect=True)
+            c.children += child_chains
+            for cc in child_chains:
+                cc.parent = c
+            self._recover_children(child_chains)
 
     def _recover_parents(self, chains: lxc.ChainList[_CT]) -> None:
         if not chains:
