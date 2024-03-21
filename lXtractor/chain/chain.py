@@ -518,6 +518,7 @@ class Chain:
         start: int,
         end: int,
         name: str | None = None,
+        category: str | None = None,
         *,
         subset_structures: bool = True,
         tolerate_failure: bool = False,
@@ -543,6 +544,8 @@ class Chain:
         :param start: Start coordinate.
         :param end: End coordinate.
         :param name: Name of a new chain.
+        :param category: Spawned child category. Any meaningful tag string that
+            could be used later to group similar children.
         :param subset_structures: If ``True``, subset each structure in
             :attr:`structures`. If ``False``, structures are not inherited.
         :param tolerate_failure: If ``True``, a failure to subset a structure
@@ -589,6 +592,7 @@ class Chain:
                     start,
                     end,
                     name,
+                    category,
                     map_from=str_map_from,
                     map_closest=str_map_closest,
                     deep_copy=str_deep_copy,
@@ -623,6 +627,7 @@ class Chain:
             start,
             end,
             name,
+            category,
             map_from=seq_map_from,
             map_closest=seq_map_closest,
             deep_copy=seq_deep_copy,

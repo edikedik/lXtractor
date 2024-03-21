@@ -835,6 +835,8 @@ class ChainSequence(lxs.Segment):
         :param start: Start of the sub-sequence.
         :param end: End of the sub-sequence.
         :param name: Spawned child sequence's name.
+        :param category: Spawned child category. Any meaningful tag string that
+            could be used later to group similar children.
         :param map_from: Optionally, the map name the boundaries correspond to.
         :param map_closest: Map to closest `start`, `end` boundaries
             (see :meth:`map_boundaries`).

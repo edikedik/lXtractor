@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import typing as t
 from collections import abc
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -32,17 +31,6 @@ LOGGER = logging.getLogger(__name__)
 
 
 # TODO: subset and overlap with other structures/sequences
-
-
-@dataclass
-class PDB_Chain:
-    """
-    A container to hold the data of a single structural chain.
-    """
-
-    id: str
-    chain: str
-    structure: GenericStructure | None
 
 
 def _validate_chain(structure: GenericStructure):
@@ -537,6 +525,7 @@ class ChainStructure:
         start: int,
         end: int,
         name: str | None = None,
+        category: str | None = None,
         *,
         map_from: str | None = None,
         map_closest: bool = True,
@@ -553,6 +542,8 @@ class ChainStructure:
         :param start: Start coordinate.
         :param end: End coordinate.
         :param name: The name of the spawned sub-structure.
+        :param category: Spawned child category. Any meaningful tag string that
+            could be used later to group similar children.
         :param map_from: Optionally, the map name the boundaries correspond to.
         :param map_closest: Map to closest `start`, `end` boundaries
             (see :meth:`map_boundaries`).
@@ -580,6 +571,7 @@ class ChainStructure:
             start,
             end,
             name,
+            category,
             map_from=map_from,
             map_closest=map_closest,
             deep_copy=deep_copy,
