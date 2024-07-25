@@ -46,6 +46,7 @@ _GAPS = ("-", ".")
 class Alignment:
     # TODO: consider directly inheriting from MutableSequence
     # TODO: implement vcat(other) or | operator
+    # TODO: support column names
     """
     An MSA resource: a collection of aligned sequences.
     """

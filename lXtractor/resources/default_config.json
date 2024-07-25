@@ -524,7 +524,8 @@
       "p"
     ],
     "n_monomers": 2,
-    "primary_pol_type": "auto"
+    "primary_pol_type": "auto",
+    "fmt": "mmtf.gz"
   },
   "unknowns": {
     "chain_id": "X",

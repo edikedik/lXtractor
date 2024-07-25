@@ -747,7 +747,7 @@ class ChainStructure:
     def write(
         self,
         dest: Path,
-        fmt: str = "mmtf.gz",
+        fmt: str = DefaultConfig["structure"]["fmt"],
         *,
         write_children: bool = False,
     ) -> Path:

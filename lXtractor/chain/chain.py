@@ -381,7 +381,7 @@ class Chain:
         self,
         dest: Path,
         *,
-        str_fmt: str = "mmtf.gz",
+        str_fmt: str = DefaultConfig["structure"]["fmt"],
         write_children: bool = True,
     ) -> Path:
         """

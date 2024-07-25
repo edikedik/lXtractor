@@ -9,7 +9,7 @@ from collections import abc
 from itertools import repeat
 from pathlib import Path
 
-from lXtractor.core import GenericStructure
+from lXtractor.core import GenericStructure, DefaultConfig
 from lXtractor.core.base import UrlGetter
 from lXtractor.core.exceptions import FormatError
 from lXtractor.util import fetch_urls
@@ -138,7 +138,7 @@ class StructureApiBase(ApiBase):
         self,
         ids: abc.Iterable[str],
         dir_: Path | None,
-        fmt: str = "cif",
+        fmt: str = DefaultConfig["structure"]["fmt"],
         *,
         overwrite: bool = False,
         parse: bool = False,

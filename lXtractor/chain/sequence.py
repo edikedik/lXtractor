@@ -691,7 +691,14 @@ class ChainSequence(lxs.Segment):
         :return: `dict` mapping key values to items.
         """
         keys = (x.i for x in self) if key == "i" else self[key]
-        d = dict(zip(keys, iter(self)))
+        # This explicit loop is necessary in cases where some keys are duplicated
+        # where we'd like to "smallest" key so the segmenting works properly
+        # which is relevant for some structures with non-standard numbering
+        # (1, 1a, 1b, ...) which will result in (1, 1, 1, ...)
+        d = dict()
+        for k, v in zip(keys, iter(self)):
+            if k not in d:
+                d[k] = v
         if to is not None:
             d = valmap(lambda x: x._asdict()[to], d)
         if rm_empty:

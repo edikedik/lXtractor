@@ -390,6 +390,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
                 self.interfaces.IO.write(
                     chains,
                     self.paths.chains,
+                    write_children=True,
                     overwrite=self.config["write_batches_overwrite"],
                 )
             )
