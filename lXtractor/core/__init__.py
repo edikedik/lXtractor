@@ -7,3 +7,4 @@ from .segment import Segment
 from .structure import (
     GenericStructure, ProteinStructure, NucleotideStructure, CarbohydrateStructure
 )
+from .interface import Interface
