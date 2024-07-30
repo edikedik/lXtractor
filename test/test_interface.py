@@ -138,14 +138,9 @@ def test_split_single_cc_single_pair(
     iface = Interface(gs, partners, cutoff=10)
 
     splits = list(
-        iface.split_connected(
-            condition_a,
-            condition_b,
-            conditions_op=op,
-            conditions_apply_to=target,
-            into_pairs=into_pairs,
-            cutoff=cutoff,
-        )
+        iface.split_connected(condition_a, condition_b, conditions_op=op,
+                              conditions_apply_to=target, into_pairs=into_pairs,
+                              cutoff=cutoff)
     )
     assert len(splits) == num_results
 

@@ -18,7 +18,7 @@ from lXtractor.core import GenericStructure
 from lXtractor.core.exceptions import MissingData, AmbiguousData, LengthMismatch
 
 _PartnerUnit = abc.Sequence[str] | str
-_Partners: t.TypeAlias = tuple[_PartnerUnit, _PartnerUnit]
+_Partners: t.TypeAlias = tuple[_PartnerUnit, _PartnerUnit] | str
 EMPTY = np.empty(0, dtype=int)
 
 
@@ -99,18 +99,16 @@ class ContactEdge:
 @dataclass(frozen=True)
 class RetainCondition:
     min_atoms: int = 1
-    atom_idx: abc.Sequence[int] | None = None
     min_res: int = 1
-    res_idx: abc.Sequence[int] | None = None
+    selector: abc.Callable[[bst.AtomArray], bst.AtomArray] | None = None
 
     def apply(
         self,
         a: bst.AtomArray,
-        chain_ids: abc.Sequence[str] | None = None,
         return_counts: bool = False,
     ) -> bool | tuple[int, int]:
-        if chain_ids:
-            a = np.isin(a.chain_id, chain_ids)
+        if self.selector is not None:
+            a = self.selector(a)
         num_atoms = len(a)
         num_res = residue_count_disjoint(a)
         if return_counts:
@@ -122,7 +120,7 @@ class Interface:
     def __init__(
         self,
         parent_structure: GenericStructure,
-        partners: _Partners | str,
+        partners: _Partners,
         subset_parent_to_partners: bool = True,
         cutoff: float = 6.0,
         graph: rx.PyGraph | None = None,
@@ -133,13 +131,19 @@ class Interface:
         if isinstance(partners, str):
             partners = partners.split("_", maxsplit=2)
         parser = curry(parse_partner)(parent_structure=parent_structure)
-        partners_a, partners_b = map(compose_left(parser, list), partners)
-        self.partners: tuple[list[str], list[str]] = (partners_a, partners_b)
+        partners_a, partners_b = map(compose_left(parser, sorted, tuple), partners)
+        self.partners: tuple[tuple[str, ...], tuple[str, ...]] = (
+            partners_a,
+            partners_b,
+        )
         self._validate_partners()
 
         if subset_parent_to_partners:
             mask = np.isin(parent_structure.array.chain_id, self.partners_joined)
-            parent_structure = parent_structure.subset(mask)
+            # Ligands have to be omitted here as they might trigger LengthMismatch
+            # below (eg, in case they have a different chain but the graph was
+            # subset without it).
+            parent_structure = parent_structure.subset(mask, ligands=False)
 
         self._parent_structure: GenericStructure = parent_structure
         if graph is not None:
@@ -164,8 +168,7 @@ class Interface:
             self._graph: rx.PyGraph = self._make_graph()
 
     def __repr__(self) -> str:
-        a, b = self.partners
-        return f"ChainInterface(a={a}, b={b})"
+        return f"Interface({self.partners_fmt})"
 
     @property
     def parent_structure(self) -> GenericStructure:
@@ -176,16 +179,22 @@ class Interface:
         return self._graph
 
     @property
-    def partners_a(self) -> list[str]:
+    def partners_a(self) -> tuple[str, ...]:
         return self.partners[0]
 
     @property
-    def partners_b(self) -> list[str]:
+    def partners_b(self) -> tuple[str, ...]:
         return self.partners[1]
 
     @property
     def partners_joined(self) -> list[str]:
         return [*self.partners_a, *self.partners_b]
+
+    @property
+    def partners_fmt(self) -> str:
+        a = "".join(self.partners_a)
+        b = "".join(self.partners_b)
+        return f"{a}_{b}"
 
     @property
     def mask_a(self) -> npt.NDArray[bool]:
@@ -241,6 +250,10 @@ class Interface:
         return g
 
     def _validate_partners(self):
+        if len(self.partners_a) == 0:
+            raise MissingData("Empty partners `a`.")
+        if len(self.partners_b) == 0:
+            raise MissingData("Empty partners `b`.")
         common = set(self.partners_a) & set(self.partners_b)
         if len(common) > 0:
             raise AmbiguousData(f"Provided partners overlap over chains: {common}.")
@@ -318,8 +331,8 @@ class Interface:
 
     def split_connected(
         self,
-        conditions_a: RetainCondition = RetainCondition(),
-        conditions_b: RetainCondition = RetainCondition(),
+        condition_a: RetainCondition = RetainCondition(),
+        condition_b: RetainCondition = RetainCondition(),
         conditions_op: abc.Callable[[bool, bool], bool] = operator.and_,
         conditions_apply_to: str = "chains",
         into_pairs: bool = False,
@@ -342,8 +355,8 @@ class Interface:
                 atoms_a = [bst.array(list(chain(*v[0])))]
                 atoms_b = [bst.array(list(chain(*v[1])))]
             for a, b in zip(atoms_a, atoms_b):
-                a_passes = conditions_a.apply(a)
-                b_passes = conditions_b.apply(b)
+                a_passes = condition_a.apply(a)
+                b_passes = condition_b.apply(b)
                 ab_passes = conditions_op(a_passes, b_passes)
                 if ab_passes:
                     chain_pairs.add(k)
@@ -366,7 +379,7 @@ class Interface:
             g = rx.PyGraph(multigraph=False)
 
             def get_chain_map(idx: int) -> dict[str, int]:
-                cs = list(set(x[idx] for x in chain_pairs))
+                cs = list(unique_everseen(x[idx] for x in chain_pairs))
                 node_idx = g.add_nodes_from(cs)
                 return dict(zip(cs, node_idx))
 
