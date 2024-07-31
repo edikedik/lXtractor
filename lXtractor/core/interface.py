@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import operator
 import typing as t
 from collections import abc
 from dataclasses import dataclass
 from itertools import chain, product, starmap
+from os import PathLike
+from pathlib import Path
 
 import biotite.structure as bst
 import numpy as np
@@ -14,8 +17,10 @@ from more_itertools import unique_everseen, ilen
 from scipy.spatial import KDTree
 from toolz import curry, compose_left
 
-from lXtractor.core import GenericStructure
+from lXtractor.core import GenericStructure, DefaultConfig
 from lXtractor.core.exceptions import MissingData, AmbiguousData, LengthMismatch
+from lXtractor.util import get_files
+from lXtractor.util.misc import molgraph_to_json
 
 _PartnerUnit = abc.Sequence[str] | str
 _Partners: t.TypeAlias = tuple[_PartnerUnit, _PartnerUnit] | str
@@ -76,11 +81,52 @@ def _group_chains(
     return groups
 
 
+def _read_bond_graph(
+    inp: Path | dict, parent_structure: GenericStructure
+) -> rx.PyGraph:
+    if not isinstance(inp, dict):
+        with open(inp) as f:
+            inp: dict = json.load(f)
+    n = inp["num_nodes"]
+    if n != len(parent_structure):
+        raise LengthMismatch(
+            f"The expected number of nodes {n} does not correspond to the number "
+            f"of atoms {len(parent_structure)} in structure {parent_structure}."
+        )
+    g = rx.PyGraph(multigraph=False)
+    atom_nodes = list(starmap(AtomNode, enumerate(parent_structure.array)))
+    g.add_nodes_from(atom_nodes)
+    edges = [
+        (a_i, b_i, ContactEdge.from_node_indices(a_i, b_i, g))
+        for a_i, b_i in inp["edges"]
+    ]
+    g.add_edges_from(edges)
+    return g
+
+
 @dataclass
 class AtomNode:
     idx: int
     atom: bst.Atom
     has_edge: bool = False
+
+    def __eq__(self, other: t.Any) -> bool:
+        def atoms_equal(a1: bst.Atom, a2: bst.Atom) -> bool:
+            return (
+                a1.chain_id == a2.chain_id
+                and a1.res_id == a2.res_id
+                and a1.res_name == a2.res_name
+                and a1.ins_code == a2.ins_code
+                and a1.atom_name == a2.atom_name
+            )
+
+        if not isinstance(other, self.__class__):
+            return False
+        return (
+            self.idx == other.idx
+            and self.has_edge == other.has_edge
+            and atoms_equal(self.atom, other.atom)
+        )
 
 
 @dataclass
@@ -88,6 +134,15 @@ class ContactEdge:
     atom_a: AtomNode
     atom_b: AtomNode
     dist: float
+
+    def __eq__(self, other: t.Any) -> bool:
+        if not isinstance(other, self.__class__):
+            return False
+        return (
+            abs(self.dist - other.dist) < 1e-3
+            and self.atom_a == other.atom_a
+            and self.atom_b == other.atom_b
+        )
 
     @classmethod
     def from_node_indices(cls, i: int, j: int, g: rx.PyGraph) -> t.Self:
@@ -138,8 +193,11 @@ class Interface:
         )
         self._validate_partners()
 
+        self.is_subset = False
         if subset_parent_to_partners:
             mask = np.isin(parent_structure.array.chain_id, self.partners_joined)
+            if mask.sum() != len(parent_structure):
+                self.is_subset = True
             # Ligands have to be omitted here as they might trigger LengthMismatch
             # below (eg, in case they have a different chain but the graph was
             # subset without it).
@@ -168,7 +226,24 @@ class Interface:
             self._graph: rx.PyGraph = self._make_graph()
 
     def __repr__(self) -> str:
-        return f"Interface({self.partners_fmt})"
+        return self.id
+
+    def __eq__(self, other: t.Any) -> False:
+        def graphs_equal(a: rx.PyGraph, b: rx.PyGraph):
+            return (
+                len(a) == len(b)
+                and list(a.nodes()) == list(b.nodes())
+                and list(a.edges()) == list(b.edges())
+            )
+
+        if not isinstance(other, self.__class__):
+            return False
+
+        return self.partners == other.partners and graphs_equal(self.G, other.G)
+
+    @property
+    def id(self) -> str:
+        return f"Interface({self.partners_fmt})<-({self.parent_structure})"
 
     @property
     def parent_structure(self) -> GenericStructure:
@@ -404,6 +479,81 @@ class Interface:
                     cutoff=cutoff,
                     graph=graph,
                 )
+
+    @classmethod
+    def read(cls, path: PathLike | str) -> t.Self:
+        path = Path(path)
+        files = get_files(path)
+
+        if "meta.json" not in files:
+            raise FileNotFoundError(f"No metadata file in {path}.")
+
+        meta = json.loads(files["meta.json"].read_text(encoding="utf-8"))
+
+        try:
+            parent_filename = meta["parent_filename"]
+        except KeyError as e:
+            raise MissingData("Missing `parent_filename` in metadata.") from e
+        try:
+            partners = meta["partners"]
+        except KeyError as e:
+            raise MissingData("Missing `partners` in metadata.") from e
+        try:
+            graph_filename = meta["graph_filename"]
+        except KeyError as e:
+            raise MissingData("Missing `graph_filename` in metadata.") from e
+
+        parent_path = path / parent_filename
+        if not parent_path.exists():
+            raise FileNotFoundError(f"No parent structure file found at {parent_path}.")
+        graph_path = path / graph_filename
+        if not graph_path.exists():
+            raise FileNotFoundError(f"No graph file found at {graph_path}.")
+
+        parent = GenericStructure.read(parent_path)
+        graph = _read_bond_graph(path / graph_filename, parent)
+        return cls(
+            parent,
+            partners,
+            meta.get("is_subset", True),
+            meta.get("cutoff", 6.0),
+            graph,
+        )
+
+    def write(
+        self,
+        base_dir: PathLike | str,
+        overwrite: bool = False,
+        name: str | None = None,
+        str_fmt: str = DefaultConfig["structure"]["fmt"],
+        additional_meta: dict[str, t.Any] | None = None,
+    ) -> Path:
+        name = name or self.id
+        base = Path(base_dir) / name
+        base = Path(base)
+        base.mkdir(parents=True, exist_ok=overwrite)
+
+        parent_path = base / f"{self.parent_structure.name}.{str_fmt}"
+        parent_path = self.parent_structure.write(parent_path)
+        parent_filename = parent_path.name
+        graph_path = molgraph_to_json(self.G, base / "graph.json")
+
+        meta = dict(
+            parent=self.parent_structure.name,
+            parent_id=self.parent_structure.id,
+            parent_filename=parent_filename,
+            graph_filename=graph_path.name,
+            partners=self.partners_fmt,
+            cutoff=self.cutoff,
+            subset=self.is_subset,
+        )
+        if additional_meta:
+            meta.update(additional_meta)
+
+        with (base / "meta.json").open("w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2)
+
+        return base
 
 
 if __name__ == "__main__":

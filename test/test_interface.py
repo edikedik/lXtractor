@@ -176,3 +176,19 @@ def test_split_7fsh():
     iface_subset = chain_ifaces.pop()
     chain_ids = bst.get_chains(iface_subset.parent_structure.array)
     assert set(chain_ids) == {"A", "C", "D"}
+
+
+@pytest.mark.parametrize('path', [STRUCTURES / 'mmtf.gz' / '2OIQ.mmtf.gz'])
+@pytest.mark.parametrize('overwrite', [True, False])
+@pytest.mark.parametrize('name', [None, 'A_B'])
+def test_io(path, overwrite, name, tmp_path):
+    gs = GenericStructure.read(path)
+    iface = Interface(gs, "A_B")
+    dest = iface.write(tmp_path, overwrite=overwrite, name=name)
+    if name is None:
+        assert dest.name == iface.id
+    else:
+        assert dest.name == name
+
+    iface_ = Interface.read(dest)
+    assert iface_ == iface
