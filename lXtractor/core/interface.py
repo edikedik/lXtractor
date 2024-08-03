@@ -433,7 +433,7 @@ class Interface:
                 idx = np.array(cc)
                 return self.parent_structure.array[idx]
             else:
-                raise ValueError("Invalid `as_` parameter.")
+                raise ValueError(f"Invalid `as_` parameter {as_}.")
 
         ccs = filter(lambda x: len(x) >= min_nodes, rx.connected_components(self.G))
         yield from map(parse_cc, ccs)
@@ -572,7 +572,7 @@ class Interface:
         overwrite: bool = False,
         name: str | None = None,
         str_fmt: str = DefaultConfig["structure"]["fmt"],
-        additional_meta: dict[str, t.Any] | None = None,
+        additional_meta: dict[str, t.Any] | True | None = None,
     ) -> Path:
         name = name or self.id
         base = Path(base_dir) / name
@@ -593,8 +593,10 @@ class Interface:
             cutoff=self.cutoff,
             subset=self.is_subset,
         )
-        if additional_meta:
+        if isinstance(additional_meta, abc.Mapping):
             meta.update(additional_meta)
+        if additional_meta is True:
+            meta.update(self.sasa().as_record())
 
         with (base / "meta.json").open("w", encoding="utf-8") as f:
             json.dump(meta, f, indent=2)

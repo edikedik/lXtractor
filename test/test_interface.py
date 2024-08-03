@@ -82,14 +82,13 @@ def test_interface_basic(generic_structure_2oiq, cutoff):
 )
 def test_iter_single_cc(interface_2oiq_10, as_):
     iface = interface_2oiq_10
-    for method in as_:
-        ccs = list(iface.iter_ccs(method))
-        assert len(ccs) == 1
-        cc = ccs.pop()
-        if method in ["nodes", "atoms", "subgraph"]:
-            assert len(cc) == iface.num_contact_atoms()
-        else:
-            assert len(cc) == iface.num_contacts()
+    ccs = list(iface.iter_ccs(as_))
+    assert len(ccs) == 1
+    cc = ccs.pop()
+    if as_ in ["nodes", "atoms", "subgraph"]:
+        assert len(cc) == iface.num_contact_atoms()
+    else:
+        assert len(cc) == iface.num_contacts()
 
 
 @pytest.mark.parametrize("into_pairs", [True, False])
