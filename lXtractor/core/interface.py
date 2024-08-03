@@ -19,7 +19,7 @@ import numpy.typing as npt
 import rustworkx as rx
 from more_itertools import unique_everseen, ilen
 from scipy.spatial import KDTree
-from toolz import curry, compose_left
+from toolz import curry, compose_left, valmap
 
 from lXtractor.core import GenericStructure, DefaultConfig
 from lXtractor.core.exceptions import MissingData, AmbiguousData, LengthMismatch
@@ -264,7 +264,7 @@ class InterfaceSASA:
         """
         :return: return SASA and BSA values as a dictionary.
         """
-        return dict(
+        rec = dict(
             SASA_a_free=self.a_free,
             SASA_b_free=self.b_free,
             SASA_a_comples=self.a_complex,
@@ -275,6 +275,8 @@ class InterfaceSASA:
             BSA_ab=self.bsa_a + self.bsa_b,
             BSA_complex=self.bsa_complex,
         )
+        rec = valmap(float, rec)
+        return rec
 
 
 class Interface:

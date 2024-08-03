@@ -175,9 +175,12 @@ def test_split_7fsh():
 
 @pytest.mark.parametrize("overwrite", [True, False])
 @pytest.mark.parametrize("name", [None, "A_B"])
-def test_io(interface_2oiq, overwrite, name, tmp_path):
+@pytest.mark.parametrize("additional_meta", [None, True, {"A": "B"}])
+def test_io(interface_2oiq, overwrite, name, tmp_path, additional_meta):
     iface = interface_2oiq
-    dest = iface.write(tmp_path, overwrite=overwrite, name=name)
+    dest = iface.write(
+        tmp_path, overwrite=overwrite, name=name, additional_meta=additional_meta
+    )
     if name is None:
         assert dest.name == iface.id
     else:
