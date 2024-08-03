@@ -67,7 +67,7 @@ def test_interface_basic(generic_structure_2oiq, cutoff):
     res_count_a = 0 if num_atoms_a == 0 else bst.get_residue_count(a[mask_a])
     res_count_b = 0 if num_atoms_b == 0 else bst.get_residue_count(b[mask_b])
 
-    assert iface.num_contact_atoms() == mask_a.sum() + mask_b.sum()
+    assert iface.count_contact_atoms() == mask_a.sum() + mask_b.sum()
     assert iface.num_contact_residues() == res_count_a + res_count_b
     assert (
         len(iface.get_contact_idx_a())
@@ -86,9 +86,9 @@ def test_iter_single_cc(interface_2oiq_10, as_):
     assert len(ccs) == 1
     cc = ccs.pop()
     if as_ in ["nodes", "atoms", "subgraph"]:
-        assert len(cc) == iface.num_contact_atoms()
+        assert len(cc) == iface.count_contact_atoms()
     else:
-        assert len(cc) == iface.num_contacts()
+        assert len(cc) == iface.count_contacts()
 
 
 @pytest.mark.parametrize("into_pairs", [True, False])
