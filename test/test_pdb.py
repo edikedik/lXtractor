@@ -11,7 +11,7 @@ PDB_IDS = [("2src", "xxxx")]
 
 
 @pytest.mark.parametrize("ids", PDB_IDS)
-@pytest.mark.parametrize("fmt", ["cif", "mmtf"])
+@pytest.mark.parametrize("fmt", ["cif"])
 @pytest.mark.parametrize("dir_", [True, False])
 @pytest.mark.parametrize("num_threads", [1, 2])
 @pytest.mark.parametrize("parse", [True, False])
@@ -47,7 +47,8 @@ def test_fetch(ids, fmt, dir_, num_threads, parse):
 
 
 @pytest.mark.parametrize("ids", [(PDB_IDS[0][0],)])
-@pytest.mark.parametrize("fmt", ["pdb", "cif", "mmtf", "mmtf.gz", "pdb.gz"])
+@pytest.mark.parametrize("fmt", ["pdb", "cif", "pdb.gz"])
+# @pytest.mark.skip(reason='mmtf featching is not more')
 def test_fetch_fmts(ids, fmt):
     with TemporaryDirectory() as dir_:
         dir_ = Path(dir_)
