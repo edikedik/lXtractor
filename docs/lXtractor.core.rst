@@ -50,6 +50,14 @@ lXtractor.core.pocket module
    :undoc-members:
    :show-inheritance:
 
+lXtractore.core.interface module
+--------------------------------
+
+.. automodule:: lXtractore.core.interface
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 lXtractor.core.segment module
 -----------------------------
 
