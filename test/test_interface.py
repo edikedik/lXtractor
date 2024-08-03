@@ -11,9 +11,23 @@ from lXtractor.core.interface import RetainCondition
 from test.common import STRUCTURES
 
 
-def test_invalid():
-    path = STRUCTURES / "mmtf.gz" / "2OIQ.mmtf.gz"
-    gs = GenericStructure.read(path)
+@pytest.fixture()
+def generic_structure_2oiq() -> GenericStructure:
+    return GenericStructure.read(STRUCTURES / "mmtf.gz" / "2OIQ.mmtf.gz")
+
+
+@pytest.fixture()
+def interface_2oiq(generic_structure_2oiq) -> Interface:
+    return Interface(generic_structure_2oiq, "A_B")
+
+
+@pytest.fixture()
+def interface_2oiq_10(generic_structure_2oiq):
+    return Interface(generic_structure_2oiq, "A_B", cutoff=10)
+
+
+def test_invalid(generic_structure_2oiq):
+    gs = generic_structure_2oiq
     with pytest.raises(MissingData):
         _ = Interface(gs, "AB_C")
     with pytest.raises(AmbiguousData):
@@ -30,16 +44,12 @@ def test_invalid():
 
 
 @pytest.mark.parametrize(
-    "path,partners,cutoff",
-    [
-        (STRUCTURES / "mmtf.gz" / "2OIQ.mmtf.gz", "A_B", 1.0),
-        (STRUCTURES / "mmtf.gz" / "2OIQ.mmtf.gz", "A_B", 6.0),
-        (STRUCTURES / "mmtf.gz" / "2OIQ.mmtf.gz", "A_B", 10.0),
-    ],
+    "cutoff",
+    [1.0, 6.0, 10.0],
 )
-def test_interface_basic(path, partners, cutoff):
-    gs = GenericStructure.read(path)
-    iface = Interface(gs, partners, cutoff=cutoff)
+def test_interface_basic(generic_structure_2oiq, cutoff):
+    gs = generic_structure_2oiq
+    iface = Interface(gs, "A_B", cutoff=cutoff)
     array = iface.parent_structure.array
     mask_a = iface._chain_atom_mask(iface.partners_a)
     mask_b = iface._chain_atom_mask(iface.partners_b)
@@ -67,18 +77,11 @@ def test_interface_basic(path, partners, cutoff):
 
 
 @pytest.mark.parametrize(
-    "path,partners,as_",
-    [
-        (
-            STRUCTURES / "mmtf.gz" / "2OIQ.mmtf.gz",
-            "A_B",
-            ["nodes", "subgraph", "edges", "atoms"],
-        )
-    ],
+    "as_",
+    ["nodes", "subgraph", "edges", "atoms"],
 )
-def test_iter_single_cc(path, partners, as_):
-    gs = GenericStructure.read(path)
-    iface = Interface(gs, partners, cutoff=10)
+def test_iter_single_cc(interface_2oiq_10, as_):
+    iface = interface_2oiq_10
     for method in as_:
         ccs = list(iface.iter_ccs(method))
         assert len(ccs) == 1
@@ -92,30 +95,21 @@ def test_iter_single_cc(path, partners, as_):
 @pytest.mark.parametrize("into_pairs", [True, False])
 @pytest.mark.parametrize("target", ["cc", "chains"])
 @pytest.mark.parametrize(
-    "path,partners,cutoff,op,condition_a,condition_b,num_results",
+    "op,condition_a,condition_b,num_results",
     [
         (
-            STRUCTURES / "mmtf.gz" / "2OIQ.mmtf.gz",
-            "A_B",
-            10,
             op.and_,
             RetainCondition(),
             RetainCondition(),
             1,
         ),
         (
-            STRUCTURES / "mmtf.gz" / "2OIQ.mmtf.gz",
-            "A_B",
-            10,
             op.and_,
             RetainCondition(min_res=100),
             RetainCondition(),
             0,
         ),
         (
-            STRUCTURES / "mmtf.gz" / "2OIQ.mmtf.gz",
-            "A_B",
-            10,
             op.or_,
             RetainCondition(),
             RetainCondition(min_res=100),
@@ -124,9 +118,7 @@ def test_iter_single_cc(path, partners, as_):
     ],
 )
 def test_split_single_cc_single_pair(
-    path,
-    partners,
-    cutoff,
+    interface_2oiq_10,
     op,
     condition_a,
     condition_b,
@@ -134,13 +126,17 @@ def test_split_single_cc_single_pair(
     target,
     into_pairs,
 ):
-    gs = GenericStructure.read(path)
-    iface = Interface(gs, partners, cutoff=10)
+    iface = interface_2oiq_10
 
     splits = list(
-        iface.split_connected(condition_a, condition_b, conditions_op=op,
-                              conditions_apply_to=target, into_pairs=into_pairs,
-                              cutoff=cutoff)
+        iface.split_connected(
+            condition_a,
+            condition_b,
+            conditions_op=op,
+            conditions_apply_to=target,
+            into_pairs=into_pairs,
+            cutoff=iface.cutoff,
+        )
     )
     assert len(splits) == num_results
 
@@ -178,12 +174,10 @@ def test_split_7fsh():
     assert set(chain_ids) == {"A", "C", "D"}
 
 
-@pytest.mark.parametrize('path', [STRUCTURES / 'mmtf.gz' / '2OIQ.mmtf.gz'])
-@pytest.mark.parametrize('overwrite', [True, False])
-@pytest.mark.parametrize('name', [None, 'A_B'])
-def test_io(path, overwrite, name, tmp_path):
-    gs = GenericStructure.read(path)
-    iface = Interface(gs, "A_B")
+@pytest.mark.parametrize("overwrite", [True, False])
+@pytest.mark.parametrize("name", [None, "A_B"])
+def test_io(interface_2oiq, overwrite, name, tmp_path):
+    iface = interface_2oiq
     dest = iface.write(tmp_path, overwrite=overwrite, name=name)
     if name is None:
         assert dest.name == iface.id
@@ -192,3 +186,24 @@ def test_io(path, overwrite, name, tmp_path):
 
     iface_ = Interface.read(dest)
     assert iface_ == iface
+
+
+def test_sasa(interface_2oiq):
+    iface = interface_2oiq
+    sasa = iface.sasa()
+    assert all(
+        x > 0
+        for x in [
+            sasa.a_free,
+            sasa.b_free,
+            sasa.complex,
+            sasa.a_complex,
+            sasa.b_complex,
+            sasa.bsa_complex,
+            sasa.bsa_a,
+            sasa.bsa_b,
+        ]
+    )
+    assert sasa.a_free > sasa.a_complex
+    assert sasa.b_free > sasa.b_complex
+    assert (sasa.bsa_complex - sasa.bsa_a - sasa.bsa_b) < 1e-1

@@ -171,6 +171,40 @@ class RetainCondition:
         return num_atoms >= self.min_atoms and num_res >= self.min_res
 
 
+@dataclass
+class InterfaceSASA:
+    a_free: float
+    b_free: float
+    a_complex: float
+    b_complex: float
+    complex: float
+
+    @property
+    def bsa_a(self) -> float:
+        return self.a_free - self.a_complex
+
+    @property
+    def bsa_b(self) -> float:
+        return self.b_free - self.b_complex
+
+    @property
+    def bsa_complex(self) -> float:
+        return self.a_free + self.b_free - self.complex
+
+    def as_record(self) -> dict[str, float]:
+        return dict(
+            SASA_a_free=self.a_free,
+            SASA_b_free=self.b_free,
+            SASA_a_comples=self.a_complex,
+            SASA_b_comples=self.b_complex,
+            SASA_complex=self.complex,
+            BSA_a=self.bsa_a,
+            BSA_b=self.bsa_b,
+            BSA_ab=self.bsa_a + self.bsa_b,
+            BSA_complex=self.bsa_complex,
+        )
+
+
 class Interface:
     def __init__(
         self,
@@ -403,6 +437,18 @@ class Interface:
 
         ccs = filter(lambda x: len(x) >= min_nodes, rx.connected_components(self.G))
         yield from map(parse_cc, ccs)
+
+    def sasa(self) -> InterfaceSASA:
+        array = self.parent_structure.array
+        array_a, array_b = array[self.mask_a], array[self.mask_b]
+        sasa_a, sasa_b, sasa_ab = map(
+            lambda x: np.nansum(bst.sasa(x)), [array_a, array_b, array]
+        )
+        sasa_a_comp, sasa_b_comp = starmap(
+            lambda x, m: np.nansum(bst.sasa(x, atom_filter=m)),
+            [(array, self.mask_a), (array, self.mask_b)],
+        )
+        return InterfaceSASA(sasa_a, sasa_b, sasa_a_comp, sasa_b_comp, sasa_ab)
 
     def split_connected(
         self,
