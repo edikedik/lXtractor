@@ -33,31 +33,6 @@ lXtractor.core.exceptions module
    :undoc-members:
    :show-inheritance:
 
-lXtractor.core.ligand module
-----------------------------
-
-.. automodule:: lXtractor.core.ligand
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-
-lXtractor.core.pocket module
-----------------------------
-
-.. automodule:: lXtractor.core.pocket
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-lXtractore.core.interface module
---------------------------------
-
-.. automodule:: lXtractore.core.interface
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 lXtractor.core.segment module
 -----------------------------
 
@@ -70,6 +45,30 @@ lXtractor.core.structure module
 -------------------------------
 
 .. automodule:: lXtractor.core.structure
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+lXtractor.core.ligand module
+----------------------------
+
+.. automodule:: lXtractor.core.ligand
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+lXtractor.core.pocket module
+----------------------------
+
+.. automodule:: lXtractor.core.pocket
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+lXtractor.core.interface module
+--------------------------------
+
+.. automodule:: lXtractor.core.interface
    :members:
    :undoc-members:
    :show-inheritance:
