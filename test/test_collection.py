@@ -293,12 +293,12 @@ def test_load_chains(chains):
 
 
 def test_nested_child_recovery():
-    s1 = lxc.ChainSequence.from_string('X' * 6, name='X')
-    s2 = lxc.ChainSequence.from_string('Y' * 6, name='Y')
-    sc1 = s1.spawn_child(2, 5, 'A')
-    sc2 = s2.spawn_child(2, 5, 'A')
-    sc11 = sc1.spawn_child(3, 4, 'B')
-    sc21 = sc2.spawn_child(3, 4, 'B')
+    s1 = lxc.ChainSequence.from_string("X" * 6, name="X")
+    s2 = lxc.ChainSequence.from_string("Y" * 6, name="Y")
+    sc1 = s1.spawn_child(2, 5, "A")
+    sc2 = s2.spawn_child(2, 5, "A")
+    sc11 = sc1.spawn_child(3, 4, "B")
+    sc21 = sc2.spawn_child(3, 4, "B")
 
     col = SequenceCollection()
     col.add([s1, s2])
@@ -645,6 +645,7 @@ TEST_BATCHES = [
 ]
 
 
+@pytest.mark.skip("mmtf fetching issues")
 @pytest.mark.parametrize("ct,source,ids,refs", TEST_BATCHES)
 @pytest.mark.parametrize("local", [True, False])
 def test_run_batch(ct, source, ids, refs, local, tmp_path):
