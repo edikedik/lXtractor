@@ -54,7 +54,9 @@ def test_interface_basic(generic_structure_2oiq, cutoff):
     mask_a = iface._chain_atom_mask(iface.partners_a)
     mask_b = iface._chain_atom_mask(iface.partners_b)
 
-    a, b = array[mask_a], array[mask_b]
+    solvent_mask = generic_structure_2oiq.mask.solvent
+
+    a, b = array[mask_a & ~solvent_mask], array[mask_b & ~solvent_mask]
     d_a = np.linalg.norm(b.coord[:, np.newaxis] - a.coord, axis=-1)
     d_b = np.linalg.norm(a.coord[:, np.newaxis] - b.coord, axis=-1)
     d_min_a = np.min(d_a, axis=0)

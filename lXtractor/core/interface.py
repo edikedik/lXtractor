@@ -9,7 +9,7 @@ import operator
 import typing as t
 from collections import abc
 from dataclasses import dataclass
-from itertools import chain, product, starmap
+from itertools import chain, product, starmap, filterfalse
 from os import PathLike
 from pathlib import Path
 
@@ -518,27 +518,33 @@ class Interface:
             tree = KDTree(atoms.coord)
             return idx, atoms, tree
 
+        def iter_edges(graph: rx.PyGraph) -> abc.Iterator[tuple[int, int, ContactEdge]]:
+            idx_a, atoms_a, tree_a = setup_tree(self.partners_a)
+            idx_b, atoms_b, tree_b = setup_tree(self.partners_b)
+
+            solvent_mask = self.parent_structure.mask.solvent
+            solvent_mask_a, solvent_mask_b = solvent_mask[idx_a], solvent_mask[idx_b]
+            idx_contact = tree_a.query_ball_tree(tree_b, r=self.cutoff)
+
+            for a_i, b_indices in enumerate(idx_contact):
+                if solvent_mask_a[a_i]:
+                    continue
+                b_indices = list(filterfalse(lambda x: solvent_mask_b[x], b_indices))
+                if len(b_indices) == 0:
+                    continue
+
+                a_i_real = idx_a[a_i]
+                for b_i in b_indices:
+                    b_i_real = idx_b[b_i]
+                    yield a_i_real, b_i_real, ContactEdge.from_node_indices(
+                        a_i_real, b_i_real, graph
+                    )
+
         array = self.parent_structure.array
         g = rx.PyGraph(multigraph=False)
         atom_nodes = list(starmap(AtomNode, enumerate(array)))
         g.add_nodes_from(atom_nodes)
-
-        idx_a, atoms_a, tree_a = setup_tree(self.partners_a)
-        idx_b, atoms_b, tree_b = setup_tree(self.partners_b)
-
-        idx_contact = tree_a.query_ball_tree(tree_b, r=self.cutoff)
-
-        for a_i, b_indices in enumerate(idx_contact):
-            if len(b_indices) == 0:
-                continue
-
-            indices = ((idx_a[a_i], idx_b[b_i]) for b_i in b_indices)
-
-            edges = [
-                (a_i, b_i, ContactEdge.from_node_indices(a_i, b_i, g))
-                for a_i, b_i in indices
-            ]
-            g.add_edges_from(edges)
+        g.add_edges_from(list(iter_edges(g)))
 
         return g
 
