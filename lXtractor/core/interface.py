@@ -559,7 +559,7 @@ class Interface:
         """
         idx = np.array(list(self.G.edge_list()))
         if chain_ids:
-            idx = idx[np.isin(idx, self._chain_atom_idx(chain_ids).any(axis=1))]
+            idx = idx[np.isin(idx, self._chain_atom_idx(chain_ids)).any(axis=1)]
         return idx
 
     def get_contact_idx_a(self) -> npt.NDArray[int]:

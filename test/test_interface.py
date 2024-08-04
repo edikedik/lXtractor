@@ -188,6 +188,7 @@ def test_io(interface_2oiq, overwrite, name, tmp_path, additional_meta):
 
     iface_ = Interface.read(dest)
     assert iface_ == iface
+    assert iface_.num_contact_residues(['A']) == iface.num_contact_residues(['A'])
 
 
 def test_sasa(interface_2oiq):
