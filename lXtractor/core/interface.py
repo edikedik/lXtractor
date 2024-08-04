@@ -28,6 +28,7 @@ from lXtractor.util.misc import molgraph_to_json
 
 _PartnerUnit = abc.Sequence[str] | str
 _Partners: t.TypeAlias = tuple[_PartnerUnit, _PartnerUnit] | str
+_ChainIDs: t.TypeAlias = abc.Sequence[str] | str | None
 EMPTY = np.empty(0, dtype=int)
 
 
@@ -144,6 +145,9 @@ class AtomNode:
 class ContactEdge:
     """
     Represents a contact edge in the interface graph.
+
+    By convention, in an edge ``(i, j)``, ``i`` belongs to partner chains "a",
+    whereas ``j`` belongs to partner chains "b".
     """
 
     #: AtomNode object for the first atom in the contact
@@ -225,6 +229,7 @@ class InterfaceSASA:
     """
     Stores Solvent Accessible Surface Area (SASA) values for an interface.
     """
+
     #: SASA of partner "a" alone.
     a_free: float
     #: SASA of partner "b" alone.
@@ -284,11 +289,13 @@ class Interface:
     """
     An asymmetric interface between two partners in a molecular structure.
 
-    The interface is defined by two distinct sets of partner chains (typically protein),
-    designated as "a" and "b", and their interactions. The interface is constructed
-    using a graph representation where nodes are atoms and edges represent contacts
-    between atoms from different partners. A spatial tree (KD-tree) is used to
-    efficiently compute these contacts within a specified cutoff distance.
+    The interface is defined by two distinct sets of partner chains
+    (typically protein), designated as "a" and "b", and their interactions.
+    The interface is constructed using a graph representation where nodes are
+    atoms and edges represent contacts between atoms from different partners.
+    For a given edge ``(i, j)``, ``i``  belong to "a" and "b" chain groups, resp.
+    A spatial tree (KD-tree) is used to efficiently compute these contacts within
+    a specified cutoff distance.
 
     The class provides methods to analyze the interface, including:
 
@@ -317,9 +324,9 @@ class Interface:
         :class:`ContactEdge` An edge of the interface graph.
 
     .. warning::
-        The :meth:`parent_structure` and contact graph :meth:`G` are considered
-        immutable for this interface. Do not change their state: init new objects
-        instead.
+        The :meth:`parent_structure` is considered immutable, while the :meth:`G`
+        can only change edges and their properties; the atom nodes must stay
+        the same.
     """
 
     def __init__(
@@ -487,6 +494,23 @@ class Interface:
         """
         return self._chain_atom_mask(self.partners_b)
 
+    def _parse_chain_ids(self, chain_ids: _ChainIDs) -> tuple[str, ...] | None:
+        match chain_ids:
+            case None:
+                return None
+            case "a":
+                return self.partners_a
+            case "b":
+                return self.partners_b
+            case abc.Sequence():
+                return tuple(chain_ids)
+            case str():
+                if "," in chain_ids:
+                    return tuple(chain_ids.split(","))
+                return (chain_ids,)
+            case _:
+                raise TypeError(f"Invalid `chain_ids` type {type(chain_ids)}")
+
     def _make_graph(self) -> rx.PyGraph:
         def setup_tree(chain_ids):
             idx = self._chain_atom_idx(chain_ids)
@@ -541,15 +565,18 @@ class Interface:
         if len(common) > 0:
             raise AmbiguousData(f"Provided partners overlap over chains: {common}.")
 
-    def _chain_atom_mask(self, chain_ids: abc.Sequence[str]) -> npt.NDArray[bool]:
-        return np.isin(self.parent_structure.array.chain_id, chain_ids)
+    def _chain_atom_mask(self, chain_ids: _ChainIDs) -> npt.NDArray[bool]:
+        chain_ids = self._parse_chain_ids(chain_ids)
+        if chain_ids is not None and len(chain_ids) > 0:
+            return np.isin(
+                self.parent_structure.array.chain_id, self._parse_chain_ids(chain_ids)
+            )
+        return np.ones(len(self.parent_structure), dtype=bool)
 
-    def _chain_atom_idx(self, chain_ids: abc.Sequence[str]) -> npt.NDArray[int]:
+    def _chain_atom_idx(self, chain_ids: _ChainIDs) -> npt.NDArray[int]:
         return np.where(self._chain_atom_mask(chain_ids))[0]
 
-    def get_contact_idx_ab(
-        self, chain_ids: abc.Sequence[str] | None = None
-    ) -> npt.NDArray[int]:
+    def get_contact_idx_ab(self, chain_ids: _ChainIDs = None) -> npt.NDArray[int]:
         """
         Get the indices of contacting atom pairs.
 
@@ -562,26 +589,28 @@ class Interface:
             idx = idx[np.isin(idx, self._chain_atom_idx(chain_ids)).any(axis=1)]
         return idx
 
-    def get_contact_idx_a(self) -> npt.NDArray[int]:
+    def get_contact_idx_a(self, chain_ids: _ChainIDs = None) -> npt.NDArray[int]:
         """
+        :param chain_ids: Optional; contacts must involve the provided chains.
         :return: A numpy array of indices of contacting atoms from partner "a".
         """
-        idx = self.get_contact_idx_ab()
+        idx = self.get_contact_idx_ab(chain_ids)
         if len(idx) == 0:
             return EMPTY
-        return self.get_contact_idx_ab()[:, 0]
+        return idx[:, 0]
 
-    def get_contact_idx_b(self) -> npt.NDArray[int]:
+    def get_contact_idx_b(self, chain_ids: _ChainIDs = None) -> npt.NDArray[int]:
         """
+        :param chain_ids: Optional; contacts must involve the provided chains.
         :return: A numpy array of indices of contacting atoms from partner "b".
         """
-        idx = self.get_contact_idx_ab()
+        idx = self.get_contact_idx_ab(chain_ids)
         if len(idx) == 0:
             return EMPTY
-        return self.get_contact_idx_ab()[:, 1]
+        return idx[:, 1]
 
     def get_contact_atoms_ab(
-        self, chain_ids: abc.Sequence[str] | None = None
+        self, chain_ids: _ChainIDs = None
     ) -> tuple[bst.AtomArray, bst.AtomArray]:
         """
         Get the contacting atoms from both partners.
@@ -597,35 +626,56 @@ class Interface:
         idx_a, idx_b = idx[:, 0], idx[:, 1]
         return a[idx_a], a[idx_b]
 
-    def count_contacts(self, chain_ids: abc.Sequence[str] | None = None) -> int:
+    def count_contacts(self, chain_ids: _ChainIDs = None) -> int:
         """
         Count the number of contacts in the interface. Equivalent to a number
         of edges in :meth:`G`.
 
-        :param chain_ids: Optional; include results only for the provided chains.
+        :param chain_ids: Optional; count counts involving the provided chains.
         :return: The number of atom-atom contacts in the interface
         """
         return len(self.get_contact_idx_ab(chain_ids))
 
-    def count_contact_atoms(self, chain_ids: abc.Sequence[str] | None = None) -> int:
+    def count_contact_atoms(
+        self, chain_ids: _ChainIDs = None, strict: bool = False
+    ) -> int:
         """
         Count the number of atoms involved in contacts. Equivalent to the total
         number of nodes connected with edges in :meth:`G`.
 
-        :param chain_ids: Optional; include results only for the provided chains.
+        :param chain_ids: Optional; count contact atoms involving the provided
+            chains.
+        :param strict: Used only if `chain_ids` is provided. If ``True``, will
+            filter to atoms from provided `chain_ids`. Otherwise, will count
+            all atoms making contacts with specified `chain_ids`.
         :return: The number of unique atoms involved in contacts.
         """
-        idx = self.get_contact_idx_ab(chain_ids)
-        return len(np.unique(idx))
+        idx = np.unique(self.get_contact_idx_ab(chain_ids))
 
-    def num_contact_residues(self, chain_ids: abc.Sequence[str] | None = None) -> int:
+        chain_ids = self._parse_chain_ids(chain_ids)
+        if strict and chain_ids is not None:
+            idx_chain = self._chain_atom_idx(chain_ids)
+            idx = idx[np.isin(idx, idx_chain)]
+
+        return len(idx)
+
+    def count_contact_residues(
+        self, chain_ids: _ChainIDs = None, strict: bool = False
+    ) -> int:
         """
         Count the number of residues involved in contacts.
 
         :param chain_ids: Optional; include results only for the provided chains.
+        :param strict: Used only if `chain_ids` is provided. If ``True``, will
+            filter to residues from provided `chain_ids`. Otherwise, will count
+            all residues making contacts with specified `chain_ids`.
         :return: The number of unique residues involved in contacts.
         """
         atoms_a, atoms_b = self.get_contact_atoms_ab(chain_ids)
+        chain_ids = self._parse_chain_ids(chain_ids)
+        if chain_ids is not None and strict:
+            atoms_a = atoms_a[np.isin(atoms_a.chain_id, chain_ids)]
+            atoms_b = atoms_b[np.isin(atoms_b.chain_id, chain_ids)]
         count_a = 0 if len(atoms_a) == 0 else residue_count_disjoint(atoms_a)
         count_b = 0 if len(atoms_b) == 0 else residue_count_disjoint(atoms_b)
         return count_a + count_b

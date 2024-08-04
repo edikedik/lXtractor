@@ -68,7 +68,7 @@ def test_interface_basic(generic_structure_2oiq, cutoff):
     res_count_b = 0 if num_atoms_b == 0 else bst.get_residue_count(b[mask_b])
 
     assert iface.count_contact_atoms() == mask_a.sum() + mask_b.sum()
-    assert iface.num_contact_residues() == res_count_a + res_count_b
+    assert iface.count_contact_residues() == res_count_a + res_count_b
     assert (
         len(iface.get_contact_idx_a())
         == len(iface.get_contact_idx_b())
@@ -188,7 +188,7 @@ def test_io(interface_2oiq, overwrite, name, tmp_path, additional_meta):
 
     iface_ = Interface.read(dest)
     assert iface_ == iface
-    assert iface_.num_contact_residues(['A']) == iface.num_contact_residues(['A'])
+    assert iface_.count_contact_residues(["A"]) == iface.count_contact_residues(["A"])
 
 
 def test_sasa(interface_2oiq):
@@ -210,3 +210,18 @@ def test_sasa(interface_2oiq):
     assert sasa.a_free > sasa.a_complex
     assert sasa.b_free > sasa.b_complex
     assert (sasa.bsa_complex - sasa.bsa_a - sasa.bsa_b) < 1e-1
+
+
+def test_counters(interface_2oiq):
+    iface = interface_2oiq
+    res_total = iface.count_contact_residues()
+    res_a, res_b = map(
+        lambda x: iface.count_contact_residues(x, strict=True), ["a", "b"]
+    )
+    assert res_a + res_b == res_total
+
+    atoms_total = iface.count_contact_atoms()
+    atoms_a, atoms_b = map(
+        lambda x: iface.count_contact_atoms(x, strict=True), ["a", "b"]
+    )
+    assert atoms_a + atoms_b == atoms_total
