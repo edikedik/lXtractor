@@ -582,7 +582,7 @@ class Interface:
     def _chain_atom_idx(self, chain_ids: _ChainIDs) -> npt.NDArray[int]:
         return np.where(self._chain_atom_mask(chain_ids))[0]
 
-    def get_contact_idx_ab(self, chain_ids: _ChainIDs = None) -> npt.NDArray[int]:
+    def get_contact_idx(self, chain_ids: _ChainIDs = None) -> npt.NDArray[int]:
         """
         Get the indices of contacting atom pairs.
 
@@ -600,7 +600,7 @@ class Interface:
         :param chain_ids: Optional; contacts must involve the provided chains.
         :return: A numpy array of indices of contacting atoms from partner "a".
         """
-        idx = self.get_contact_idx_ab(chain_ids)
+        idx = self.get_contact_idx(chain_ids)
         if len(idx) == 0:
             return EMPTY
         return idx[:, 0]
@@ -610,23 +610,23 @@ class Interface:
         :param chain_ids: Optional; contacts must involve the provided chains.
         :return: A numpy array of indices of contacting atoms from partner "b".
         """
-        idx = self.get_contact_idx_ab(chain_ids)
+        idx = self.get_contact_idx(chain_ids)
         if len(idx) == 0:
             return EMPTY
         return idx[:, 1]
 
-    def get_contact_atoms_ab(
+    def get_contact_atoms(
         self, chain_ids: _ChainIDs = None
     ) -> tuple[bst.AtomArray, bst.AtomArray]:
         """
         Get the contacting atoms from both partners.
 
         :param chain_ids: Optional; include results only for the provided chains.
-        :return: A tuple of two AtomArrays containing the contacting atoms
-            from partners "a" and "b" respectively.
+        :return: A tuple of two AtomArrays of equal sizes containing the
+            contacting atoms from partners "a" and "b" respectively.
         """
         a = self.parent_structure.array
-        idx = self.get_contact_idx_ab(chain_ids)
+        idx = self.get_contact_idx(chain_ids)
         if len(idx) == 0:
             return bst.AtomArray(0), bst.AtomArray(0)
         idx_a, idx_b = idx[:, 0], idx[:, 1]
@@ -640,7 +640,7 @@ class Interface:
         :param chain_ids: Optional; count counts involving the provided chains.
         :return: The number of atom-atom contacts in the interface
         """
-        return len(self.get_contact_idx_ab(chain_ids))
+        return len(self.get_contact_idx(chain_ids))
 
     def count_contact_atoms(
         self, chain_ids: _ChainIDs = None, strict: bool = False
@@ -656,7 +656,7 @@ class Interface:
             all atoms making contacts with specified `chain_ids`.
         :return: The number of unique atoms involved in contacts.
         """
-        idx = np.unique(self.get_contact_idx_ab(chain_ids))
+        idx = np.unique(self.get_contact_idx(chain_ids))
 
         chain_ids = self._parse_chain_ids(chain_ids)
         if strict and chain_ids is not None:
@@ -677,7 +677,7 @@ class Interface:
             all residues making contacts with specified `chain_ids`.
         :return: The number of unique residues involved in contacts.
         """
-        atoms_a, atoms_b = self.get_contact_atoms_ab(chain_ids)
+        atoms_a, atoms_b = self.get_contact_atoms(chain_ids)
         chain_ids = self._parse_chain_ids(chain_ids)
         if chain_ids is not None and strict:
             atoms_a = atoms_a[np.isin(atoms_a.chain_id, chain_ids)]

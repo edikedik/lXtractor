@@ -74,7 +74,7 @@ def test_interface_basic(generic_structure_2oiq, cutoff):
     assert (
         len(iface.get_contact_idx_a())
         == len(iface.get_contact_idx_b())
-        == len(iface.get_contact_idx_ab())
+        == len(iface.get_contact_idx())
     )
 
 
