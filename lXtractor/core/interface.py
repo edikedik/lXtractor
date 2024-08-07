@@ -723,22 +723,40 @@ class Interface:
         ccs = filter(lambda x: len(x) >= min_nodes, rx.connected_components(self.G))
         yield from map(parse_cc, ccs)
 
-    def sasa(self) -> InterfaceSASA:
+    def sasa(
+        self, mask: npt.NDArray[bool] | None = None, canonical: bool = True
+    ) -> InterfaceSASA:
         """
         Calculate the Solvent Accessible Surface Area (SASA) for the interface.
         See :class:`InterfaceSASA` for more details.
 
+        :param mask: A custom atom mask of :meth:`parent_structure` pointing to
+            atoms to include in calculation.
+        :param canonical: Use only atoms of canonical residues for calculating
+            SASA. In some cases, this may save from unexpected exceptions that
+            happen due to biotite missing some atoms in non-canonical residues
+            that it expects to be there (atomic radii are required for each
+            atom for SASA calculation).
         :return: An InterfaceSASA object containing SASA values for partners
             "a" and "b" individually and in complex.
         """
+
         array = self.parent_structure.array
-        array_a, array_b = array[self.mask_a], array[self.mask_b]
+
+        m = np.ones(len(array), dtype=bool)
+        if mask is not None:
+            m &= mask
+        if canonical:
+            m &= bst.filter_canonical_amino_acids(array)
+
+        mask_a, mask_b = self.mask_a & m, self.mask_b & m
+        array_a, array_b = array[mask_a], array[mask_b]
         sasa_a, sasa_b, sasa_ab = map(
-            lambda x: np.nansum(bst.sasa(x)), [array_a, array_b, array]
+            lambda x: np.nansum(bst.sasa(x)), [array_a, array_b, array[m]]
         )
         sasa_a_comp, sasa_b_comp = starmap(
             lambda x, m: np.nansum(bst.sasa(x, atom_filter=m)),
-            [(array, self.mask_a), (array, self.mask_b)],
+            [(array, mask_a), (array, mask_b)],
         )
         return InterfaceSASA(sasa_a, sasa_b, sasa_a_comp, sasa_b_comp, sasa_ab)
 
