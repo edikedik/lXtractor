@@ -749,10 +749,11 @@ class Interface:
         if canonical:
             m &= bst.filter_canonical_amino_acids(array)
 
-        mask_a, mask_b = self.mask_a & m, self.mask_b & m
+        array = array[m]
+        mask_a, mask_b = self.mask_a[m], self.mask_b[m]
         array_a, array_b = array[mask_a], array[mask_b]
         sasa_a, sasa_b, sasa_ab = map(
-            lambda x: np.nansum(bst.sasa(x)), [array_a, array_b, array[m]]
+            lambda x: np.nansum(bst.sasa(x)), [array_a, array_b, array]
         )
         sasa_a_comp, sasa_b_comp = starmap(
             lambda x, m: np.nansum(bst.sasa(x, atom_filter=m)),
