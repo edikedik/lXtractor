@@ -986,25 +986,48 @@ class Interface:
 
 
 class InterfaceComparator:
+    """
+    A class for comparing interfaces corresponding to different states of the
+    same binding partners. It assumes that parent structures of these states
+    have the same atoms in the same order but perhaps with different coordinates.
+    To check if the interfaces are comparable, one may use :meth:`are_comparable`
+    before initializing.
+
+    It superposes parent structure of :attr:`state_mob` over :attr:`state_ref`
+    during initialization. Then, common metrics such as :meth:`irmsd`,
+    :meth:`lrmsd` and :meth:`dockq` can be computed fast and reliably.
+    """
+
     def __init__(
         self,
         state_ref: Interface,
         state_mob: Interface,
         superpose_by: str | np.ndarray = "a",
-        ligand_chains: str | abc.Sequence[str] = "b",
         min_spp_atoms: int = 5,
     ):
+        """
+        :param state_ref: A reference state of the interface.
+        :param state_mob: A mobile state of the interface. Its structure copy
+            after superposition will be stored after init and can be accessed
+            via :meth:`superposed_mob`.
+        :param superpose_by: Defines which set of atoms is used to superpose
+            mobile state over the fixed one. Can be a ``"a"`` or ``"b"`` to
+            indicate corresponding binding partners or a ``str`` with
+            ","-separated chains. Can also be a` numpy` array with atom indices
+            or boolean mask pointing to atoms to use for superposition.
+        :param min_spp_atoms: Minimum number of atoms necessary to superpose
+            structures after `superpose_by` is applied.
+        :raises AmbiguousData: if interfaces are not comparable.
+        """
         if not self.are_comparable(state_ref, state_mob):
             raise AmbiguousData("States are not comparable.")
 
+        #: Reference interface state.
         self.state_ref = state_ref
+        #: Mobile interface state.
         self.state_mob = state_mob
+        #: Superpose selection specifications.
         self.superpose_by = superpose_by
-        self.ligand_chains = self.state_ref._parse_chain_ids(ligand_chains)
-        if self.ligand_chains is None:
-            raise AmbiguousData(
-                f"Failed to resolve ligand chains from provided specs {ligand_chains}."
-            )
 
         self._superpose_atom_mask = self._infer_spp_atom_mask(min_spp_atoms)
 
@@ -1073,20 +1096,40 @@ class InterfaceComparator:
 
     @property
     def superposed_mob(self) -> GenericStructure:
+        """
+        :return: A copy of mobile structure with coordinates transformed
+            following superpositions.
+        """
         return self._superposed_mob
 
     @property
     def superposed_rmsd(self) -> float:
+        """
+        :return: RMSD after superposing :attr:`state_mob`.
+        """
         return self._spp_rmsd
 
     @property
     def transformation(
         self,
     ) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.int_], npt.NDArray[np.int_]]:
+        """
+        :return: Transformation matrices of the inferred for superposition
+            of the :attr:`state_mob`.
+        """
         return self._transformation
 
     @classmethod
-    def are_comparable(cls, state1: Interface, state2: Interface):
+    def are_comparable(cls, state1: Interface, state2: Interface) -> bool:
+        """
+        A method to check whether two interface states are comparable to be
+        used in this class.
+
+        :param state1: First interface.
+        :param state2: Second interface.
+        :return: ``True`` if interfaces are directly comparable and can be used
+            in this comparator and ``False`` otherwise.
+        """
         a1, a2 = state1.parent_structure.array, state2.parent_structure.array
         return (
             len(a1) == len(a2)
@@ -1095,20 +1138,44 @@ class InterfaceComparator:
         )
 
     def rmsd_over(self, atom_mask: npt.NDArray[np.bool_]) -> float:
+        """
+        A general-purpose method to compute RMSD between reference and mobile
+        states over arbitrary set of atoms.
+
+        :param atom_mask: A boolean mask where ``True`` indicates target atoms.
+        :return: RMSD over target atoms.
+        """
         a_ref = self.state_ref.parent_structure.array[atom_mask]
         a_mob = self.superposed_mob[atom_mask]
         return bst.rmsd(a_ref, a_mob)
 
     def irmsd(self) -> float:
+        """
+        Compute interface RMSD.
+
+        :return: RMSD computed over atoms comprising interface of the
+            :attr:`state_ref`.
+        """
         return self.rmsd_over(self.state_ref.get_contact_atoms_mask())
 
-    def lrmsd(self) -> float:
+    def lrmsd(self, ligand_chains: str | abc.Sequence[str] = "b") -> float:
+        """
+        Compute "ligand" RMSD.
+
+        :param ligand_chains: Specification of which chains to consider "ligand".
+            By default, this points to :meth:`Interface.partner_b`.
+        :return: RMSD computed over chains posing as "ligand".
+        """
         mask = np.isin(
-            self.state_ref.parent_structure.array.chain_id, self.ligand_chains
+            self.state_ref.parent_structure.array.chain_id,
+            self.state_ref._parse_chain_ids(ligand_chains),
         )
         return self.rmsd_over(mask)
 
     def fnat(self) -> float:
+        """
+        :return: A fraction of contacts preserved in :attr:`state_mob`.
+        """
         idx_ref = self.state_ref.get_contact_idx()
         idx_mob = self.state_mob.get_contact_idx()
         if len(idx_mob) == 0:
@@ -1117,6 +1184,14 @@ class InterfaceComparator:
         return isec_size / len(idx_ref)
 
     def dockq(self, d1: float = 8.5, d2: float = 1.5) -> float:
+        """
+        A DockQ score from Basu et al. (2016)
+        https://doi.org/10.1371/journal.pone.0161879_
+
+        :param d1: A constant to scale :meth:`lrmsd`.
+        :param d2: A constant to scale :meth:`irmsd`.
+        :return: DockQ score ranging from 0 (no match) to 1 (perfect match).
+        """
         irms, lrms, fnat = self.irmsd(), self.lrmsd(), self.fnat()
         lrmss = 1 / (1 + (irms / d1) ** 2)
         irmss = 1 / (1 + (lrms / d2) ** 2)

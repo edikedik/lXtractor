@@ -1,10 +1,9 @@
 import operator as op
-from copy import deepcopy
 
 import biotite.structure as bst
 import numpy as np
-import rustworkx as rx
 import pytest
+import rustworkx as rx
 
 from lXtractor.core import GenericStructure, Interface
 from lXtractor.core.exceptions import MissingData, AmbiguousData
@@ -266,3 +265,38 @@ def test_comparator_translated_b(interface_2oiq):
     assert comp.lrmsd() > 25
     assert comp.fnat() == 0
     assert comp.dockq() < 1e-2
+
+
+@pytest.mark.parametrize(
+    "superpose_by,is_valid",
+    [
+        ("a", True),
+        ("b", True),
+        ("c", False),
+        ("A", True),
+        ("A,B", True),
+        ("C", False),
+        (np.arange(20), True),
+        (np.arange(2), False),
+    ],
+)
+def test_comparator_superpose_by(interface_2oiq, superpose_by, is_valid):
+    if is_valid:
+        comp = InterfaceComparator(
+            interface_2oiq, interface_2oiq, superpose_by=superpose_by
+        )
+        assert comp.superposed_rmsd < 1e-3
+    else:
+        with pytest.raises(Exception):
+            InterfaceComparator(
+                interface_2oiq, interface_2oiq, superpose_by=superpose_by
+            )
+
+
+def test_comparator_superpose_by_mask(interface_2oiq):
+    mask = np.zeros(len(interface_2oiq.parent_structure), dtype=bool)
+    with pytest.raises(ValueError):
+        InterfaceComparator(interface_2oiq, interface_2oiq, superpose_by=mask)
+    mask[np.arange(1, 20, 2)] = True
+    comp = InterfaceComparator(interface_2oiq, interface_2oiq, superpose_by=mask)
+    assert comp.superposed_rmsd < 1e-3
