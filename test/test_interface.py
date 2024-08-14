@@ -1,4 +1,5 @@
 import operator as op
+from copy import deepcopy
 
 import biotite.structure as bst
 import numpy as np
@@ -7,7 +8,7 @@ import pytest
 
 from lXtractor.core import GenericStructure, Interface
 from lXtractor.core.exceptions import MissingData, AmbiguousData
-from lXtractor.core.interface import RetainCondition
+from lXtractor.core.interface import RetainCondition, InterfaceComparator
 from test.common import STRUCTURES
 
 
@@ -227,3 +228,41 @@ def test_counters(interface_2oiq):
         lambda x: iface.count_contact_atoms(x, strict=True), ["a", "b"]
     )
     assert atoms_a + atoms_b == atoms_total
+
+
+def test_comparator_equal(interface_2oiq):
+    comp = InterfaceComparator(interface_2oiq, interface_2oiq)
+    assert comp.irmsd() < 1e-3
+    assert comp.lrmsd() < 1e-3
+    assert comp.fnat() == 1
+    assert abs(comp.dockq() - 1) < 1e-3
+
+
+def test_comparator_translated_full(interface_2oiq):
+    p = interface_2oiq.parent_structure
+    a = bst.translate(p.array, [10, 10, 10])
+    gs = GenericStructure(a, p.name, atom_marks=p.atom_marks, graph=p.graph)
+    iface_translated = Interface(gs, interface_2oiq.partners)
+    comp = InterfaceComparator(interface_2oiq, iface_translated)
+    assert comp.irmsd() < 1e-3
+    assert comp.lrmsd() < 1e-3
+    assert comp.fnat() == 1
+    assert abs(comp.dockq() - 1) < 1e-3
+
+
+def test_comparator_translated_b(interface_2oiq):
+    p = interface_2oiq.parent_structure
+    a = p.array.copy()
+    mask = np.isin(p.array.chain_id, interface_2oiq.partners_b)
+    coord = a.coord
+    coord[mask] += 100
+    a.coord = coord
+    gs = GenericStructure(a, p.name, atom_marks=p.atom_marks, graph=p.graph)
+    assert len(p) == len(gs)
+    assert np.all(p.array.atom_name == gs.array.atom_name)
+    iface_translated = Interface(gs, interface_2oiq.partners)
+    comp = InterfaceComparator(interface_2oiq, iface_translated)
+    assert comp.irmsd() > 50
+    assert comp.lrmsd() > 25
+    assert comp.fnat() == 0
+    assert comp.dockq() < 1e-2

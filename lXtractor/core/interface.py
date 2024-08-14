@@ -632,6 +632,18 @@ class Interface:
         idx_a, idx_b = idx[:, 0], idx[:, 1]
         return a[idx_a], a[idx_b]
 
+    def get_contact_atoms_mask(self, chain_ids: _ChainIDs = None) -> npt.NDArray[bool]:
+        """
+        Get a mask pointing to contact atoms.
+
+        :param chain_ids: Contacts must involve the provided chains.
+        :return: An array where ``True`` points to atoms involved in interface contacts.
+        """
+        contact_idx = np.unique(self.get_contact_idx(chain_ids))
+        mask = np.zeros(len(self.parent_structure), dtype=bool)
+        mask[contact_idx] = True
+        return mask
+
     def count_contacts(self, chain_ids: _ChainIDs = None) -> int:
         """
         Count the number of contacts in the interface. Equivalent to a number
@@ -971,6 +983,144 @@ class Interface:
             json.dump(meta, f, indent=2)
 
         return base
+
+
+class InterfaceComparator:
+    def __init__(
+        self,
+        state_ref: Interface,
+        state_mob: Interface,
+        superpose_by: str | np.ndarray = "a",
+        ligand_chains: str | abc.Sequence[str] = "b",
+        min_spp_atoms: int = 5,
+    ):
+        if not self.are_comparable(state_ref, state_mob):
+            raise AmbiguousData("States are not comparable.")
+
+        self.state_ref = state_ref
+        self.state_mob = state_mob
+        self.superpose_by = superpose_by
+        self.ligand_chains = self.state_ref._parse_chain_ids(ligand_chains)
+        if self.ligand_chains is None:
+            raise AmbiguousData(
+                f"Failed to resolve ligand chains from provided specs {ligand_chains}."
+            )
+
+        self._superpose_atom_mask = self._infer_spp_atom_mask(min_spp_atoms)
+
+        (
+            self._superposed_mob,
+            self._spp_rmsd,
+            self._transformation,
+        ) = self.state_ref.parent_structure.superpose(
+            self.state_mob.parent_structure,
+            mask_self=self._superpose_atom_mask,
+            mask_other=self._superpose_atom_mask,
+        )
+
+    def _validate_args(self):
+        if isinstance(self.superpose_by, int):
+            pass
+
+    def _validate_states(self):
+        if self.state_ref.count_contacts() == 0:
+            raise MissingData(f"No contacts in reference state {self.state_ref}.")
+        # if self.state_mob.count_contacts() == 0:
+        #     raise MissingData(f"No contacts in mobile state {self.state_mob}.")
+
+    def _infer_spp_atom_mask(self, min_atoms: int) -> npt.NDArray[np.bool_]:
+        if isinstance(self.superpose_by, str):
+            try:
+                idx = np.unique(self.state_ref.get_contact_idx(self.superpose_by))
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to infer indices from specs {self.superpose_by}"
+                ) from e
+            mask = np.zeros(len(self.state_ref.parent_structure), dtype=bool)
+            mask[idx] = True
+        elif isinstance(self.superpose_by, np.ndarray):
+            if len(self.superpose_by.shape) > 1:
+                raise AmbiguousData(
+                    "Multidimensional arrays are not supported in `superpose_by` specs."
+                )
+            if len(self.superpose_by) == 0:
+                raise AmbiguousData("Empty `superpose_by` array.")
+            if np.issubdtype(self.superpose_by.dtype, np.bool_):
+                if len(self.superpose_by) != len(self.state_ref.parent_structure):
+                    raise ValueError(
+                        f"Boolean mask size {len(self.superpose_by)} does not match "
+                        f"the number of atoms in the structure "
+                        f"{len(self.state_ref.parent_structure)}."
+                    )
+                mask = self.superpose_by
+            elif np.issubdtype(self.superpose_by.dtype, np.integer):
+                mask = np.zeros(len(self.state_ref.parent_structure), dtype=bool)
+                mask[self.superpose_by] = True
+            else:
+                raise TypeError("Invalid array input dtype for `superpose_by`.")
+        else:
+            raise TypeError(
+                f"Invalid type {type(self.superpose_by)} for `superpose_by`."
+            )
+
+        num_atoms = mask.sum()
+        if num_atoms < min_atoms:
+            raise ValueError(
+                f"The number of atoms {num_atoms} for superposing is below "
+                f"the allowed minimum {min_atoms}."
+            )
+        return mask
+
+    @property
+    def superposed_mob(self) -> GenericStructure:
+        return self._superposed_mob
+
+    @property
+    def superposed_rmsd(self) -> float:
+        return self._spp_rmsd
+
+    @property
+    def transformation(
+        self,
+    ) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.int_], npt.NDArray[np.int_]]:
+        return self._transformation
+
+    @classmethod
+    def are_comparable(cls, state1: Interface, state2: Interface):
+        a1, a2 = state1.parent_structure.array, state2.parent_structure.array
+        return (
+            len(a1) == len(a2)
+            and np.all(a1.atom_name == a2.atom_name)
+            and np.all(a1.chain_id == a2.chain_id)
+        )
+
+    def rmsd_over(self, atom_mask: npt.NDArray[np.bool_]) -> float:
+        a_ref = self.state_ref.parent_structure.array[atom_mask]
+        a_mob = self.superposed_mob[atom_mask]
+        return bst.rmsd(a_ref, a_mob)
+
+    def irmsd(self) -> float:
+        return self.rmsd_over(self.state_ref.get_contact_atoms_mask())
+
+    def lrmsd(self) -> float:
+        mask = np.isin(
+            self.state_ref.parent_structure.array.chain_id, self.ligand_chains
+        )
+        return self.rmsd_over(mask)
+
+    def fnat(self) -> float:
+        idx_ref = self.state_ref.get_contact_idx()
+        idx_mob = self.state_mob.get_contact_idx()
+        if len(idx_mob) == 0:
+            return 0.0
+        isec_size = np.sum(np.isin(idx_mob, idx_ref).all(axis=1))
+        return isec_size / len(idx_ref)
+
+    def dockq(self, d1: float = 8.5, d2: float = 1.5) -> float:
+        irms, lrms, fnat = self.irmsd(), self.lrmsd(), self.fnat()
+        lrmss = 1 / (1 + (irms / d1) ** 2)
+        irmss = 1 / (1 + (lrms / d2) ** 2)
+        return (fnat + lrmss + irmss) / 3
 
 
 if __name__ == "__main__":
