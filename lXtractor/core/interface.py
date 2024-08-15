@@ -1018,6 +1018,15 @@ class InterfaceComparator:
         :param min_spp_atoms: Minimum number of atoms necessary to superpose
             structures after `superpose_by` is applied.
         :raises AmbiguousData: if interfaces are not comparable.
+
+        .. note::
+            A ``str`` type of :attr:`superpose_by` is used to filter the
+            interface contacts to specified chains. For instance, setting it
+            with ``"A"`` will result in the selection of atom contact atoms
+            involving chain A as opposed to using only chain A contacts for
+            superposition. Hence, values ``"a"`` and ``"b"`` are essentially
+            equivalent since they'll result in the same selection of contact
+            atoms: those involved in the interface formation.
         """
         if not self.are_comparable(state_ref, state_mob):
             raise AmbiguousData("States are not comparable.")
@@ -1185,12 +1194,14 @@ class InterfaceComparator:
 
     def dockq(self, d1: float = 8.5, d2: float = 1.5) -> float:
         """
-        A DockQ score from Basu et al. (2016)
-        https://doi.org/10.1371/journal.pone.0161879_
+        A DockQ score from :cite:`sankar16`.
 
         :param d1: A constant to scale :meth:`lrmsd`.
         :param d2: A constant to scale :meth:`irmsd`.
         :return: DockQ score ranging from 0 (no match) to 1 (perfect match).
+
+        .. bibliography ::
+
         """
         irms, lrms, fnat = self.irmsd(), self.lrmsd(), self.fnat()
         lrmss = 1 / (1 + (irms / d1) ** 2)
