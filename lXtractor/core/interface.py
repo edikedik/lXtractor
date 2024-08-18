@@ -272,8 +272,8 @@ class InterfaceSASA:
         rec = dict(
             SASA_a_free=self.a_free,
             SASA_b_free=self.b_free,
-            SASA_a_comples=self.a_complex,
-            SASA_b_comples=self.b_complex,
+            SASA_a_complex=self.a_complex,
+            SASA_b_complex=self.b_complex,
             SASA_complex=self.complex,
             BSA_a=self.bsa_a,
             BSA_b=self.bsa_b,
