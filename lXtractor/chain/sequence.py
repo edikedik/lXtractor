@@ -1279,7 +1279,7 @@ class ChainSequence(lxs.Segment):
         return dest
 
     def summary(self, meta: bool = True, children: bool = False) -> pd.DataFrame:
-        parent_id = self.parent.id if self.parent is not None else np.NaN
+        parent_id = self.parent.id if self.parent is not None else np.nan
         vs = [parent_id, self.id, self.start, self.end]
         colnames = DefaultConfig["colnames"]
         cols = [

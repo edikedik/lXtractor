@@ -383,7 +383,7 @@ class Manager:
         results: abc.Iterable[CalcRes],
         vs_to_cols: bool = True,
         replace_errors: bool = True,
-        replace_errors_with: t.Any = np.NaN,
+        replace_errors_with: t.Any = np.nan,
         num_vs: int | None = None,
     ) -> pd.DataFrame | dict[str, list]:
         """
