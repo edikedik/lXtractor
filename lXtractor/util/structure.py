@@ -700,10 +700,10 @@ def load_structure(
 
         file = PDBFile.read(handle)
         array = file.get_structure(**kwargs)
-    elif fmt in ["cif", "pdbx"]:
-        from biotite.structure.io.pdbx import PDBxFile, get_structure
+    elif fmt in ["cif"]:
+        from biotite.structure.io.pdbx import CIFFile, get_structure
 
-        file = PDBxFile.read(handle)
+        file = CIFFile.read(handle)
         array = get_structure(file, **kwargs)
     elif fmt == "mmtf":
         from biotite.structure.io.mmtf import MMTFFile, get_structure
