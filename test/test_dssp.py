@@ -3,7 +3,8 @@ import shutil
 import pandas as pd
 import pytest
 
-from lXtractor.ext.dssp import dssp_run, DSSP_COLUMNS
+from lXtractor.ext import dssp_run
+from lXtractor.ext.dssp import DSSP_COLUMNS
 from lXtractor.util import load_structure
 from test.common import ALL_STRUCTURES
 

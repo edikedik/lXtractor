@@ -11,6 +11,8 @@ from more_itertools import unzip
 from lXtractor.core import GenericStructure, ProteinStructure
 from lXtractor.util import load_structure, save_structure, run_sp
 
+__all__ = ["dssp_to_df", "dssp_run", "dssp_set_ss_annotation"]
+
 DSSP_TO_SS8 = {"H": "H", "G": "G", "I": "I", "E": "E", "B": "B", "T": "T", "S": "S"}
 DSSP_TO_SS3 = {"H": "H", "G": "H", "I": "H", "E": "E", "B": "E"}
 DSSP_COLUMNS = (
@@ -74,6 +76,7 @@ def dssp_to_df(output: str | Path) -> pd.DataFrame:
         additional columns: "ss8" and "ss3" with secondary structure
         designations (original 8-state and converted 3-state).
     """
+
     def parse(lines: abc.Iterable[str]) -> abc.Iterable[str]:
         lines = filter(lambda x: bool(x.strip()), lines)
         lines = dropwhile(lambda x: not x.startswith("  #  RESIDUE AA "), lines)
