@@ -41,3 +41,11 @@ lXtractor.ext.uniprot module
    :members:
    :undoc-members:
    :show-inheritance:
+
+lXtractor.ext.dssp module
+-------------------------
+
+.. automodule:: lXtractor.ext.dssp
+   :members:
+   :undoc-members:
+   :show-inheritance:
