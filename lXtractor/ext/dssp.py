@@ -6,6 +6,7 @@ from tempfile import NamedTemporaryFile
 import biotite.structure as bst
 import numpy as np
 import pandas as pd
+from biotite.structure.io.pdb import PDBFile
 from more_itertools import unzip
 
 from lXtractor.core import GenericStructure, ProteinStructure
@@ -150,8 +151,16 @@ def dssp_run(
     else:
         raise TypeError(f"Invalid structure type {type(structure)}")
 
+    # New DSSP versions work primarily with mmCIF. However, mmCIF written by
+    # biotite is missing some important header info, and DSSP doesn't work with
+    # it. Hence, we write the array in PDB format and prepend a dummy header
+    # so DSSP is happy with the PURITY of the PDB format and the input not
+    # being GARBAGE (https://github.com/PDB-REDO/dssp/issues/10)
     with NamedTemporaryFile("w", suffix=".pdb") as tmp:
-        save_structure(a, Path(tmp.name))
+        file = PDBFile()
+        file.set_structure(a)
+        tmp.write("HEADER empty\n")
+        file.write(tmp)
         tmp.seek(0)
         output = run_sp(f"{exec_name} --output-format dssp {tmp.name}").stdout
         df = dssp_to_df(output)
