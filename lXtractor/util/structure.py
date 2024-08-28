@@ -27,7 +27,6 @@ from lXtractor.core.config import (
     POL_MARKS,
 )
 from lXtractor.core.exceptions import LengthMismatch, MissingData, FormatError
-from lXtractor.util.io import parse_suffix
 from lXtractor.util.typing import is_sequence_of
 
 __all__ = (
@@ -661,6 +660,8 @@ def load_structure(
         function used by ``biotite`` to convert the input into an ``AtomArray``.
     :return:
     """
+    from lXtractor.util.io import parse_suffix
+
     if isinstance(inp, Path):
         suffix = parse_suffix(inp)
         if suffix.endswith(".gz"):
@@ -737,6 +738,8 @@ def save_structure(array: bst.AtomArray, path: Path, **kwargs):
         ignored.
     :return: If the file was successfully written, returns the original `path`.
     """
+    from lXtractor.util.io import parse_suffix
+
     suffix = parse_suffix(path)
     if suffix.endswith(".gz"):
         fmt = path.suffixes[-2]
