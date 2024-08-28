@@ -8,10 +8,10 @@ from pathlib import Path
 
 from toolz import valfilter
 
+import lXtractor.util as util
 from lXtractor.core.base import UrlGetter
 from lXtractor.core.exceptions import FormatError
 from lXtractor.ext.base import StructureApiBase
-from lXtractor.util.io import fetch_text
 
 OBSOLETE_LINK = "https://files.wwpdb.org/pub/pdb/data/status/obsolete.dat"
 SERVICES = (
@@ -117,7 +117,7 @@ class PDB(StructureApiBase):
         :return: A dict where keys are obsolete PDB IDs and values are
             replacement PDB IDs or an empty string if no replacement was made.
         """
-        text = fetch_text(OBSOLETE_LINK, decode=True)
+        text = util.fetch_text(OBSOLETE_LINK, decode=True)
         lines = map(str.split, text.split("\n")[1:])
         return valfilter(
             bool, {x[2]: (x[3] if len(x) == 4 else "") for x in lines if len(x) >= 3}

@@ -33,11 +33,11 @@ from pyhmmer.plan7 import (
     Background,
 )
 
+import lXtractor.util as util
 from lXtractor.chain import ChainSequence, ChainStructure, Chain
 from lXtractor.core import Alignment as lXAlignment
 from lXtractor.core.base import AbstractResource
 from lXtractor.core.exceptions import MissingData
-from lXtractor.util import fetch_to_file
 
 LOGGER = logging.getLogger(__name__)
 
@@ -442,8 +442,8 @@ class Pfam(AbstractResource):
         base = self.path / "raw"
         base.mkdir(exist_ok=True, parents=True)
         return (
-            fetch_to_file(url_hmm, base / PFAM_HMM_NAME),
-            fetch_to_file(url_dat, base / PFAM_DAT_NAME),
+            util.fetch_to_file(url_hmm, base / PFAM_HMM_NAME),
+            util.fetch_to_file(url_dat, base / PFAM_DAT_NAME),
         )
 
     def parse(

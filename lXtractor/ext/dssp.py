@@ -9,8 +9,8 @@ import pandas as pd
 from biotite.structure.io.pdb import PDBFile
 from more_itertools import unzip
 
+import lXtractor.util as util
 from lXtractor.core import GenericStructure, ProteinStructure
-from lXtractor.util import load_structure, save_structure, run_sp
 
 __all__ = ["dssp_to_df", "dssp_run", "dssp_set_ss_annotation"]
 
@@ -145,7 +145,7 @@ def dssp_run(
     if isinstance(structure, (GenericStructure, ProteinStructure)):
         a = structure.array
     elif isinstance(structure, Path):
-        a = load_structure(structure)
+        a = util.load_structure(structure)
     elif isinstance(structure, bst.AtomArray):
         a = structure
     else:
@@ -162,7 +162,7 @@ def dssp_run(
         tmp.write("HEADER empty\n")
         file.write(tmp)
         tmp.seek(0)
-        output = run_sp(f"{exec_name} --output-format dssp {tmp.name}").stdout
+        output = util.run_sp(f"{exec_name} --output-format dssp {tmp.name}").stdout
         df = dssp_to_df(output)
 
     if set_ss_annotation and not isinstance(structure, Path):

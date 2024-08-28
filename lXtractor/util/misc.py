@@ -31,6 +31,7 @@ __all__ = (
     "valgroup",
     "all_logging_disabled",
     "json_to_molgraph",
+    "molgraph_to_json",
     "graph_reindex_nodes",
     "get_cpu_count"
 )

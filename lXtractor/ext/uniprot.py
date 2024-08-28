@@ -11,9 +11,8 @@ from urllib.parse import urlencode
 import pandas as pd
 from more_itertools import chunked_even
 
+import lXtractor.util as util
 from lXtractor.ext.base import ApiBase
-from lXtractor.util import read_fasta, write_fasta
-from lXtractor.util.io import fetch_text, fetch_chunks, fetch_urls
 
 BASE_URL = "https://rest.uniprot.org/uniprotkb/stream"
 T = t.TypeVar("T")
@@ -121,7 +120,7 @@ class UniProt(ApiBase):
         if dir_ is not None and not overwrite:
             accessions = _filter_existing(accessions, dir_, "fasta")
         chunks = map(tuple, chunked_even(accessions, self.chunk_size))
-        fetched, missed = fetch_urls(
+        fetched, missed = util.fetch_urls(
             self.url_getters["sequences"],
             chunks,
             "fasta",
@@ -132,13 +131,13 @@ class UniProt(ApiBase):
             num_threads=self.num_threads,
             verbose=self.verbose,
         )
-        seqs = read_fasta("".join(map(op.itemgetter(1), fetched)), strip_id=False)
+        seqs = util.read_fasta("".join(map(op.itemgetter(1), fetched)), strip_id=False)
 
         if dir_ is not None:
             seqs, seqs_ = tee(seqs)
             for h, s in seqs_:
                 acc = h.split("|")[1]
-                write_fasta([(h, s)], dir_ / f"{acc}.fasta")
+                util.write_fasta([(h, s)], dir_ / f"{acc}.fasta")
 
         if callback is not None:
             seqs = map(callback, seqs)
@@ -163,7 +162,7 @@ class UniProt(ApiBase):
         :return: A list of texts per chunk or a single data frame.
         """
         chunks = ((tuple(c), fields) for c in chunked_even(accessions, self.chunk_size))
-        fetched, missed = fetch_urls(
+        fetched, missed = util.fetch_urls(
             self.url_getters["info"],
             chunks,
             "tsv",
@@ -204,9 +203,9 @@ def fetch_uniprot(
 
     def fetch_chunk(chunk: abc.Iterable[str]):
         full_url = make_url(chunk, fmt, fields)
-        return fetch_text(full_url, decode=True)
+        return util.fetch_text(full_url, decode=True)
 
-    results = fetch_chunks(acc, fetch_chunk, chunk_size, **kwargs)
+    results = util.fetch_chunks(acc, fetch_chunk, chunk_size, **kwargs)
 
     return "".join(map(op.itemgetter(1), results))
 

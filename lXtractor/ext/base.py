@@ -9,10 +9,10 @@ from collections import abc
 from itertools import repeat
 from pathlib import Path
 
+import lXtractor.util as util
 from lXtractor.core import GenericStructure, DefaultConfig
 from lXtractor.core.base import UrlGetter
 from lXtractor.core.exceptions import FormatError
-from lXtractor.util import fetch_urls
 
 if t.TYPE_CHECKING:
     from lXtractor.chain import ChainSequence, ChainStructure, Chain
@@ -197,7 +197,7 @@ class StructureApiBase(ApiBase):
         if parse and callback is None:
             callback = parse_structure_callback
 
-        return fetch_urls(
+        return util.fetch_urls(
             self.url_getters["structures"],
             zip(ids, repeat(fmt)),
             fmt,
@@ -237,7 +237,7 @@ class StructureApiBase(ApiBase):
             arguments and the second argument is the dictionary with downloaded
             data. Remaining inputs are arguments that failed to fetch.
         """
-        return fetch_urls(
+        return util.fetch_urls(
             self.url_getters[service_name],
             url_args,
             "json",

@@ -21,24 +21,12 @@ from more_itertools import unique_everseen
 from toolz import keyfilter
 
 import lXtractor.core.segment as lxs
+import lXtractor.util as util
 from lXtractor.core.base import ResNameDict
 from lXtractor.core.config import AtomMark, DefaultConfig, EMPTY_ALTLOC
 from lXtractor.core.exceptions import NoOverlap, InitError, LengthMismatch, MissingData
 from lXtractor.core.ligand import Ligand, make_ligand, ligands_from_atom_marks
-from lXtractor.util import get_files
-from lXtractor.util.misc import json_to_molgraph, graph_reindex_nodes, molgraph_to_json
-from lXtractor.util.structure import (
-    filter_selection,
-    load_structure,
-    save_structure,
-    filter_solvent_extended,
-    iter_residue_masks,
-    mark_polymer_type,
-    to_graph,
-    find_first_polymer_type,
-    extend_residue_mask,
-    compare_coord,
-)
+
 
 LOGGER = logging.getLogger(__name__)
 RES_DICT = ResNameDict()
@@ -147,9 +135,9 @@ class GenericStructure:
         if isinstance(graph, rx.PyGraph):
             self._graph = graph
         elif isinstance(graph, dict | PathLike):
-            self._graph = json_to_molgraph(graph)
+            self._graph = util.json_to_molgraph(graph)
         else:
-            self._graph = to_graph(array, True)
+            self._graph = util.to_graph(array, True)
 
         if len(self._graph) != len(self._array):
             raise LengthMismatch(
@@ -178,7 +166,7 @@ class GenericStructure:
                 )
             self._atom_marks = atom_marks
             # determine primary polymer type
-            primary_pol_type = find_first_polymer_type(atom_marks)
+            primary_pol_type = util.find_first_polymer_type(atom_marks)
             if not isinstance(ligands, list):
                 _ligands = list(ligands_from_atom_marks(self))
             else:
@@ -240,7 +228,7 @@ class GenericStructure:
                     self._name == other._name
                     and len(self) == len(other)
                     and np.all(self.atom_marks == other.atom_marks)
-                    and compare_coord(self.array, other.array)
+                    and util.compare_coord(self.array, other.array)
                     and self.ligands == other.ligands
             )
         return False
@@ -432,7 +420,7 @@ class GenericStructure:
             altloc = "all"
         if isinstance(altloc, str):
             kwargs["altloc"] = altloc
-        array = load_structure(inp, **kwargs)
+        array = util.load_structure(inp, **kwargs)
         empty_id = DefaultConfig["unknowns"]["structure_id"]
         if hasattr(array, "altloc_id"):
             array.altloc_id[np.isin(array.altloc_id, EMPTY_ALTLOC)] = ""
@@ -444,7 +432,7 @@ class GenericStructure:
                 f"NMR structures are not supported."
             )
         if isinstance(inp, Path):
-            files = get_files(inp.parent)
+            files = util.get_files(inp.parent)
             name = inp.stem.split(".")[0]
             marks_name, graph_name = f"{name}.npy", f"{name}.json"
             marks = files.get(marks_name, None)
@@ -482,13 +470,13 @@ class GenericStructure:
         """
         if not isinstance(path, Path):
             path = Path(path)
-        saved_path = save_structure(self.array, path)
+        saved_path = util.save_structure(self.array, path)
         stem = path.stem.split(".")[0]
         if atom_marks:
             np.save(path.parent / f"{stem}.npy", self.atom_marks)
         if graph:
             json_path = path.parent / f"{stem}.json"
-            molgraph_to_json(self.graph, path=json_path)
+            util.molgraph_to_json(self.graph, path=json_path)
         return saved_path
 
     def get_sequence(self) -> abc.Generator[tuple[str, str, int]]:
@@ -567,7 +555,7 @@ class GenericStructure:
 
         _mask = mask | ligand_mask
         a = self.array[_mask]
-        g = graph_reindex_nodes(self.graph.subgraph(np.where(_mask)[0]))
+        g = util.graph_reindex_nodes(self.graph.subgraph(np.where(_mask)[0]))
         m = self.atom_marks[_mask]
         if copy:
             a = a.copy()
@@ -785,7 +773,7 @@ class GenericStructure:
 
         def _get_mask(a, res_id, atom_names):
             if res_id:
-                m = filter_selection(a, res_id, atom_names)
+                m = util.filter_selection(a, res_id, atom_names)
             else:
                 if atom_names:
                     m = np.isin(a.atom_name, atom_names)
@@ -903,8 +891,8 @@ def mark_atoms(
     """
     a = structure.array
 
-    is_solv = filter_solvent_extended(a)
-    pol_types = mark_polymer_type(a, DefaultConfig["structure"]["n_monomers"])
+    is_solv = util.filter_solvent_extended(a)
+    pol_types = util.mark_polymer_type(a, DefaultConfig["structure"]["n_monomers"])
     is_nuc, is_pep, is_carb = (pol_types == p for p in ["n", "p", "c"])
 
     is_any_pol = pol_types != "x"
@@ -938,7 +926,7 @@ def mark_atoms(
     # Annotate small-molecule ligands
     is_putative_lig = ~(is_any_pol | is_solv)
     if np.any(is_putative_lig):
-        for m_res in iter_residue_masks(a):
+        for m_res in util.iter_residue_masks(a):
             # A mask that is a single ligand residue
             m_lig = is_putative_lig & m_res
             lig = make_ligand(m_lig, is_pol, structure)
@@ -1044,7 +1032,7 @@ def mark_atoms_g(
     for cc_idx in map(list, rx.connected_components(g)):
         # Make residue mask corresponding to all atoms from residues
         # of the connected component atom indices
-        r_mask = extend_residue_mask(a, cc_idx)
+        r_mask = util.extend_residue_mask(a, cc_idx)
         n_resi = bst.get_residue_count(a[r_mask])
 
         # Check if the single residue CC is a solvent.
@@ -1059,7 +1047,7 @@ def mark_atoms_g(
         if n_resi < n_monomers:
             continue
 
-        pol_type = find_first_polymer_type(a[r_mask], n_monomers)
+        pol_type = util.find_first_polymer_type(a[r_mask], n_monomers)
         if pol_type != "x":
             polymers[pol_type].append(r_mask)
             polymer_sizes[pol_type] += n_resi
@@ -1101,7 +1089,7 @@ def mark_atoms_g(
     if len(het_pol_idx) > 0:
         starts_het_pol = np.unique(bst.get_residue_starts_for(a, het_pol_idx))
         for r_mask in bst.get_residue_masks(a, starts_het_pol):
-            het_pol_type = find_first_polymer_type(a[r_mask], min_size=1)
+            het_pol_type = util.find_first_polymer_type(a[r_mask], min_size=1)
             if het_pol_type == prim_pol_type:
                 continue
             lig = make_ligand(r_mask, is_pol & ~r_mask, s)
@@ -1122,7 +1110,7 @@ def mark_atoms_g(
         cc_idx = sg.subgraph(cc_idx).nodes()
         # Obtain a mask pointing to CC residues that were not previously
         # marked as polymer or solvent
-        r_mask = extend_residue_mask(a, cc_idx)
+        r_mask = util.extend_residue_mask(a, cc_idx)
         # Avoid creating duplicated ligands by storing already assessed atom
         # indices
         r_mask[list(cc_idx_viewed)] = False

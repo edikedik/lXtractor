@@ -3,7 +3,10 @@ from __future__ import annotations
 import typing as t
 from collections import abc
 
-T = t.TypeVar('T')
+T = t.TypeVar("T")
+
+
+__all__ = ("is_type", "is_iterable_of", "is_sequence_of")
 
 
 def is_iterable_of(
@@ -22,5 +25,5 @@ def is_type(x: t.Any, _type: t.Type[T]) -> t.TypeGuard[T]:
     return isinstance(x, _type)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise RuntimeError

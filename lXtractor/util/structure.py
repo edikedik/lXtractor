@@ -27,7 +27,6 @@ from lXtractor.core.config import (
     POL_MARKS,
 )
 from lXtractor.core.exceptions import LengthMismatch, MissingData, FormatError
-from lXtractor.util.typing import is_sequence_of
 
 __all__ = (
     "calculate_dihedral",
@@ -170,6 +169,7 @@ def filter_selection(
         `res_id`.
     :return: A binary mask that is ``True`` for filtered atoms.
     """
+    from ..util import is_sequence_of
 
     if res_id is None:
         res_id, _ = bst.get_residues(array)

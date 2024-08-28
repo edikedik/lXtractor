@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import logging
 import subprocess as sp
-import sys
 import typing as t
 import urllib
 from collections import abc

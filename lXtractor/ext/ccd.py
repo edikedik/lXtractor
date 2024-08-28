@@ -12,9 +12,9 @@ import pandas as pd
 from more_itertools import split_at, split_before
 from toolz import valmap, valfilter
 
+import lXtractor.util as util
 from lXtractor.core.base import AbstractResource
 from lXtractor.core.exceptions import MissingData
-from lXtractor.util import fetch_to_file
 
 LOGGER = logging.getLogger(__name__)
 RESOURCES = Path(__file__).parent.parent / "resources"
@@ -214,7 +214,7 @@ class CCD(AbstractResource, UserDict[str, dict[str, Field]]):
             return raw_path
 
         LOGGER.info(f"Fetching CCD to {raw_path}")
-        fetch_to_file(url, raw_path)
+        util.fetch_to_file(url, raw_path)
 
         return raw_path
 

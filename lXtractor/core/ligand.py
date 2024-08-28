@@ -9,16 +9,11 @@ import pandas as pd
 import rustworkx as rx
 from biotite import structure as bst
 from numpy import typing as npt
-from toolz import keyfilter
 
+import lXtractor.util as util
 from lXtractor.core.config import DefaultConfig, AtomMark, POL_MARKS
 from lXtractor.core.exceptions import FormatError, LengthMismatch
-from lXtractor.util.structure import (
-    find_contacts,
-    find_first_polymer_type,
-    extend_residue_mask,
-    compare_arrays,
-)
+
 
 if t.TYPE_CHECKING:
     from lXtractor.core.structure import GenericStructure
@@ -135,7 +130,7 @@ class Ligand:
             and np.all(self.mask == other.mask)
             and np.all(self.contact_mask == other.contact_mask)
             and np.all(self.ligand_idx == other.ligand_idx)
-            and compare_arrays(self.dist, other.dist)
+            and util.compare_arrays(self.dist, other.dist)
         )
 
     @property
@@ -313,7 +308,7 @@ def make_ligand(
         return None
 
     # Find contacts
-    m_cont, dist, ligand_idx = find_contacts(a, m_lig)
+    m_cont, dist, ligand_idx = util.find_contacts(a, m_lig)
     m_cont[~m_pol] = 0
     dist[~m_pol] = -1
 
@@ -330,7 +325,7 @@ def make_ligand(
     if lig_num_residues == 1:
         name, res_id = a[m_lig].res_name[0], a[m_lig].res_id[0]
     elif lig_num_residues > 1:
-        lig_poly_type = find_first_polymer_type(a[m_lig])
+        lig_poly_type = util.find_first_polymer_type(a[m_lig])
         # _, lig_poly_type = find_primary_polymer_type(a[m_lig])
         if lig_poly_type == "x":
             LOGGER.warning(
@@ -358,7 +353,7 @@ def ligands_from_atom_marks(
     a, m, g = structure.array, structure.atom_marks, structure.graph
     assert len(a) == len(m)
 
-    pol_type = find_first_polymer_type(m)
+    pol_type = util.find_first_polymer_type(m)
     if pol_type == "x":
         LOGGER.warning(
             f"Failed to determine polymer type for structure {structure.name}. "
@@ -394,7 +389,7 @@ def ligands_from_atom_marks(
 
     for cc_idx in map(list, rx.connected_components(sg)):
         cc_idx = sg.subgraph(cc_idx).nodes()
-        r_mask = extend_residue_mask(a, cc_idx)
+        r_mask = util.extend_residue_mask(a, cc_idx)
         r_mask[list(cc_idx_viewed)] = False
 
         if not np.any(r_mask):

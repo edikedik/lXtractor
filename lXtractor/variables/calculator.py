@@ -11,8 +11,8 @@ from itertools import repeat
 from more_itertools import peekable
 from toolz import curry
 
+import lXtractor.util as util
 from lXtractor.core.exceptions import FailedCalculation
-from lXtractor.util import apply
 from lXtractor.variables.base import (
     AbstractCalculator,
     ERT,
@@ -77,7 +77,7 @@ def calculate(
 
     inputs = zip(o, v, m, strict=True)
     fn = _calc_on_object(valid_exceptions=valid_exceptions)
-    yield from apply(fn, inputs, verbose, "Calculating variables", num_proc, **kwargs)
+    yield from util.apply(fn, inputs, verbose, "Calculating variables", num_proc, **kwargs)
 
 
 class GenericCalculator(AbstractCalculator):
@@ -145,7 +145,7 @@ class GenericCalculator(AbstractCalculator):
             strict=True,
         )
         fn = _try_calculate(valid_exceptions=self.valid_exceptions)
-        yield from apply(
+        yield from util.apply(
             fn, inputs, self.verbose, "Calculating variables", self.num_proc
         )
 
@@ -160,7 +160,7 @@ class GenericCalculator(AbstractCalculator):
             m = repeat(m, len(o))
         inputs = zip(o, repeat(v, len(o)), m)
         fn = _try_calculate(valid_exceptions=self.valid_exceptions)
-        yield from apply(
+        yield from util.apply(
             fn, inputs, self.verbose, "Calculating variables", self.num_proc
         )
 

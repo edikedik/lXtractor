@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 
 import pandas as pd
 
-from lXtractor.util.io import fetch_text
+import lXtractor.util as util
 
 __all__ = ("fetch_orthologs_info",)
 
@@ -30,7 +30,9 @@ def fetch_orthologs_info(
         params["orthologType"] = ortholog_type
 
     res = json.loads(
-        fetch_text(url, decode=True, params=urlencode(params).encode("utf-8"), **kwargs)
+        util.fetch_text(
+            url, decode=True, params=urlencode(params).encode("utf-8"), **kwargs
+        )
     )
 
     if to_df:

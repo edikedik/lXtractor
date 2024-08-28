@@ -11,11 +11,10 @@ import biotite.structure as bst
 import numpy as np
 from toolz import curry
 
+import lXtractor.util as util
 from lXtractor.chain import ChainStructure
 from lXtractor.chain import filter_selection_extended, subset_to_matching
 from lXtractor.core.exceptions import MissingData, LengthMismatch, InitError
-from lXtractor.util import apply
-from lXtractor.util.seq import biotite_align
 from lXtractor.util.structure import filter_to_common_atoms
 
 LOGGER = logging.getLogger(__name__)
@@ -175,7 +174,7 @@ def align_and_superpose_pair(
         f_str_sup,
         m_str_sup,
         skip_if_match=skip_aln_if_match,
-        align_method=biotite_align,
+        align_method=util.biotite_align,
         name="Mobile",
     )
     f_mask, m_mask = filter_to_common_atoms(
@@ -296,7 +295,7 @@ def superpose_pairwise(
             skip_aln_if_match=skip_aln_if_match, dist_fn=dist_fn
         )
     )
-    results = apply(
+    results = util.apply(
         fn, pairs, verbose, "Superposing pairs", num_proc, n, use_joblib=True, **kwargs
     )
     yield from map(lambda x: SuperposeOutput(*x), results)

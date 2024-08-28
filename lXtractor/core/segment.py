@@ -16,6 +16,7 @@ import networkx as nx
 from more_itertools import always_reversible, powerset, take, nth, unique_everseen
 from tqdm.auto import tqdm
 
+import lXtractor.util as util
 from lXtractor.core.base import Ord, NamedTupleT
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import (
@@ -24,7 +25,6 @@ from lXtractor.core.exceptions import (
     OverlapError,
     FormatError,
 )
-from lXtractor.util.misc import is_valid_field_name
 
 if t.TYPE_CHECKING:
     from lXtractor.variables.base import Variables
@@ -497,7 +497,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         return Segment(self.start - idx, self.end - idx, self.name, seqs=self._seqs)
 
     def _validate_seq(self, name: str, seq: abc.Sequence):
-        if not is_valid_field_name(name):
+        if not util.is_valid_field_name(name):
             raise FormatError(
                 f"Invalid field name {name}. "
                 f"Please use a valid variable name starting with a letter"
@@ -528,7 +528,7 @@ class Segment(abc.Sequence[NamedTupleT]):
         :return: returns nothing. This operation mutates `attr:`seqs`.
         :raise ValueError: If the `name` is reserved by another segment.
         """
-        if not is_valid_field_name(name):
+        if not util.is_valid_field_name(name):
             raise ValueError(
                 f"Invalid field name {name}. "
                 f"Please use a valid variable name starting with a letter"

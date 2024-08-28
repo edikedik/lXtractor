@@ -27,12 +27,11 @@ from more_itertools import unzip
 from toolz import itemfilter, valmap, groupby, valfilter, keymap
 
 import lXtractor.core.segment as lxs
+import lXtractor.util as util
 from lXtractor import resources as local
-from lXtractor.core.base import AbstractResource
 from lXtractor.chain import ChainSequence
+from lXtractor.core.base import AbstractResource
 from lXtractor.core.exceptions import MissingData
-from lXtractor.util.io import fetch_to_file
-from lXtractor.util.misc import col2col
 
 _Mkey = t.TypeVar("_Mkey", ChainSequence, tuple[str, str], Path)
 
@@ -195,9 +194,9 @@ class SIFTS(AbstractResource):
 
     def _prepare_id_map(self, df: pd.DataFrame) -> dict[str, list[str]]:
         self.id_mapping = {
-            **col2col(df, "UniProt_ID", "PDB_Chain"),
-            **col2col(df, "PDB_Chain", "UniProt_ID"),
-            **col2col(df, "PDB", "Chain"),
+            **util.col2col(df, "UniProt_ID", "PDB_Chain"),
+            **util.col2col(df, "PDB_Chain", "UniProt_ID"),
+            **util.col2col(df, "PDB", "Chain"),
         }
         LOGGER.debug("Created mapping UniProt ID <-> PDB ID")
         return self.id_mapping
@@ -337,7 +336,7 @@ class SIFTS(AbstractResource):
 
         LOGGER.info(f"Fetching SIFTS to {raw_path}")
 
-        fetch_to_file(url, raw_path)
+        util.fetch_to_file(url, raw_path)
 
         LOGGER.info(f"Downloaded sifts to {raw_path}")
 

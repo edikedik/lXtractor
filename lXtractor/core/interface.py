@@ -21,10 +21,9 @@ from more_itertools import unique_everseen, ilen
 from scipy.spatial import KDTree
 from toolz import curry, compose_left, valmap
 
+import lXtractor.util as util
 from lXtractor.core import GenericStructure, DefaultConfig
 from lXtractor.core.exceptions import MissingData, AmbiguousData, LengthMismatch
-from lXtractor.util import get_files
-from lXtractor.util.misc import molgraph_to_json
 
 _PartnerUnit = abc.Sequence[str] | str
 _Partners: t.TypeAlias = tuple[_PartnerUnit, _PartnerUnit] | str
@@ -898,7 +897,7 @@ class Interface:
         :raises MissingData: If required metadata is missing.
         """
         path = Path(path)
-        files = get_files(path)
+        files = util.get_files(path)
 
         if "meta.json" not in files:
             raise FileNotFoundError(f"No metadata file in {path}.")
@@ -963,7 +962,7 @@ class Interface:
         parent_path = base / f"{self.parent_structure.name}.{str_fmt}"
         parent_path = self.parent_structure.write(parent_path)
         parent_filename = parent_path.name
-        graph_path = molgraph_to_json(self.G, base / "graph.json")
+        graph_path = util.molgraph_to_json(self.G, base / "graph.json")
 
         meta = dict(
             parent=self.parent_structure.name,
