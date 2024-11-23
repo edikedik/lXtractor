@@ -246,3 +246,12 @@ def test_sort_groupby():
 
     groups = list(cl.sort(get_name).groupby(get_name))
     assert [x[0] for x in groups] == ["A", "B"]
+
+
+def test_to_fasta(tmp_path):
+    s1 = ChainSequence.from_string("A", name="A")
+    s2 = ChainSequence.from_string("B", name="B")
+    path = tmp_path / "test.fasta"
+    fasta = ChainList([s1, s2]).to_fasta(path)
+    assert fasta == ">A|1-1\nA\n>B|1-1\nB"
+    assert path.read_text() == fasta

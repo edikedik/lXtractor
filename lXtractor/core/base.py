@@ -103,6 +103,12 @@ class Ord(t.Protocol[_T]):
         ...
 
 
+@t.runtime_checkable
+class SupportsLT(t.Protocol[_T]):
+    def __le__(self, other: _T) -> bool:
+        ...
+
+
 @runtime_checkable
 class SupportsWrite(t.Protocol):
     """

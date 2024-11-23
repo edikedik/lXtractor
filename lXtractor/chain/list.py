@@ -10,13 +10,14 @@ import typing as t
 from collections import abc
 from functools import partial
 from itertools import chain, zip_longest, tee, groupby
+from pathlib import Path
 
 import pandas as pd
 from more_itertools import nth, peekable, unique_everseen
 
 import lXtractor.core.segment as lxs
 from lXtractor.chain.base import is_chain_type_iterable, is_chain_type
-from lXtractor.core.base import Ord, ApplyT
+from lXtractor.core.base import Ord, ApplyT, SupportsLT
 from lXtractor.core.config import DefaultConfig
 from lXtractor.core.exceptions import MissingData
 from lXtractor.util import apply
@@ -634,8 +635,31 @@ class ChainList(abc.MutableSequence[CT]):
         for g, gg in groupby(self._chains, key):
             yield g, self.__class__(gg)
 
-    def sort(self, key: abc.Callable[[CT], T] = lambda x: x.id) -> ChainList[CT]:
+    def sort(
+        self, key: abc.Callable[[CT], SupportsLT] = lambda x: x.id
+    ) -> ChainList[CT]:
+        """
+        Sort sequences in this list by a given key.
+
+        :param key: A callable accepting a single chain and returning some type
+            that can be used for ordering elements.
+        :return:
+        """
         return self.__class__(sorted(self._chains, key=key))
+
+    def to_fasta(self, output_path: Path | str) -> str:
+        """
+        Convert sequences to FASTA format.
+
+        :param output_path: If provided, the method will write sequences here.
+        :return: A single fasta-formatted string.
+        """
+        seqs = ((s.id, s.seq1) for s in self.sequences)
+        fasta = "\n".join(f">{s[0]}\n{s[1]}" for s in seqs)
+        if output_path is not None:
+            output_path = Path(output_path)
+            output_path.write_text(fasta)
+        return fasta
 
 
 def _wrap_children(children: abc.Iterable[CT] | None) -> ChainList[CT]:

@@ -569,7 +569,7 @@ class Pfam(AbstractResource):
             rmtree(self.path / "raw")
         elif parsed:
             rmtree(self.path / "parsed")
-        else:
+        else:   
             rmtree(self.path)
 
     def _parse_dat(self, path: Path) -> pd.DataFrame:
