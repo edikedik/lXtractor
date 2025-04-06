@@ -1192,7 +1192,8 @@ class ChainSequence(lxs.Segment):
             raise InitError(f"{name_seq} must be present")
 
         if name_meta in files:
-            df = pd.read_csv(files[name_meta], sep=r"\s+", names=["Title", "Value"])
+            # df = pd.read_csv(files[name_meta], sep=r"\s+", names=["Title", "Value"])
+            df = pd.read_csv(files[name_meta], sep="\t", names=["Title", "Value"])
             meta = dict(zip(df["Title"], df["Value"]))
             if DefaultConfig["metadata"]["name"] in meta:
                 name = meta[DefaultConfig["metadata"]["name"]]

@@ -9,6 +9,7 @@ from collections import abc
 from itertools import product
 
 import networkx as nx
+import rustworkx as rx
 from more_itertools import windowed
 from toolz import groupby
 
@@ -28,10 +29,8 @@ LOGGER = logging.getLogger(__name__)
 __all__ = (
     "list_ancestors_names",
     "list_ancestors",
-    "make",
     "make_filled",
-    "make_str_tree",
-    "make_obj_tree",
+    "make_id_tree",
     "recover",
 )
 
@@ -158,89 +157,89 @@ def make_filled(name: str, _t: CT | t.Type[CT]) -> CT:
     raise RuntimeError("...")
 
 
-def make_obj_tree(
-    chains: abc.Iterable[CT], connect: bool = False, check_is_tree: bool = True
-) -> nx.DiGraph:
-    """
-    Make an ancestral tree -- a directed graph representing ancestral
-    relationships between chains. The nodes of the tree are Chain*-type
-    objects. Hence, they must be hashable. This restricts types of sequences
-    valid for :class:`ChainSequence <lXtractor.core.chain.sequence.
-    ChainSequence>` to ``abc.Sequence[abc.Hashable]``.
-
-    As a useful side effect, this function can aid in filling the gaps in the
-    actual tree indicated by the id-relationship suggested by the "id" field
-    of the ``meta`` property. In other words, if a segment S|1-2 was obtained
-    by spawning from S|1-5, S|1-2's id will reflect this:
-
-    >>> s = make_filled('S|1-5', ChainSequence.make_empty())
-    >>> c12 = s.spawn_child(1, 2)
-    >>> c12
-    S|1-2<-(S|1-5)
-
-    However, if S|1-5 was lost (e.g., by writing/reading S|1-2 to/from disk),
-    and S|1-2.parent is None, we can use ID stored in meta to recover ancestral
-    relationships. This function will attend to such cases and create a filler
-    object S|1-5 with a "*"-filled sequence.
-
-    >>> c12.parent = None
-    >>> c12
-    S|1-2
-    >>> c12.meta['id']
-    'S|1-2<-(S|1-5)'
-    >>> ct = make_obj_tree([c12],connect=True)
-    >>> assert len(ct.nodes) == 2
-    >>> [n.id for n in ct.nodes]
-    ['S|1-2<-(S|1-5)', 'S|1-5']
-
-    :param chains: A homogeneous iterable of Chain*-type objects.
-    :param connect: If ``True``, connect both supplied and created filler
-        objects via ``children`` and ``parent`` attributes.
-    :param check_is_tree: If ``True``, check if the obtained graph is actually
-        a tree. If it's not, raise ``ValueError``.
-    :return: A networkx's directed graph with Chain*-type objects as nodes.
-    """
-    if not isinstance(chains, ChainList):
-        chains = ChainList(chains)
-    tree = nx.DiGraph()
-    if len(chains) == 0:
-        return tree
-
-    # Populate objects' tree
-    for c in chains:
-        if not tree.has_node(c):
-            tree.add_node(c)
-        parents = list_ancestors(c)
-        if parents:
-            # fails to recognize parents as iterable
-            for child, parent in windowed([c, *parents], 2):  # type: ignore
-                tree.add_edge(parent, child)
-
-    # Make tree fully connected and populate `parent`, `children` attributes
-    name2node = {node_name(n): n for n in tree.nodes}
-    node_example = chains[0]
-    node: CT
-    for node in list(tree.nodes):
-        names = [node_name(node), *list_ancestors_names(node)]
-        for child_name, parent_name in windowed(names, 2):
-            assert child_name is not None
-            if parent_name is None:
-                continue
-            parent_obj = name2node.get(
-                parent_name, make_filled(parent_name, node_example)
-            )
-            name2node[parent_name] = parent_obj
-            child_obj = name2node[child_name]
-            tree.add_edge(parent_obj, child_obj)
-            if connect:
-                if child_obj not in parent_obj.children:
-                    parent_obj.children.append(child_obj)
-                child_obj.parent = parent_obj
-
-    if check_is_tree:
-        _check_tree(tree)
-
-    return tree
+# def make_obj_tree(
+#     chains: abc.Iterable[CT], connect: bool = False, check_is_tree: bool = True
+# ) -> nx.DiGraph:
+#     """
+#     Make an ancestral tree -- a directed graph representing ancestral
+#     relationships between chains. The nodes of the tree are Chain*-type
+#     objects. Hence, they must be hashable. This restricts types of sequences
+#     valid for :class:`ChainSequence <lXtractor.core.chain.sequence.
+#     ChainSequence>` to ``abc.Sequence[abc.Hashable]``.
+#
+#     As a useful side effect, this function can aid in filling the gaps in the
+#     actual tree indicated by the id-relationship suggested by the "id" field
+#     of the ``meta`` property. In other words, if a segment S|1-2 was obtained
+#     by spawning from S|1-5, S|1-2's id will reflect this:
+#
+#     >>> s = make_filled('S|1-5', ChainSequence.make_empty())
+#     >>> c12 = s.spawn_child(1, 2)
+#     >>> c12
+#     S|1-2<-(S|1-5)
+#
+#     However, if S|1-5 was lost (e.g., by writing/reading S|1-2 to/from disk),
+#     and S|1-2.parent is None, we can use ID stored in meta to recover ancestral
+#     relationships. This function will attend to such cases and create a filler
+#     object S|1-5 with a "*"-filled sequence.
+#
+#     >>> c12.parent = None
+#     >>> c12
+#     S|1-2
+#     >>> c12.meta['id']
+#     'S|1-2<-(S|1-5)'
+#     >>> ct = make_obj_tree([c12],connect=True)
+#     >>> assert len(ct.nodes) == 2
+#     >>> [n.id for n in ct.nodes]
+#     ['S|1-2<-(S|1-5)', 'S|1-5']
+#
+#     :param chains: A homogeneous iterable of Chain*-type objects.
+#     :param connect: If ``True``, connect both supplied and created filler
+#         objects via ``children`` and ``parent`` attributes.
+#     :param check_is_tree: If ``True``, check if the obtained graph is actually
+#         a tree. If it's not, raise ``ValueError``.
+#     :return: A networkx's directed graph with Chain*-type objects as nodes.
+#     """
+#     if not isinstance(chains, ChainList):
+#         chains = ChainList(chains)
+#     tree = nx.DiGraph()
+#     if len(chains) == 0:
+#         return tree
+#
+#     # Populate objects' tree
+#     for c in chains:
+#         if not tree.has_node(c):
+#             tree.add_node(c)
+#         parents = list_ancestors(c)
+#         if parents:
+#             # fails to recognize parents as iterable
+#             for child, parent in windowed([c, *parents], 2):  # type: ignore
+#                 tree.add_edge(parent, child)
+#
+#     # Make tree fully connected and populate `parent`, `children` attributes
+#     name2node = {node_name(n): n for n in tree.nodes}
+#     node_example = chains[0]
+#     node: CT
+#     for node in list(tree.nodes):
+#         names = [node_name(node), *list_ancestors_names(node)]
+#         for child_name, parent_name in windowed(names, 2):
+#             assert child_name is not None
+#             if parent_name is None:
+#                 continue
+#             parent_obj = name2node.get(
+#                 parent_name, make_filled(parent_name, node_example)
+#             )
+#             name2node[parent_name] = parent_obj
+#             child_obj = name2node[child_name]
+#             tree.add_edge(parent_obj, child_obj)
+#             if connect:
+#                 if child_obj not in parent_obj.children:
+#                     parent_obj.children.append(child_obj)
+#                 child_obj.parent = parent_obj
+#
+#     if check_is_tree:
+#         _check_tree(tree)
+#
+#     return tree
 
 
 def _connect(_child_name: str, _parent_name: str, _tree: nx.DiGraph):
@@ -258,7 +257,7 @@ def _connect(_child_name: str, _parent_name: str, _tree: nx.DiGraph):
             _parent_obj.children.append(_child_obj)
 
 
-def make_str_tree(
+def make_id_tree(
     chains: abc.Iterable[CT_], connect: bool = False, check_is_tree: bool = True
 ) -> nx.DiGraph:
     """
@@ -310,29 +309,29 @@ def make_str_tree(
     return tree
 
 
-def make(
-    chains: abc.Iterable[CT_],
-    connect: bool = False,
-    objects: bool = False,
-    check_is_tree: bool = True,
-) -> nx.DiGraph:
-    """
-    Make an ancestral tree -- a directed graph representing ancestral
-    relationships between chains.
-
-    :param chains: An iterable of Chain*-type objects.
-    :param connect: Connect actual objects by populating ``.children`` and
-        ``.parent`` attributes.
-    :param objects: Create an object tree using :func:`make_obj_tree`.
-        Otherwise, create a "string" tree using :func:`make_str_tree`.
-        Check the docs of these functions to understand the differences.
-    :param check_is_tree: If ``True``, check if the obtained graph is actually
-        a tree. If it's not, raise ``ValueError``.
-    :return:
-    """
-    if objects:
-        return make_obj_tree(chains, connect, check_is_tree)
-    return make_str_tree(chains, connect, check_is_tree)
+# def make(
+#     chains: abc.Iterable[CT_],
+#     connect: bool = False,
+#     objects: bool = False,
+#     check_is_tree: bool = True,
+# ) -> nx.DiGraph:
+#     """
+#     Make an ancestral tree -- a directed graph representing ancestral
+#     relationships between chains.
+#
+#     :param chains: An iterable of Chain*-type objects.
+#     :param connect: Connect actual objects by populating ``.children`` and
+#         ``.parent`` attributes.
+#     :param objects: Create an object tree using :func:`make_obj_tree`.
+#         Otherwise, create a "string" tree using :func:`make_str_tree`.
+#         Check the docs of these functions to understand the differences.
+#     :param check_is_tree: If ``True``, check if the obtained graph is actually
+#         a tree. If it's not, raise ``ValueError``.
+#     :return:
+#     """
+#     if objects:
+#         return make_obj_tree(chains, connect, check_is_tree)
+#     return make_str_tree(chains, connect, check_is_tree)
 
 
 def recover(c: CT_) -> CT_:
@@ -353,14 +352,14 @@ def recover(c: CT_) -> CT_:
     """
     all_chains = ChainList([c, *c.children.collapse()])
 
-    make_str_tree(all_chains.iter_sequences(), connect=True, check_is_tree=False)
-    make_str_tree(all_chains.iter_structures(), connect=True, check_is_tree=False)
-    make_str_tree(
+    make_id_tree(all_chains.iter_sequences(), connect=True, check_is_tree=False)
+    make_id_tree(all_chains.iter_structures(), connect=True, check_is_tree=False)
+    make_id_tree(
         all_chains.iter_structure_sequences(), connect=True, check_is_tree=False
     )
 
     if isinstance(c, Chain):
-        make_str_tree(all_chains, connect=True, check_is_tree=False)
+        make_id_tree(all_chains, connect=True, check_is_tree=False)
 
     return c
 

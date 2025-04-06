@@ -647,7 +647,7 @@ class ChainList(abc.MutableSequence[CT]):
         """
         return self.__class__(sorted(self._chains, key=key))
 
-    def to_fasta(self, output_path: Path | str) -> str:
+    def to_fasta(self, output_path: Path | str | None) -> str:
         """
         Convert sequences to FASTA format.
 

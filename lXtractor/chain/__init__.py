@@ -7,10 +7,8 @@ from .initializer import ChainInitializer
 from .tree import (
     list_ancestors,
     list_ancestors_names,
-    make,
     make_filled,
     recover,
-    make_obj_tree,
-    make_str_tree,
-    node_name
+    make_id_tree,
+    node_name,
 )

@@ -4,10 +4,9 @@ from lXtractor.chain import ChainSequence, ChainList, Chain, ChainStructure
 from lXtractor.chain import (
     list_ancestors,
     list_ancestors_names,
-    make_obj_tree,
     make_filled,
     node_name,
-    make_str_tree,
+    make_id_tree,
     recover,
 )
 
@@ -68,41 +67,41 @@ def test_make_filled(inp, is_valid, example_obj, expected):
             _ = make_filled(inp, example_obj)
 
 
-@pytest.mark.skip("Object trees are equivalent to str trees due to redefined hashing")
-def test_make_obj_tree(chains, simple_chain_structure):
-    tree = make_obj_tree(chains, connect=False)
-    assert len(tree.nodes) == 4
-    assert tree.is_directed()
-    diff = set(map(node_name, tree.nodes)) - set(map(node_name, chains))
-    assert diff == {"C|1-5"}
-    name2node = {node_name(c): c for c in tree.nodes}
-    c15 = name2node["C|1-5"]
-    assert len(c15.children) == 0
-    assert c15.parent is None
-    c13 = name2node["C|1-3"]
-    assert c13.parent is None
-    assert c13.children == ChainList([name2node["C|1-2"]])
-
-    tree = make_obj_tree([c13], connect=False)
-    assert len(tree.nodes) == 2
-    assert len(tree.edges) == 1
-
-    tree = make_obj_tree(chains, connect=True)
-    name2node = {node_name(c): c for c in tree.nodes}
-    assert len(name2node["C|1-5"].children) == 2
-    assert name2node["C|1-3"].parent == name2node["C|1-5"]
-    assert name2node["C|4-5"].parent == name2node["C|1-5"]
-    assert name2node["C|1-2"].id == "C|1-2<-(C|1-3<-(C|1-5))"
-
-    c = simple_chain_structure
-    child = c.spawn_child(1, 2)
-    child.parent = None
-    make_obj_tree([child, c], connect=True)
-    assert child.parent == c
+# @pytest.mark.skip("Object trees are equivalent to str trees due to redefined hashing")
+# def test_make_obj_tree(chains, simple_chain_structure):
+#     tree = make_obj_tree(chains, connect=False)
+#     assert len(tree.nodes) == 4
+#     assert tree.is_directed()
+#     diff = set(map(node_name, tree.nodes)) - set(map(node_name, chains))
+#     assert diff == {"C|1-5"}
+#     name2node = {node_name(c): c for c in tree.nodes}
+#     c15 = name2node["C|1-5"]
+#     assert len(c15.children) == 0
+#     assert c15.parent is None
+#     c13 = name2node["C|1-3"]
+#     assert c13.parent is None
+#     assert c13.children == ChainList([name2node["C|1-2"]])
+#
+#     tree = make_obj_tree([c13], connect=False)
+#     assert len(tree.nodes) == 2
+#     assert len(tree.edges) == 1
+#
+#     tree = make_obj_tree(chains, connect=True)
+#     name2node = {node_name(c): c for c in tree.nodes}
+#     assert len(name2node["C|1-5"].children) == 2
+#     assert name2node["C|1-3"].parent == name2node["C|1-5"]
+#     assert name2node["C|4-5"].parent == name2node["C|1-5"]
+#     assert name2node["C|1-2"].id == "C|1-2<-(C|1-3<-(C|1-5))"
+#
+#     c = simple_chain_structure
+#     child = c.spawn_child(1, 2)
+#     child.parent = None
+#     make_obj_tree([child, c], connect=True)
+#     assert child.parent == c
 
 
 def test_make_str_tree(chains, simple_chain_structure):
-    tree = make_str_tree(chains, connect=False)
+    tree = make_id_tree(chains, connect=False)
     assert len(tree.nodes) == 4
     assert tree.is_directed()
     assert all(isinstance(n, str) for n in tree.nodes)
@@ -118,13 +117,13 @@ def test_make_str_tree(chains, simple_chain_structure):
     assert diff == {"C|1-5"}
 
     c13 = chains.filter(lambda x: x.start == 1 and x.end == 3).pop()
-    tree = make_str_tree([c13], connect=False)
+    tree = make_id_tree([c13], connect=False)
     assert len(tree.nodes) == 2
     assert len(tree.edges) == 1
 
     c15 = tree.nodes["C|1-5"]["objs"][0]
     assert len(c15.children) == 0
-    tree = make_str_tree([c13], connect=True)
+    tree = make_id_tree([c13], connect=True)
     c15 = tree.nodes["C|1-5"]["objs"][0]
     assert len(c15.children) == 1
 

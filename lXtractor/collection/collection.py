@@ -14,7 +14,7 @@ from more_itertools import spy, unzip, unique_everseen
 from toolz import curry
 
 import lXtractor.chain as lxc
-from lXtractor.chain import make_str_tree, recover
+from lXtractor.chain import make_id_tree, recover
 from lXtractor.core.exceptions import MissingData
 from lXtractor.util.typing import is_sequence_of
 from lXtractor.variables.base import SequenceVariable, StructureVariable, LigandVariable
