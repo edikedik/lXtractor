@@ -45,7 +45,7 @@ jobs:
       - name: List files in the directory
         run: ls -l
       - name: Upload coverage data
-        uses: actions/upload-artifact@4
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-report-${{ matrix.python-version }}
           path: coverage-report-${{ matrix.python-version }}.xml
