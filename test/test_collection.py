@@ -546,7 +546,7 @@ def test_setup_references(source, const_type, ref, tmp_path):
         constructor = const_type(config)
         assert all(isinstance(x, PyHMMer) for x in constructor.references)
         written_refs = {x.stem for x in constructor.paths.references.glob("*.hmm")}
-        ref_names = {r.hmm.name.decode("utf-8") for r in constructor.references}
+        ref_names = {r.hmm.name for r in constructor.references}
         assert ref_names == written_refs
 
 

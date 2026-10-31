@@ -590,7 +590,7 @@ class Pfam(AbstractResource):
     def _parse_hmm(path: Path) -> pd.DataFrame:
         df = pd.DataFrame({"HMM": list(map(PyHMMer, iter_hmm(path)))})
         df["Accession"] = df["HMM"].map(
-            lambda x: x.hmm.accession.decode("utf-8").split(".")[0]
+            lambda x: x.hmm.accession.split(".")[0]
         )
         return df
 

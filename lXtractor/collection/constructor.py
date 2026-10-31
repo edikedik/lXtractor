@@ -258,7 +258,7 @@ class ConstructorBase(t.Generic[_ColT, _CT, _IT, _ITL], metaclass=ABCMeta):
 
     def _save_references(self):
         for ref in self.references:
-            hmm_name = ref.hmm.name.decode("utf-8")
+            hmm_name = ref.hmm.name
             path = self.paths.references / f"{hmm_name}.hmm"
             with path.open("wb") as f:
                 ref.hmm.write(f, binary=False)

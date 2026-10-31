@@ -84,7 +84,7 @@ def test_align(human_src_seq, pkinase_hmm_path):
     seqs = [cs, human_src_seq, seq_str]
     msa = annotator.align(seqs)
     assert isinstance(msa, TextMSA)
-    obtained_names = [x.decode("utf-8") for x in msa.names]
+    obtained_names = list(msa.names)
     expected_names = [cs.name, seq_name, str(hash(seq_str))]
     assert obtained_names == expected_names
 
