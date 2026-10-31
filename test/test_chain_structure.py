@@ -138,6 +138,7 @@ def test_io(test_structure, fmt, tmp_path):
     assert s_r_child.meta[mnames["structure_chain_id"]] == child1.chain_id
 
 
+@pytest.mark.mafft
 def test_superpose(test_structure):
     s = test_structure
 

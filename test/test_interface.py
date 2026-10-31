@@ -8,11 +8,13 @@ import rustworkx as rx
 from lXtractor.core import GenericStructure, Interface
 from lXtractor.core.exceptions import MissingData, AmbiguousData
 from lXtractor.core.interface import RetainCondition, InterfaceComparator
-from test.common import STRUCTURES
+from test.common import STRUCTURES, MMTF_SUPPORTED, MMTF_SKIP_REASON
 
 
 @pytest.fixture()
 def generic_structure_2oiq() -> GenericStructure:
+    if not MMTF_SUPPORTED:
+        pytest.skip(MMTF_SKIP_REASON)
     return GenericStructure.read(STRUCTURES / "mmtf.gz" / "2OIQ.mmtf.gz")
 
 

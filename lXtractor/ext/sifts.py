@@ -479,7 +479,7 @@ class SIFTS(AbstractResource):
         pdb_ids: abc.Iterable[str] | None = None,
         pdb_method: str | None = "X-ray",
         pdb_base: Path | None = None,
-        pdb_fmt: str = "mmtf.gz",
+        pdb_fmt: str = "cif.gz",
         pdb_method_filter_kwargs: abc.Mapping[str, t.Any] | None = None,
     ) -> abc.Mapping[str | _Mkey, list[tuple[str | Path, list[str]]]]:
         """

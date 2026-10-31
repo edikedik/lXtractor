@@ -49,6 +49,7 @@ def test_extended_selection_filter(src_str):
     assert m.sum() == 0
 
 
+@pytest.mark.mafft
 def test_subset_to_matching(abl_str, src_str):
     # Both are kinase proteins
     # Abl structure is a kinase domain
@@ -75,6 +76,7 @@ def test_subset_to_matching(abl_str, src_str):
     assert len(abl_sub.seq) == len(src_sub.seq), 'Same number of residues'
 
 
+@pytest.mark.mafft
 def test_superpose_pairwise(abl_str, src_str, human_src_seq):
     # 1. Strict
     # =========

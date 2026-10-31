@@ -41,6 +41,7 @@ def test_init(inp_path):
     assert s == ss
 
 
+@pytest.mark.mmtf
 @pytest.mark.parametrize("inp", ALL_STRUCTURES[:6])
 def test_io(inp):
     s = ProteinStructure.read(inp)

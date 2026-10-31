@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from importlib.util import find_spec
 from itertools import chain
 from pathlib import Path
+from shutil import which
 
 from lXtractor.chain import Chain, ChainStructure, ChainSequence
 from lXtractor.core.config import DefaultConfig
@@ -12,8 +14,17 @@ DATA = Path(__file__).parent / "data"
 STRUCTURES = DATA / "structures"
 SEQUENCES = DATA / "sequences"
 ALL_STRUCTURES = sorted(
-    chain(STRUCTURES.glob("mmtf*/*"), DATA.glob("cif*/*"), DATA.glob("pdb*/*"))
+    chain(
+        STRUCTURES.glob("mmtf*/*"),
+        STRUCTURES.glob("cif*/*"),
+        STRUCTURES.glob("pdb*/*"),
+    )
 )
+# MMTF support was removed from biotite in v1.0
+MMTF_SUPPORTED = find_spec("biotite.structure.io.mmtf") is not None
+MMTF_SKIP_REASON = "MMTF is not supported by the installed biotite version"
+MAFFT_SUPPORTED = which("mafft-linsi") is not None
+MAFFT_SKIP_REASON = "MAFFT (mafft-linsi) is not found in PATH"
 
 
 class TestError(ValueError):

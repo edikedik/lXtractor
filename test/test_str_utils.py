@@ -20,19 +20,27 @@ from lXtractor.util.structure import (
 )
 
 
+def _residue(name: str, res_id: int) -> bst.AtomArray:
+    # biotite>=1.0 delimits residues by res_id regardless of res_name, so
+    # CCD residues need distinct numbering to be concatenated
+    r = bstinfo.residue(name)
+    r.res_id[:] = res_id
+    return r
+
+
 @pytest.fixture()
 def ala() -> bst.AtomArray:
-    return bstinfo.residue("ALA")
+    return _residue("ALA", 1)
 
 
 @pytest.fixture()
 def gly() -> bst.AtomArray:
-    return bstinfo.residue("GLY")
+    return _residue("GLY", 2)
 
 
 @pytest.fixture()
 def phe() -> bst.AtomArray:
-    return bstinfo.residue("PHE")
+    return _residue("PHE", 3)
 
 
 def test_common_atoms_filter(ala, gly, phe, abl_str, src_str):

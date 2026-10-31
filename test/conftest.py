@@ -10,9 +10,47 @@ from lXtractor.core.structure import GenericStructure
 from lXtractor.util.seq import read_fasta
 from lXtractor.variables.sequential import SeqEl
 from lXtractor.variables.structural import Dist, PseudoDihedral
-from test.common import sample_chain, get_fst_chain, STRUCTURES, SEQUENCES, DATA
+from test.common import (
+    sample_chain,
+    get_fst_chain,
+    STRUCTURES,
+    SEQUENCES,
+    DATA,
+    MMTF_SUPPORTED,
+    MMTF_SKIP_REASON,
+    MAFFT_SUPPORTED,
+    MAFFT_SKIP_REASON,
+)
 
 EPS = 10e-5
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "mmtf: test requires MMTF support in biotite")
+    config.addinivalue_line("markers", "mafft: test requires MAFFT in PATH")
+
+
+def _uses_mmtf(item: pytest.Item) -> bool:
+    callspec = getattr(item, "callspec", None)
+    params = callspec.params.values() if callspec else ()
+    return item.get_closest_marker("mmtf") is not None or any(
+        "mmtf" in str(p) for p in params
+    )
+
+
+def pytest_collection_modifyitems(items):
+    """
+    Skip tests requiring unavailable external dependencies: MMTF support in
+    biotite (tests marked with ``mmtf`` or parametrized by MMTF paths and
+    formats) and MAFFT (tests marked with ``mafft``).
+    """
+    skip_mmtf = pytest.mark.skip(reason=MMTF_SKIP_REASON)
+    skip_mafft = pytest.mark.skip(reason=MAFFT_SKIP_REASON)
+    for item in items:
+        if not MMTF_SUPPORTED and _uses_mmtf(item):
+            item.add_marker(skip_mmtf)
+        if not MAFFT_SUPPORTED and item.get_closest_marker("mafft"):
+            item.add_marker(skip_mafft)
 
 
 @pytest.fixture(scope="module")

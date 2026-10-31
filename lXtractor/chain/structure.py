@@ -792,7 +792,7 @@ class ChainStructure:
     ) -> pd.DataFrame:
         s = self.seq.summary(meta=meta, children=False)
         s[DefaultConfig["colnames"]["id"]] = [self.id]
-        parent_id = np.NAN if self.parent is None else self.parent.id
+        parent_id = np.nan if self.parent is None else self.parent.id
         s[DefaultConfig["colnames"]["parent_id"]] = [parent_id]
         if ligands and len(self.ligands) > 0:
             lig_df = pd.DataFrame(lig.summary() for lig in self.ligands)

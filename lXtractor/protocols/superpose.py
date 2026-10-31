@@ -137,11 +137,11 @@ def superpose_pair(
 
     _, transformation = bst.superimpose(f_array_sup, m_array_sup)
 
-    m_array_sup = bst.superimpose_apply(m_array_sup, transformation)
+    m_array_sup = transformation.apply(m_array_sup)
     rmsd_sup = bst.rmsd(f_array_sup, m_array_sup)
 
     if all(x is not None for x in [dist_fn, f_array_dist, m_array_dist]):
-        m_array_dist = bst.superimpose_apply(m_array_dist, transformation)
+        m_array_dist = transformation.apply(m_array_dist)
         dist = dist_fn(f_array_dist, m_array_dist)
     else:
         dist = None

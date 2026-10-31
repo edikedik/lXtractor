@@ -101,6 +101,7 @@ def test_closest_and_boundaries():
     assert b1.i == b2.i == 5
 
 
+@pytest.mark.mafft
 def test_map(simple_fasta_path, chicken_src_seq, human_src_seq):
     s1, s2 = read_fasta(simple_fasta_path)
     aln = Alignment.make([s1, s2])
@@ -236,6 +237,7 @@ def test_apply_to_map(simple_chain_with_child):
         assert is_iterable_of(c["S"], str)
 
 
+@pytest.mark.mafft
 def test_as_chain(simple_chain_seq, simple_chain_structure):
     seq = simple_chain_seq
     c1 = seq.spawn_child(1, 2, "C")

@@ -768,7 +768,7 @@ class GenericStructure:
         :param mask_other: Same as `self`.
         :return: A tuple of (1) an `other` structure superposed onto this one,
             (2) an RMSD of the superposition, and (3) a transformation that
-            had been used with :func:`biotite.structure.superimpose_apply`.
+            had been used with :meth:`biotite.structure.AffineTransformation.apply`.
         """
 
         def _get_mask(a, res_id, atom_names):
@@ -802,7 +802,7 @@ class GenericStructure:
         superposed, transformation = bst.superimpose(
             self.array[mask_self], other.array[mask_other]
         )
-        other_transformed = bst.superimpose_apply(other.array, transformation)
+        other_transformed = transformation.apply(other.array)
 
         rmsd_target = bst.rmsd(self.array[mask_self], superposed)
 

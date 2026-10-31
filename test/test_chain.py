@@ -7,6 +7,7 @@ from lXtractor.util import biotite_align
 from test.common import sample_chain, mark_meta
 
 
+@pytest.mark.mafft
 def test_basic(four_chain_structure_seq_path, four_chain_structure):
     p = Chain.from_seq(four_chain_structure_seq_path)[0]
     assert len(p.seq) == 1657
@@ -26,6 +27,7 @@ def test_basic(four_chain_structure_seq_path, four_chain_structure):
     assert len(p.structures) == 2
 
 
+@pytest.mark.mafft
 def test_add_structure(chicken_src_seq, src_str):
     c = Chain.from_seq(chicken_src_seq)
     c1 = c.spawn_child(c.seq.start + 1, c.seq.end - 1, "c1")
@@ -42,6 +44,7 @@ def test_add_structure(chicken_src_seq, src_str):
     assert len(c1.structures) == len(c2.structures) == 1
 
 
+@pytest.mark.mafft
 def test_spawn(chicken_src_seq, human_src_seq, chicken_src_str):
     mapnames = DefaultConfig["mapnames"]
     p = Chain.from_seq(chicken_src_seq)
@@ -114,6 +117,7 @@ def test_iter():
     assert list(map(get_name, levels[2])) == ["c1_2_1"]
 
 
+@pytest.mark.mafft
 def test_filter_children(src_chain):
     c = src_chain
     c.spawn_child(270, 300, str_map_from="map_canonical", subset_structures=False)
@@ -129,6 +133,7 @@ def rm_structures(c: Chain) -> Chain:
     return Chain(c.seq)
 
 
+@pytest.mark.mafft
 def test_apply_children(src_chain):
     c = src_chain
     c.spawn_child(270, 300, str_map_from="map_canonical", subset_structures=True)
@@ -140,6 +145,7 @@ def test_apply_children(src_chain):
     assert len(c.children[0].structures) == 0
 
 
+@pytest.mark.mafft
 def test_filter_structures(src_chain):
     c = src_chain
     s0len = len(c.structures[0].seq)
@@ -150,6 +156,7 @@ def test_filter_structures(src_chain):
     assert len(c.structures) == 1
 
 
+@pytest.mark.mafft
 def test_apply_structures(src_chain):
     c = src_chain
     c_new = c.apply_structures(mark_meta)

@@ -519,11 +519,13 @@ def test_constructor_setup(inp, references, tmp_path):
         DATA / "Pkinase.hmm",
         DATA / "void.hmm",
         DATA / "void.hmm.gz",
-        SEQUENCES / "fasta" / "simple.fasta",
+        pytest.param(SEQUENCES / "fasta" / "simple.fasta", marks=pytest.mark.mafft),
         PyHMMer(DATA / "Pkinase.hmm"),
         Alignment([("REF_SEQ", "KAL"), ("s2", "KKL")]),
         lxc.ChainSequence.from_string("KAL", name="REF_SEQ"),
-        ("REF", SEQUENCES / "fasta" / "simple.fasta"),
+        pytest.param(
+            ("REF", SEQUENCES / "fasta" / "simple.fasta"), marks=pytest.mark.mafft
+        ),
         ("ALN", Alignment([("REF_SEQ", "KAL"), ("s2", "KKL")])),
         ("REF", "KAL"),
         ("REF", lxc.ChainSequence.from_string("KAL", name="REF_SEQ")),

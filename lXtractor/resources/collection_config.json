@@ -18,7 +18,7 @@
   "out_dir": "./collection",
   "seq_dir": "./sequences",
   "str_dir": "./structures",
-  "str_fmt": "mmtf.gz",
+  "str_fmt": "cif.gz",
   "source": null,
   "AlphaFold_kwargs": {},
   "PDB_kwargs": {},

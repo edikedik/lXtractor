@@ -6,6 +6,8 @@ from lXtractor.core.alignment import Alignment
 from lXtractor.core.exceptions import InitError, MissingData
 from lXtractor.util.seq import read_fasta
 
+pytestmark = pytest.mark.mafft
+
 
 def test_init(simple_fasta_path):
     seqs = read_fasta(simple_fasta_path)

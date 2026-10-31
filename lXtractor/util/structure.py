@@ -768,9 +768,9 @@ def save_structure(array: bst.AtomArray, path: Path, **kwargs):
         file.set_structure(array)
         file.write(io)
     elif fmt == "cif":
-        from biotite.structure.io.pdbx import PDBxFile, set_structure
+        from biotite.structure.io.pdbx import CIFFile, set_structure
 
-        io, file = StringIO(), PDBxFile()
+        io, file = StringIO(), CIFFile()
         set_structure(file, array, data_block="STRUCTURE")
         file.write(io)
     else:

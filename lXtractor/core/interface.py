@@ -1118,12 +1118,10 @@ class InterfaceComparator:
         return self._spp_rmsd
 
     @property
-    def transformation(
-        self,
-    ) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.int_], npt.NDArray[np.int_]]:
+    def transformation(self) -> bst.AffineTransformation:
         """
-        :return: Transformation matrices of the inferred for superposition
-            of the :attr:`state_mob`.
+        :return: Transformation inferred for superposition of the
+            :attr:`state_mob`.
         """
         return self._transformation
 
