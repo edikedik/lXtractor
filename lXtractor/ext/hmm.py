@@ -194,7 +194,7 @@ class PyHMMer:
         alphabet = _get_alphabet(alphabet)
         msa_d = DigitalMSA(
             alphabet,
-            name,
+            name=name,
             sequences=list(map(digitize_seq, msa)),
             **kwargs,
         )
@@ -308,11 +308,11 @@ class PyHMMer:
 
         if new_map_name is None:
             try:
-                new_map_name = self.hmm.accession.decode("utf-8").split(".")[0]
+                new_map_name = self.hmm.accession.split(".")[0]
             except (AttributeError, ValueError):
                 try:
                     new_map_name = (
-                        self.hmm.name.decode("utf-8")
+                        self.hmm.name
                         .replace(" ", "_")
                         .replace("-", "_")
                     )
@@ -329,7 +329,7 @@ class PyHMMer:
         self.search(objs_by_id.values())
 
         for hit in self.hits_:
-            obj = objs_by_id[hit.accession.decode("utf-8")]
+            obj = objs_by_id[hit.accession]
 
             for dom_i, dom in enumerate(hit.domains, start=1):
                 aln = dom.alignment
