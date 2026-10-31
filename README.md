@@ -6,88 +6,111 @@
 [![Python version](https://img.shields.io/pypi/pyversions/lXtractor.svg)](https://pypi.org/project/lXtractor)
 [![Hatch project](https://img.shields.io/badge/%F0%9F%A5%9A-Hatch-4051b5.svg)](https://github.com/pypa/hatch)
 
-<img src="./fig/lXt_diagram.png" alt="lXt_diagram" width="300"/>
+<img src="https://raw.githubusercontent.com/edikedik/lXtractor/master/fig/lXt_diagram.png" alt="lXtractor diagram" width="300"/>
 
-## Introduction
+`lXtractor` is a toolbox for feature extraction from macromolecular sequences
+and structures. It builds local, shareable data collections anchored to a
+reference object (a single sequence, an MSA, or an HMM profile) so that every
+sequence and structure in the collection shares a common numbering.
 
-`lXtractor` is a toolbox devoted to feature extraction from macromolecular
-sequences and structures.
-It's tailored towards creating shareable local data collections anchored to
-a reference sequence-based object: a single sequence, MSA, or an HMM model.
-Currently, it doesn't define any unique algorithms, aiming at simplicity and
-transparency.
-It simply provides a (hopefully) convenient interface simplifying mundane tasks,
-such as fetching the data, extracting domains, mapping sequences, and computing
-sequential and structural variables.
-Sequences and structures anchored to a single reference object have a benefit
-of interpretability in downstream applications, such as fitting interpretable
-ML models.
+This makes the extracted features directly comparable across entries and
+interpretable in downstream analyses, such as fitting interpretable ML
+models. `lXtractor` doesn't introduce novel algorithms; it provides a
+transparent interface to routine tasks:
+
+- fetching sequences and structures from PDB, SIFTS, and UniProt;
+- annotating domains with HMM profiles (via PyHMMer) or alignments;
+- mapping numbering between sequences, structures, and reference objects;
+- extracting segments, ligands, pockets, and interfaces;
+- computing sequence and structure variables into tidy tables;
+- saving and loading collections in a structured on-disk format.
 
 ## Installation
 
-`lXtractor` requires python>=3.10 installed on a Unix system and is
-installable via pip
+`lXtractor` requires Python ≥ 3.10 on Linux or macOS.
 
 ```bash
 pip install lXtractor
 ```
 
-We encourage users to first create a virtual environment via `conda` or `mamba`.
+Some functionality relies on external tools that must be available in
+`PATH`:
 
-## Usage
+| Tool                                                | Used for                                   |
+|-----------------------------------------------------|--------------------------------------------|
+| [MAFFT](https://mafft.cbrc.jp/alignment/software/)  | Sequence alignment and numbering mapping   |
+| [DSSP](https://github.com/PDB-REDO/dssp) (`mkdssp`) | Secondary structure assignment (optional)  |
 
-`lXtractor` is designed to be flexible and its usage is defined by the initial
-hypothesis or a reference object that one wants to extrapolate towards the
-existing sequences or structures.
-Below, we'll provide a very abstract description of what this package is
-intended for.
+## Quick start
 
-In creating data collections, one could define the following steps::
+```python
+from pathlib import Path
 
-1. Assemble the data.
-2. Map reference object to assembled entries' sequences.
-3. Filter hits.
-4. Define and calculate variables -- sequence or structure descriptors.
-5. Save the data for later usage or modifications.
+from lXtractor.chain import ChainStructure
+from lXtractor.core import GenericStructure
+from lXtractor.variables import Dist, GenericCalculator, Manager, PseudoDihedral, SeqEl
 
-`lXtractor` defines objects and routines helpful throughout this process.
-Namely, `PDB`, `SIFTS`, `AlphaFold`, `fetch_uniprot()`
-can aid in the first step.
-Then, `Alignment` and `PyHMMer` can facilitate step 2.
-At the end of the step 2 one will get a collection of `Chain*`-type objects.
-If working with sequence-only collections, these are going to be
-`ChainSequence` objects.
-For structure-only data, these are going to be ``ChainStructure`` containers,
-embedding `ChainSequence` and `GenericStructure` objects.
-Finally, dealing with mappings between canonical sequence associated with
-a group of structures will result in ``Chain`` objects.
+# Read a structure and split it into single-chain objects
+structure = GenericStructure.read(Path("1aki.pdb"))
+chains = [ChainStructure(c) for c in structure.split_chains(polymer=True)]
 
-`ChainList` wraps `Chain*`-type objects into a list-like collection with
-useful operations allowing to quickly filter and bulk-modify `Chain*`-type
-objects.
-Thus, filtering typically comes down to using ``ChainList.filter()`` method that
-accepts a `Callable[Chain*, bool]` and returns a filtered `ChainList`.
-One can save/load the collected objects using `ChainIO` and proceed
-with the feature extraction.
+# Extract a segment by its residue numbering
+segment = chains[0].spawn_child(1, 40)
 
-`lXtractor` defines various sequence and structure variables.
-Variable-related operations are handled by `GenericCalculator` and
-`Manager` classes. The former defines the calculation strategy and how
-the calculations are parallelized, while the latter handles the calculations
-and aggregates the results into a pandas `DataFrame`.
+# Define sequence and structure variables
+variables = [
+    SeqEl(1),
+    Dist(1, 40, "CA", "CA"),
+    PseudoDihedral(1, 2, 3, 4),
+]
 
-As a result, one is left with a collection of `Chain*`-type objects and a
-table with calculated variables. In addition, one can store the calculated
-variables within the objects themselves, although we currently do not encourage
-this practice.
+# Calculate and aggregate results into a pandas DataFrame
+manager = Manager()
+results = manager.calculate([segment.seq, segment], variables, GenericCalculator())
+df = manager.aggregate_from_it(results)
+```
 
-`lXtractor` is in the experimental stage and under active development.
-Thus, objects' interfaces may change.
+## Core concepts
 
-For the time being, one can check the examples of
-1. [finding sequence determinants](https://eboruta.readthedocs.io/en/latest/notebooks/sequence_determinants_tutorial.html)
-of tyrosine and serine-threonine kinases and
-2. [a protocol](https://github.com/edikedik/kinactive/blob/abae9c8a1fca0754d02e3f117dee210b587e666b/kinactive/db.py#L142)
-to build a complete structural collection of protein kinase domains.
+| Object             | Description                                                               |
+|--------------------|---------------------------------------------------------------------------|
+| `ChainSequence`    | A polymer sequence with additional aligned sequences ("maps"), e.g., numberings. |
+| `GenericStructure` | A wrapper around `biotite`'s `AtomArray` with annotated polymers, ligands, and solvent. |
+| `ChainStructure`   | A single-chain structure linked to its `ChainSequence`.                   |
+| `Chain`            | A canonical `ChainSequence` with mapped `ChainStructure` objects.         |
+| `ChainList`        | A list-like container for filtering and bulk operations on chains.        |
+| `ChainIO`          | Reading and writing chains to disk.                                       |
+| `Manager`, `GenericCalculator` | Staging, parallel calculation, and aggregation of variables.  |
 
-More examples are to come in the future, so stay tuned. If you know a good example to apply `lXtractor`, feel free to raise an issue or reach out [ivan.reveguk@gmail.com](ivan.reveguk@gmail.com).
+All `Chain*` objects support parent-child hierarchies: segments spawned via
+`spawn_child()` retain a link to their origin and can be mapped back to it.
+
+## Typical workflow
+
+1. **Assemble the data** using `PDB`, `SIFTS`, `UniProt`, or local files.
+2. **Map a reference** onto the assembled sequences with `PyHMMer` or
+   `Alignment`, producing `ChainSequence`, `ChainStructure`, or `Chain`
+   objects, depending on the data at hand.
+3. **Filter** the results, typically via `ChainList.filter()`.
+4. **Calculate variables** with `Manager` and `GenericCalculator`, obtaining
+   a `pandas.DataFrame`.
+5. **Save** the collection with `ChainIO` for later reuse or modification.
+
+For larger datasets, `lXtractor.collection` provides constructors that run
+this workflow in batches, storing the results in a SQLite-backed collection.
+
+## Examples
+
+- [Finding sequence determinants](https://eboruta.readthedocs.io/en/latest/notebooks/sequence_determinants_tutorial.html)
+  of tyrosine and serine-threonine kinases.
+- [Building a structural collection](https://github.com/edikedik/kinactive/blob/abae9c8a1fca0754d02e3f117dee210b587e666b/kinactive/db.py#L142)
+  of protein kinase domains.
+
+See the [documentation](https://lxtractor.readthedocs.io) for the API
+reference.
+
+## Status
+
+`lXtractor` is in the alpha stage of development, and its interfaces may
+change between releases. The `AlphaFold` interface is deprecated and will be
+removed in a future release.
