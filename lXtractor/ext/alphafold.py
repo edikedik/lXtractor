@@ -1,7 +1,12 @@
 """
 Interface to the AlphaFold database.
+
+.. deprecated:: 0.1.8
+    The module targets an outdated version of the AlphaFold DB API and will
+    be removed in a future release.
 """
 import typing as t
+import warnings
 from collections import abc
 
 from lXtractor.ext.base import StructureApiBase
@@ -28,6 +33,10 @@ def url_getters() -> dict[str, abc.Callable[..., str]]:
 class AlphaFold(StructureApiBase):
     """
     A basic interface to the AlphaFold2 database.
+
+    .. deprecated:: 0.1.8
+        Targets an outdated version of the AlphaFold DB API and will be
+        removed in a future release.
 
     To fetch structures:
 
@@ -65,6 +74,12 @@ class AlphaFold(StructureApiBase):
     def __init__(
         self, max_trials: int = 1, num_threads: int | None = None, verbose: bool = False
     ):
+        warnings.warn(
+            "AlphaFold is deprecated: it targets an outdated version of the "
+            "AlphaFold DB API and will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         super().__init__(url_getters(), max_trials, num_threads, verbose)
 
     @property
